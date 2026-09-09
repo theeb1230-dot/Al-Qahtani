@@ -4,8 +4,8 @@
 GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` remains the behavioral baseline.
 
 ## Current branch
-- Active development branch: `migration/web-parity-02`
-- Previous PR #1 was merged to `main` as commit `0d82c32d2c4fb66d869c2124534ae8033ac024a2`.
+- PR #2 was merged to `main` as commit `40a2efeb8633c1c0c9de1ab7241b56257d7acb32` after Web smoke passed.
+- `main` now contains the provider-backed web parity surface.
 
 ## Completed in this run
 - Re-audited current `main`, branches, recent commits, CI configuration and migration state before making changes.
@@ -37,13 +37,13 @@ GitHub repository state wins over this handoff if they disagree. The original up
 - Flutter migration has not started because web parity and deployment are still being proven first.
 
 ## Next run goals
-1. Run and inspect PR CI for `migration/web-parity-02`; repair any failures on the same branch.
-2. Merge only after Web smoke gates are green.
-3. Verify GitHub Pages deployment workflow on merged `main` and confirm the live site serves `index.html`, `news.html` and `albasri-cinema.html`.
-4. Move cinema category/source configuration out of the UI into a provider/config module.
-5. Add live provider health probes with typed transport, payload and playable-source results.
-6. Add player source validation/fallback ordering before navigation.
-7. Add browser-level smoke tests for navigation and player routing.
-8. Document normalized contracts for match sessions, cinema details/episodes and news bridge messages.
-9. Begin Flutter workspace only after the web surface is verified live.
-10. Then add Android Mobile, Android TV and iOS build/release pipelines incrementally.
+1. Verify GitHub Pages deployment on merged `main` and confirm live `index.html`, `news.html` and `albasri-cinema.html`.
+2. Move cinema category/source configuration out of the UI into a provider/config module.
+3. Add live provider health probes with typed transport, payload and playable-source results.
+4. Add player source validation/fallback ordering before navigation.
+5. Add browser-level smoke tests for navigation and player routing.
+6. Document normalized contracts for match sessions, cinema details/episodes and news bridge messages.
+7. Add provider fallback ordering and retry telemetry.
+8. Begin Flutter workspace only after the web surface is verified live.
+9. Add Android Mobile and Android TV build pipelines.
+10. Add iOS unsigned IPA CI and gated GitHub Releases.
