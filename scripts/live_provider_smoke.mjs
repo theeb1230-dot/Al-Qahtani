@@ -9,7 +9,7 @@ const THEEB = "https://theeb-arab-api.onrender.com";
 async function json(url, init = {}) {
   const started = Date.now();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  const timer = setTimeout(() => controller.abort(), 45000);
   try {
     const res = await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
     const text = await res.text();
