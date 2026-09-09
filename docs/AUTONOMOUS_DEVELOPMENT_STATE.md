@@ -4,11 +4,17 @@
 GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` remains the behavioral baseline.
 
 ## Current branch
+- Active validation branch: `test/live-provider-e2e-04`.
 - Active fix branch: `fix/mobile-provider-runtime-03` based on user iPhone Safari evidence.
 - PR #2 was merged to `main` as commit `40a2efeb8633c1c0c9de1ab7241b56257d7acb32` after Web smoke passed.
 - `main` now contains the provider-backed web parity surface.
 
 ## Completed in this run
+- PR #3 passed all Web smoke gates and was merged to `main` as `fd40c883e5a56e2d1f55637f6e9b36a85a531fd6`.
+- Added `web/core/catalog-config.js` and moved cinema category/source configuration out of `albasri-cinema.html`.
+- Added `scripts/live_provider_smoke.mjs` to probe match session/list/server discovery, cinema session/category/search/details, and the news JSON endpoint using the inherited production Workers.
+- Added `.github/workflows/live-provider-smoke.yml` so live provider health is tested inside GitHub Actions instead of inferred from screenshots.
+- Extended static smoke syntax checks to cover the catalog config and live provider smoke script.
 - Analyzed six iPhone Safari screenshots from the live GitHub Pages deployment. Confirmed Pages is deployed, but runtime provider access is inconsistent: matches fail, cinema category/search returns an empty shell, and news can either load 15 items or stall at 0.
 - Found a concrete root bug in `fetchJsonWithHealth`: spreading a `Headers` instance with `...(init.headers || {})` drops custom `X-BSR-Token` and `X-BSR-Page` headers. Fixed provider transport to normalize with `new Headers()` and preserve authentication headers.
 - Made match list/server requests resilient when session bootstrap itself is unavailable, while retaining authenticated requests when sessions work.
@@ -46,6 +52,17 @@ GitHub repository state wins over this handoff if they disagree. The original up
 - Flutter migration has not started because web parity and deployment are still being proven first.
 
 ## Next run goals
+1. Run PR CI for the live-provider branch and inspect exact upstream failures from logs.
+2. Fix any repository-side contract/auth/request defects exposed by the live probes.
+3. Separate hard repository regressions from upstream provider outages so CI remains actionable rather than flaky.
+4. After live provider probes are green, merge and verify the GitHub Pages deployment.
+5. Add browser navigation/player smoke coverage.
+6. Add playable-source validation and fallback ordering.
+7. Document provider health telemetry and failure classes.
+8. Begin Flutter only after live web-provider parity is proven.
+9. Add Android Mobile/TV build pipelines after Flutter starts.
+10. Add unsigned iOS IPA CI and gated Releases after the mobile baseline is stable.
+
 1. Verify GitHub Pages deployment on merged `main` and confirm live `index.html`, `news.html` and `albasri-cinema.html`.
 2. Move cinema category/source configuration out of the UI into a provider/config module.
 3. Add live provider health probes with typed transport, payload and playable-source results.
