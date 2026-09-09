@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07111f">
+<title>مشغل الويب</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<style>
+:root{color-scheme:dark;--bg:#07111f;--panel:#0d1b2c;--muted:#8ea3b9;--accent:#168aff}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:#fff;font-family:Tahoma,Arial,sans-serif;display:grid;place-items:center;padding:16px}.shell{width:min(1100px,100%)}.player{aspect-ratio:16/9;background:#000;border-radius:18px;overflow:hidden;box-shadow:0 18px 60px #0008}.player video,.player iframe{width:100%;height:100%;border:0;display:block;background:#000}.bar{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:12px;padding:12px 14px;background:var(--panel);border-radius:14px}.status{color:var(--muted);font-size:14px}.servers{display:flex;gap:8px;flex-wrap:wrap}.servers button{border:0;border-radius:10px;background:#16263a;color:#fff;padding:9px 12px;cursor:pointer}.servers button.active{background:var(--accent)}.error{padding:28px;text-align:center;color:#ffd3d3}
+</style>
+</head>
+<body>
+<main class="shell">
+  <div id="player" class="player"><div class="error">اختر مصدر تشغيل صالح.</div></div>
+  <div class="bar"><div id="status" class="status">جاهز</div><div id="servers" class="servers"></div></div>
+</main>
+<script>
+const params=new URLSearchParams(location.search);
+const player=document.getElementById('player');
+const statusEl=document.getElementById('status');
+const serversEl=document.getElementById('servers');
+let hls=null;
+
+function b64uDecode(s){
+  s=s.replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length%4)s+='=';
+  const bin=atob(s);
+  const bytes=Uint8Array.from(bin,c=>c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function extractLegacyIntent(intent){
+  try{
+    const q=intent.match(/[?&]data=([^#&]+)/);
+    if(!q)return null;
+    return JSON.parse(b64uDecode(decodeURIComponent(q[1])));
+  }catch(e){
+    console.warn('Legacy intent decode failed',e);
+    return null;
+  }
+}
+
+function normalizeServer(x={}){
+  const url=String(x.url||x.src||'').trim();
+  let type=String(x.type||'').toLowerCase();
+  if(!type&&/\.m3u8(?:$|\?)/i.test(url))type='m3u8';
+  else if(!type&&/\.mp4(?:$|\?)/i.test(url))type='mp4';
+  else if(!type)type='embed';
+  return {name:String(x.name||'سيرفر'),url,type};
+}
+
+function collectSources(){
+  const direct=params.get('url')||params.get('src');
+  if(direct)return [normalizeServer({name:'السيرفر الرئيسي',url:direct,type:params.get('type')||''})];
+  const intent=params.get('intent');
+  if(!intent)return [];
+  const payload=extractLegacyIntent(intent);
+  if(!payload)return [];
+  const list=Array.isArray(payload.servers)?[...payload.servers]:[];
+  if(payload.url)list.unshift({name:'السيرفر الرئيسي',url:payload.url,type:payload.type});
+  return list.map(normalizeServer).filter(s=>s.url);
+}
+
+function stop(){
+  if(hls){hls.destroy();hls=null}
+  player.innerHTML='';
+}
+
+function play(source){
+  stop();
+  statusEl.textContent='جارٍ تشغيل '+source.name;
+  document.querySelectorAll('.servers button').forEach(b=>b.classList.toggle('active',b.dataset.url===source.url));
+  if(source.type==='m3u8'){
+    const v=document.createElement('video');v.controls=true;v.playsInline=true;v.autoplay=true;player.appendChild(v);
+    if(window.Hls&&Hls.isSupported()){
+      hls=new Hls({enableWorker:true});hls.loadSource(source.url);hls.attachMedia(v);
+      hls.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal)statusEl.textContent='تعذر تشغيل البث';});
+    }else{v.src=source.url}
+    v.play().catch(()=>{});
+  }else if(source.type==='mp4'){
+    const v=document.createElement('video');v.controls=true;v.playsInline=true;v.autoplay=true;v.src=source.url;player.appendChild(v);v.play().catch(()=>{});
+  }else{
+    const f=document.createElement('iframe');f.src=source.url;f.allow='autoplay; fullscreen; picture-in-picture';f.allowFullscreen=true;f.referrerPolicy='no-referrer';player.appendChild(f);
+  }
+}
+
+const sources=collectSources();
+if(!sources.length){
+  statusEl.textContent='لم يصل رابط تشغيل صالح';
+}else{
+  serversEl.innerHTML='';
+  sources.forEach((s,i)=>{
+    const b=document.createElement('button');b.textContent=s.name;b.dataset.url=s.url;b.onclick=()=>play(s);serversEl.appendChild(b);
+    if(i===0)play(s);
+  });
+}
+</script>
+</body>
+</html>
