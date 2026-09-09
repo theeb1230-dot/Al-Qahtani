@@ -21,13 +21,30 @@ function legacyHeaders(token=""){const h={Accept:"application/json",Origin:LEGAC
 async function matchSession(){const x=await jfetch(MATCHES+"session",{headers:legacyHeaders()});if(!x.r.ok||!x.data?.token)throw new Error("MATCH_SESSION_"+x.r.status);return x.data.token}
 async function matches(){const token=await matchSession();const x=await jfetch(MATCHES,{headers:legacyHeaders(token)});if(!x.r.ok)throw new Error("MATCH_LIST_"+x.r.status);return x.data}
 async function matchServers(target){const u=new URL(target);if(u.origin!==new URL(MATCHES).origin)throw new Error("BAD_MATCH_TARGET");const token=await matchSession();const x=await jfetch(u.href,{headers:legacyHeaders(token)});if(!x.r.ok)throw new Error("MATCH_SERVERS_"+x.r.status);return x.data}
+function mapLibrary(items=[]){return items.map(i=>({title:i.title,img:i.image||"",is_series:i.content_type!=="movie",href:"theeb:canonical:"+i.id,year:i.year||null}))}
+function mapDiscovered(items=[]){return items.map(i=>({title:i.display_title||i.title,img:i.image||"",is_series:i.content_type!=="movie",href:"theeb:discover:"+encodeURIComponent(JSON.stringify({provider:i.provider,id:i.provider_series_id,source:i.source_url||""})),year:i.year||null}))}
 async function cinemaSearch(q){
  let x=await jfetch(THEEB+"/v1/search?q="+encodeURIComponent(q),{headers:{Accept:"application/json"}});
  let items=x.data?.data?.items||[];
- if(items.length)return{status:"success",source:"library",data:items.map(i=>({title:i.title,img:i.image||"",is_series:i.content_type!=="movie",href:"theeb:canonical:"+i.id,year:i.year||null}))};
+ if(items.length)return{status:"success",source:"library",data:mapLibrary(items)};
  x=await jfetch(THEEB+"/v1/discover?q="+encodeURIComponent(q),{headers:{Accept:"application/json"}},60000);
  items=x.data?.data?.items||[];
- return{status:"success",source:"discover",data:items.map(i=>({title:i.display_title||i.title,img:i.image||"",is_series:i.content_type!=="movie",href:"theeb:discover:"+encodeURIComponent(JSON.stringify({provider:i.provider,id:i.provider_series_id,source:i.source_url||""})),year:i.year||null}))};
+ return{status:"success",source:"discover",data:mapDiscovered(items)};
+}
+async function cinemaCategory(type,name){
+  const kind=type==="movie"?"فيلم":"مسلسل";
+  const queries=[kind+" "+name,name+" "+kind,name];
+  const seen=new Set();const merged=[];
+  for(const q of queries){
+    const x=await jfetch(THEEB+"/v1/discover?q="+encodeURIComponent(q),{headers:{Accept:"application/json"}},60000);
+    for(const item of (x.data?.data?.items||[])){
+      const key=String(item.provider||"")+":"+String(item.provider_series_id||"");
+      if(!key||seen.has(key))continue;seen.add(key);merged.push(item);
+      if(merged.length>=36)break;
+    }
+    if(merged.length>=18)break;
+  }
+  return{status:"success",source:"discover",data:mapDiscovered(merged)};
 }
 async function canonicalDetails(id){
  const [s,e]=await Promise.all([
@@ -52,6 +69,7 @@ const server=http.createServer(async(req,res)=>{
   if(u.pathname==="/api/matches")return send(res,200,await matches());
   if(u.pathname==="/api/matches/servers")return send(res,200,await matchServers(u.searchParams.get("url")||""));
   if(u.pathname==="/api/cinema/search")return send(res,200,await cinemaSearch((u.searchParams.get("q")||"").trim()));
+  if(u.pathname==="/api/cinema/category")return send(res,200,await cinemaCategory(u.searchParams.get("type")||"series",(u.searchParams.get("name")||"").trim()));
   if(u.pathname==="/api/cinema/details"){
     const ref=u.searchParams.get("ref")||"";
     if(ref.startsWith("theeb:canonical:"))return send(res,200,await canonicalDetails(ref.split(":").pop()));
