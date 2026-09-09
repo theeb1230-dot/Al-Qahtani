@@ -4,6 +4,7 @@
 GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` remains the behavioral baseline.
 
 ## Current branch
+- Active playback branch: `feat/cinema-playback-07`.
 - Active integration branch: `fix/use-alqahtani-backend-05`.
 - Active validation branch: `test/live-provider-e2e-04`.
 - Active fix branch: `fix/mobile-provider-runtime-03` based on user iPhone Safari evidence.
@@ -11,6 +12,13 @@ GitHub repository state wins over this handoff if they disagree. The original up
 - `main` now contains the provider-backed web parity surface.
 
 ## Completed in this run
+- Verified the dedicated Render backend auto-deployed merge commit `15c512bb00d7c679b2d0314fc6a63af4c26c488e` and reached live state.
+- Completed the discovered-result path by importing selected provider results through Theeb Engine `/v1/imports`, polling the public import job, then switching to canonical series details.
+- Added canonical episode playback resolution through Theeb Engine playback sessions.
+- Added `theeb:episode:<id>` handling in the Al-Qahtani backend and return a stable session media handoff instead of leaking temporary provider URLs.
+- Updated `Player.html` with a `stream` playback type for backend/Theeb media handoffs.
+- Removed the misleading direct-download action from media details; the UI now reports real download-option availability from the canonical API.
+- Extended local backend E2E coverage to test canonical details and, when a watchable sample exists, the episode playback contract.
 - PR #4 passed both static and live provider smoke tests and was merged to `main` as `7597ac37ff7409469ad1fde1788d45c758b8afba`.
 - Created and deployed a dedicated free Render backend service for this repository at `https://al-qahtani-api.onrender.com`, auto-deploying from `main`.
 - Confirmed the backend service reached live state on Render and started successfully with `node server/index.mjs`.
