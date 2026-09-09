@@ -3,13 +3,10 @@
 ## Source of truth
 GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` remains the behavioral baseline.
 
-## Current branch
-- Active playback branch: `feat/cinema-playback-07`.
-- Active integration branch: `fix/use-alqahtani-backend-05`.
-- Active validation branch: `test/live-provider-e2e-04`.
-- Active fix branch: `fix/mobile-provider-runtime-03` based on user iPhone Safari evidence.
-- PR #2 was merged to `main` as commit `40a2efeb8633c1c0c9de1ab7241b56257d7acb32` after Web smoke passed.
-- `main` now contains the provider-backed web parity surface.
+## Current state
+- PR #7 was merged to `main` as `841e6b6d41d01bdeb124b4cc86eb6673eefb7925` after Web smoke and Live provider/backend E2E passed.
+- Render auto-deployed that exact commit to `https://al-qahtani-api.onrender.com` and reported the deploy as live.
+- GitHub Pages now routes matches and cinema through the dedicated Al-Qahtani backend rather than directly depending on the locked cinema Worker.
 
 ## Completed in this run
 - Verified the dedicated Render backend auto-deployed merge commit `15c512bb00d7c679b2d0314fc6a63af4c26c488e` and reached live state.
@@ -70,35 +67,13 @@ GitHub repository state wins over this handoff if they disagree. The original up
 - Flutter migration has not started because web parity and deployment are still being proven first.
 
 ## Next run goals
-1. Run PR CI for `fix/use-alqahtani-backend-05` and inspect local backend smoke output.
-2. Fix any backend route or fallback defects revealed by CI.
-3. Merge only after Web smoke and Live provider smoke are green.
-4. Confirm Render auto-deploys the merged backend and probe its live health/match/search/category routes.
-5. Verify GitHub Pages uses the new backend and no longer fails with provider-origin errors.
-6. Complete cinema detail/episode playback through Theeb Engine canonical/discovery handoff.
-7. Add source playability validation and fallback before opening the web player.
-8. Add browser navigation smoke coverage for Safari-equivalent flows.
-9. Begin Flutter workspace only after these web runtime gates are green.
-10. Then add Android Mobile, Android TV, and unsigned iOS build/release pipelines.
-
-1. Run PR CI for the live-provider branch and inspect exact upstream failures from logs.
-2. Fix any repository-side contract/auth/request defects exposed by the live probes.
-3. Separate hard repository regressions from upstream provider outages so CI remains actionable rather than flaky.
-4. After live provider probes are green, merge and verify the GitHub Pages deployment.
-5. Add browser navigation/player smoke coverage.
-6. Add playable-source validation and fallback ordering.
-7. Document provider health telemetry and failure classes.
-8. Begin Flutter only after live web-provider parity is proven.
-9. Add Android Mobile/TV build pipelines after Flutter starts.
-10. Add unsigned iOS IPA CI and gated Releases after the mobile baseline is stable.
-
-1. Verify GitHub Pages deployment on merged `main` and confirm live `index.html`, `news.html` and `albasri-cinema.html`.
-2. Move cinema category/source configuration out of the UI into a provider/config module.
-3. Add live provider health probes with typed transport, payload and playable-source results.
-4. Add player source validation/fallback ordering before navigation.
-5. Add browser-level smoke tests for navigation and player routing.
-6. Document normalized contracts for match sessions, cinema details/episodes and news bridge messages.
-7. Add provider fallback ordering and retry telemetry.
-8. Begin Flutter workspace only after the web surface is verified live.
-9. Add Android Mobile and Android TV build pipelines.
-10. Add iOS unsigned IPA CI and gated GitHub Releases.
+1. Add remote smoke probes against the deployed Al-Qahtani Render backend, not only localhost.
+2. Add browser-level GitHub Pages navigation tests for matches, search, categories, details, episodes and player routing.
+3. Validate real match server availability across all current matches instead of sampling only one.
+4. Add playback-source health/fallback telemetry and distinguish empty server lists from transport failures.
+5. Finish user-selectable download-option opening through Theeb Engine without exposing temporary provider URLs.
+6. Improve cinema category quality/ranking and deduplication from discovery results.
+7. Add persistent lightweight caching in the Al-Qahtani backend to soften free-tier cold starts.
+8. Once web runtime gates are proven live, initialize the Flutter workspace against the same backend contract.
+9. Add Android Mobile and Android TV CI/build pipelines with TV focus/D-pad behavior.
+10. Add unsigned iOS IPA CI and gated GitHub Releases after the Flutter baseline is stable.
