@@ -59,7 +59,10 @@ async function load(){
   if(!j?.success||!Array.isArray(j.data))throw new Error('payload');
   list.innerHTML='';if(!j.data.length){list.innerHTML='<div class="state">لا توجد مباريات اليوم.</div>';return}
   j.data.forEach(m=>list.appendChild(card(m)));
- }catch(e){list.innerHTML='<div class="state">تعذر جلب المباريات حاليًا.<br><button class="retry" onclick="load()">إعادة المحاولة</button></div>'}
+ }catch(e){
+   list.innerHTML='<div class="state">تعذر جلب المباريات حاليًا.<br><button id="retryMatches" class="retry">إعادة المحاولة</button></div>';
+   document.getElementById('retryMatches')?.addEventListener('click',load);
+ }
 }
 load();
 setInterval(()=>load(),45000);
