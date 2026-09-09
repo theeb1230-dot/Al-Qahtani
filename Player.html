@@ -79,7 +79,7 @@ function play(source){
       hls.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal)statusEl.textContent='تعذر تشغيل البث';});
     }else{v.src=source.url}
     v.play().catch(()=>{});
-  }else if(source.type==='mp4'){
+  }else if(source.type==='mp4'||source.type==='stream'){
     const v=document.createElement('video');v.controls=true;v.playsInline=true;v.autoplay=true;v.src=source.url;player.appendChild(v);v.play().catch(()=>{});
   }else{
     const f=document.createElement('iframe');f.src=source.url;f.allow='autoplay; fullscreen; picture-in-picture';f.allowFullscreen=true;f.referrerPolicy='no-referrer';player.appendChild(f);
