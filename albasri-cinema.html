@@ -73,7 +73,7 @@ async function details(item){
 function addActions(data){
  const box=document.getElementById('actions');box.innerHTML='';
  const w=document.createElement('button');w.className='btn primary';w.textContent='مشاهدة';w.onclick=()=>openPlayer(data);box.appendChild(w);
- if(data.media_src&&!data.is_iframe){const d=document.createElement('a');d.className='btn';d.textContent='تحميل';d.href=data.media_src;d.target='_blank';d.rel='noopener';box.appendChild(d)}
+ if(Array.isArray(data.download_options)&&data.download_options.length){const note=document.createElement('span');note.className='badge';note.textContent='خيارات تحميل متاحة: '+data.download_options.length;box.appendChild(note)}
 }
 function renderEpisodes(){
  const box=document.getElementById('episodes');box.innerHTML='';
@@ -81,7 +81,7 @@ function renderEpisodes(){
 }
 function openPlayer(data){
  const url=data.media_src||'';if(!url){toast('لا يوجد رابط تشغيل');return}
- const type=data.is_iframe?'embed':(/\.m3u8(?:$|\?)/i.test(url)?'m3u8':(/\.mp4(?:$|\?)/i.test(url)?'mp4':'embed'));
+ const type=data.media_type|| (data.is_iframe?'embed':(/\.m3u8(?:$|\?)/i.test(url)?'m3u8':(/\.mp4(?:$|\?)/i.test(url)?'mp4':'stream')));
  location.href='Player.html?url='+encodeURIComponent(url)+'&type='+encodeURIComponent(type);
 }
 document.getElementById('searchBtn').onclick=runSearch;document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch()});
