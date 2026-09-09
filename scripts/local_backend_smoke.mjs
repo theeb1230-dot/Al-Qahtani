@@ -40,6 +40,17 @@ try{
 
   const category=await get("/api/cinema/category?type=series&name="+encodeURIComponent("أجنبية"),120000);
   ok(category.r.ok&&category.data?.status==="success"&&Array.isArray(category.data?.data),"backend cinema category",{status:category.r.status,source:category.data?.source,count:category.data?.data?.length});
+  const known=await get("/api/cinema/search?q="+encodeURIComponent("Lucky"),90000);
+  const candidate=(known.data?.data||[]).find(x=>String(x.href||"").startsWith("theeb:canonical:"));
+  if(candidate){
+    const details=await get("/api/cinema/details?ref="+encodeURIComponent(candidate.href),90000);
+    ok(details.r.ok&&details.data?.status==="success","backend canonical details",{status:details.r.status,episodes:details.data?.episodes?.length});
+    const ep=(details.data?.episodes||[]).find(x=>x.watch_available);
+    if(ep){
+      const play=await get("/api/cinema/details?ref="+encodeURIComponent(ep.link),90000);
+      ok(play.r.ok&&["success","error"].includes(play.data?.status),"backend episode playback contract",{status:play.r.status,state:play.data?.status,message:play.data?.message||"",media:Boolean(play.data?.media_src)});
+    }else console.log("SKIP episode playback: no watchable canonical episode in sample");
+  }else console.log("SKIP canonical playback sample: no canonical Lucky result");
 } finally {
   child.kill("SIGTERM");
 }
