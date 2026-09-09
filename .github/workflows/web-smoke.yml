@@ -1,0 +1,32 @@
+name: Web smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject ad-network runtime references
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RniE --exclude='AUTONOMOUS_DEVELOPMENT_STATE.md' 'highperformanceformat\.com|effectivecpmnetwork\.com' .; then
+            echo "Forbidden ad-network reference found"
+            exit 1
+          fi
+      - name: Reject obfuscated news bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f news.html ] && grep -nE 'document\.write\(|Uint8Array\.from\(atob' news.html; then
+            echo "news.html still contains the legacy obfuscated bootstrap"
+            exit 1
+          fi
+      - name: Validate provider modules syntax
+        run: |
+          node --check web/core/providers.js
+          node --check web/core/contracts.js
