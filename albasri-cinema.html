@@ -25,26 +25,27 @@
 </main>
 <div id="toast" class="toast"></div>
 <script type="module">
-import { getCinemaGenre, searchCinema, getCinemaDetails } from './web/core/api-client.js';
+import { getCinemaCategory, searchCinema, getCinemaDetails } from './web/core/api-client.js';
 import { CinemaCategories } from './web/core/catalog-config.js';
-let currentUrl='',page=1,searching=false,currentTitle='',currentPoster='',episodes=[];
+let currentType='',currentCategory='',searching=false,currentTitle='',currentPoster='',episodes=[];
 
 function view(id){document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active')}
 function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2200)}
 function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
-function renderCats(type,id){const box=document.getElementById(id);CinemaCategories[type].forEach(({title:name,url})=>{const b=document.createElement('button');b.className='cat';b.textContent=name;b.onclick=()=>loadGenre(url,(type==='series'?'مسلسلات ':'أفلام ')+name,1);box.appendChild(b)})}
+function renderCats(type,id){const box=document.getElementById(id);CinemaCategories[type].forEach(({title:name})=>{const b=document.createElement('button');b.className='cat';b.textContent=name;b.onclick=()=>loadCategory(type==='movies'?'movie':'series',name,(type==='series'?'مسلسلات ':'أفلام ')+name);box.appendChild(b)})}
 renderCats('series','seriesCats');renderCats('movies','movieCats');
 
-async function loadGenre(url,title,p=1){
- if(p===1){currentUrl=url;page=1;searching=false;document.getElementById('mediaGrid').innerHTML='<div class="state">جاري تحميل المحتوى…</div>';document.getElementById('gridTitle').textContent=title;view('gridView')}
- const r=await getCinemaGenre(url,p);const data=r.data;
+async function loadCategory(type,name,title){
+ currentType=type;currentCategory=name;searching=false;
+ document.getElementById('mediaGrid').innerHTML='<div class="state">جاري تحميل المحتوى… قد يستغرق أول طلب عدة ثوانٍ إذا كان الخادم نائمًا.</div>';
+ document.getElementById('gridTitle').textContent=title;document.getElementById('moreBtn').hidden=true;view('gridView');
+ const r=await getCinemaCategory(type,name);const data=r.data;
+ document.getElementById('mediaGrid').innerHTML='';
  if(!data||data.status!=='success'){
-   if(p===1)document.getElementById('mediaGrid').innerHTML='<div class="state">تعذر الوصول إلى مصدر الأفلام والمسلسلات حاليًا.<br>جرّب إعادة فتح التصنيف بعد قليل.</div>';
+   document.getElementById('mediaGrid').innerHTML='<div class="state">تعذر الوصول إلى مصدر الأفلام والمسلسلات حاليًا.<br>أعد فتح التصنيف بعد قليل.</div>';
    toast('تعذر تحميل التصنيف');return
  }
- if(p===1)document.getElementById('mediaGrid').innerHTML='';
  renderItems(Array.isArray(data.data)?data.data:[]);
- document.getElementById('moreBtn').hidden=!(data.data&&data.data.length);
 }
 function renderItems(items){
  const grid=document.getElementById('mediaGrid');
@@ -85,7 +86,7 @@ function openPlayer(data){
 }
 document.getElementById('searchBtn').onclick=runSearch;document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch()});
 document.getElementById('homeBtn').onclick=()=>{document.getElementById('q').value='';view('homeView')};document.getElementById('backBtn').onclick=()=>view('gridView');
-document.getElementById('moreBtn').onclick=()=>{if(!searching)loadGenre(currentUrl,document.getElementById('gridTitle').textContent,++page)};
+document.getElementById('moreBtn').onclick=()=>{if(!searching&&currentCategory)loadCategory(currentType,currentCategory,document.getElementById('gridTitle').textContent)};
 </script>
 </body>
 </html>
