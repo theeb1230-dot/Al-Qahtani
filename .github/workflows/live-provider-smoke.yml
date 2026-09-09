@@ -1,0 +1,17 @@
+name: Live provider smoke
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  provider-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Probe matches, cinema, search, details and news
+        run: node scripts/live_provider_smoke.mjs

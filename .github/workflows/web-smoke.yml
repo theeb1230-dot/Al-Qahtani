@@ -80,6 +80,9 @@ jobs:
           node --check web/core/providers.js
           node --check web/core/contracts.js
           node --check web/core/api-client.js
+          node --check web/core/catalog-config.js
+          node --check scripts/live_provider_smoke.mjs
+          node --check server/index.mjs
 
       - name: Guard provider auth headers and module retry
         shell: bash
