@@ -83,6 +83,7 @@ jobs:
           node --check web/core/catalog-config.js
           node --check scripts/live_provider_smoke.mjs
           node --check server/index.mjs
+          node --check scripts/local_backend_smoke.mjs
 
       - name: Guard provider auth headers and module retry
         shell: bash
