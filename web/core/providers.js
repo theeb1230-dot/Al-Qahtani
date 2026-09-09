@@ -34,14 +34,14 @@ export async function fetchJsonWithHealth(url, {
   const startedAt = performance.now();
 
   try {
+    const headers = new Headers(init.headers || {});
+    if (!headers.has("Accept")) headers.set("Accept", "application/json");
+
     const response = await fetch(url, {
       ...init,
       cache: "no-store",
       signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        ...(init.headers || {}),
-      },
+      headers,
     });
 
     if (!response.ok) {
