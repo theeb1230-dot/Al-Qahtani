@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Reject ad-network runtime references
         shell: bash
         run: |
@@ -18,6 +19,7 @@ jobs:
             echo "Forbidden ad-network reference found"
             exit 1
           fi
+
       - name: Reject obfuscated news bootstrap
         shell: bash
         run: |
@@ -26,7 +28,31 @@ jobs:
             echo "news.html still contains the legacy obfuscated bootstrap"
             exit 1
           fi
+
+      - name: Guard web-native player
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f Player.html
+          grep -q "hls.js" Player.html
+          if grep -n 'com\.bsr\.player\.pro' Player.html; then
+            echo "Player.html must not open the legacy Android package"
+            exit 1
+          fi
+
+      - name: Guard independent hosting
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f albasri-cinema.html ] && grep -nE 'ALLOWED_HOST|albasritv\.abrdns\.com' albasri-cinema.html; then
+            echo "Cinema page is still locked to the old host"
+            exit 1
+          fi
+
       - name: Validate provider modules syntax
         run: |
           node --check web/core/providers.js
           node --check web/core/contracts.js
+
+      - name: Validate migration tooling
+        run: python -m py_compile scripts/prepare_clean_web.py
