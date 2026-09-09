@@ -4,12 +4,22 @@
 GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` remains the behavioral baseline.
 
 ## Current branch
+- Active integration branch: `fix/use-alqahtani-backend-05`.
 - Active validation branch: `test/live-provider-e2e-04`.
 - Active fix branch: `fix/mobile-provider-runtime-03` based on user iPhone Safari evidence.
 - PR #2 was merged to `main` as commit `40a2efeb8633c1c0c9de1ab7241b56257d7acb32` after Web smoke passed.
 - `main` now contains the provider-backed web parity surface.
 
 ## Completed in this run
+- PR #4 passed both static and live provider smoke tests and was merged to `main` as `7597ac37ff7409469ad1fde1788d45c758b8afba`.
+- Created and deployed a dedicated free Render backend service for this repository at `https://al-qahtani-api.onrender.com`, auto-deploying from `main`.
+- Confirmed the backend service reached live state on Render and started successfully with `node server/index.mjs`.
+- Added backend routes for match list/server discovery that server-side the legacy Worker origin requirements.
+- Added cinema search fallback through Theeb Engine `/v1/search` then `/v1/discover` when the local canonical library has no result.
+- Added cinema category discovery fallback so category buttons no longer depend on the locked legacy cinema Worker.
+- Refactored `web/core/api-client.js` so matches and cinema use the dedicated Al-Qahtani backend instead of direct legacy Workers.
+- Refactored the cinema UI to request category type/name rather than expose raw Akwam category URLs.
+- Added `scripts/local_backend_smoke.mjs` and wired it into CI to boot the backend from the PR source and test health, matches, cinema search and cinema category routes end to end.
 - PR #3 passed all Web smoke gates and was merged to `main` as `fd40c883e5a56e2d1f55637f6e9b36a85a531fd6`.
 - Added `web/core/catalog-config.js` and moved cinema category/source configuration out of `albasri-cinema.html`.
 - Added `scripts/live_provider_smoke.mjs` to probe match session/list/server discovery, cinema session/category/search/details, and the news JSON endpoint using the inherited production Workers.
@@ -52,6 +62,17 @@ GitHub repository state wins over this handoff if they disagree. The original up
 - Flutter migration has not started because web parity and deployment are still being proven first.
 
 ## Next run goals
+1. Run PR CI for `fix/use-alqahtani-backend-05` and inspect local backend smoke output.
+2. Fix any backend route or fallback defects revealed by CI.
+3. Merge only after Web smoke and Live provider smoke are green.
+4. Confirm Render auto-deploys the merged backend and probe its live health/match/search/category routes.
+5. Verify GitHub Pages uses the new backend and no longer fails with provider-origin errors.
+6. Complete cinema detail/episode playback through Theeb Engine canonical/discovery handoff.
+7. Add source playability validation and fallback before opening the web player.
+8. Add browser navigation smoke coverage for Safari-equivalent flows.
+9. Begin Flutter workspace only after these web runtime gates are green.
+10. Then add Android Mobile, Android TV, and unsigned iOS build/release pipelines.
+
 1. Run PR CI for the live-provider branch and inspect exact upstream failures from logs.
 2. Fix any repository-side contract/auth/request defects exposed by the live probes.
 3. Separate hard repository regressions from upstream provider outages so CI remains actionable rather than flaky.
