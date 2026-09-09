@@ -62,6 +62,7 @@ async function load(){
  }catch(e){list.innerHTML='<div class="state">تعذر جلب المباريات حاليًا.<br><button class="retry" onclick="load()">إعادة المحاولة</button></div>'}
 }
 load();
+setInterval(()=>load(),45000);
 </script>
 </body>
 </html>
