@@ -49,10 +49,37 @@ jobs:
             exit 1
           fi
 
+      - name: Require migrated web surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in index.html Player.html news.html albasri-cinema.html basrimatches.html bsr-Player.html sitemap.xml; do
+            test -s "$f" || { echo "Missing required web file: $f"; exit 1; }
+          done
+
+      - name: Keep Worker endpoints out of UI files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -nE 'https://[^"[:space:]]*workers\.dev' index.html news.html albasri-cinema.html Player.html bsr-Player.html basrimatches.html; then
+            echo "Worker endpoint leaked into UI file; keep it in web/core/api-client.js"
+            exit 1
+          fi
+
+      - name: Reject legacy Android package everywhere in public web
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -n 'com\.bsr\.player\.pro' index.html Player.html news.html albasri-cinema.html bsr-Player.html basrimatches.html; then
+            echo "Legacy Android package reference remains in public web"
+            exit 1
+          fi
+
       - name: Validate provider modules syntax
         run: |
           node --check web/core/providers.js
           node --check web/core/contracts.js
+          node --check web/core/api-client.js
 
       - name: Validate migration tooling
         run: python -m py_compile scripts/prepare_clean_web.py

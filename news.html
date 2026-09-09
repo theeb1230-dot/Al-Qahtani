@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#07111f">
+<title>الأخبار | Al-Qahtani</title>
+<style>
+:root{color-scheme:dark;--bg:#07111f;--panel:#0d1b2c;--line:#ffffff14;--text:#fff;--muted:#94a8bd;--accent:#22d3ee}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Tahoma,Arial,sans-serif}.wrap{max-width:1100px;margin:auto;padding:16px}header{position:sticky;top:0;z-index:5;background:#07111fe8;backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}header .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px}a{color:#fff;text-decoration:none}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.card{background:var(--panel);border:1px solid var(--line);border-radius:15px;overflow:hidden;cursor:pointer}.card img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#111}.body{padding:10px}.date{font-size:10px;color:var(--muted)}.title{font-weight:800;line-height:1.5;margin-top:5px}.desc{font-size:12px;line-height:1.6;color:var(--muted);margin-top:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.state{text-align:center;color:var(--muted);padding:30px}.retry,.back{border:0;background:#17314a;color:#fff;padding:10px 13px;border-radius:10px;cursor:pointer}.article{display:none;max-width:850px;margin:auto;padding:18px}.article.show{display:block}.article img{width:100%;max-height:470px;object-fit:cover;border-radius:16px}.article h1{line-height:1.55}.article p{line-height:2;color:#e9f0f7}.count{color:var(--muted);font-size:13px;margin:12px 0}.sentinel{height:24px}iframe{position:fixed;width:1px;height:1px;opacity:.001;pointer-events:none;left:-10px;bottom:-10px}
+@media(max-width:680px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.title{font-size:12px}.desc{font-size:10px}}@media(max-width:390px){.grid{gap:7px}.body{padding:7px}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><strong>الأخبار</strong><a href="./">العودة للمباريات</a></div></header>
+<main id="home" class="wrap">
+  <div id="count" class="count">0 خبر</div>
+  <section id="grid" class="grid"></section>
+  <div id="state" class="state">جاري تجهيز مصدر الأخبار…</div>
+  <div id="sentinel" class="sentinel"></div>
+</main>
+<main id="article" class="article">
+  <button id="back" class="back">← الرجوع إلى الأخبار</button>
+  <div id="articleState" class="state">جاري التحميل…</div>
+  <div id="articleData" hidden><h1 id="articleTitle"></h1><div id="articleDate" class="date"></div><img id="articleImage" alt=""><div id="articleContent"></div></div>
+</main>
+<iframe id="sourceFrame" title="مصدر الأخبار" aria-hidden="true"></iframe>
+<script type="module">
+import { ProviderEndpoints, getNewsArticle } from './web/core/api-client.js';
+
+const API_URL=ProviderEndpoints.news, WORKER_ORIGIN=new URL(API_URL).origin;
+const grid=document.getElementById('grid'), state=document.getElementById('state'), count=document.getElementById('count');
+const home=document.getElementById('home'), article=document.getElementById('article'), sourceFrame=document.getElementById('sourceFrame');
+const seen=new Set(); let total=0,ready=false,loading=false,ended=false;
+
+function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+function setState(t,retry=false){state.innerHTML=esc(t)+(retry?'<br><button id="retry" class="retry">إعادة المحاولة</button>':'');if(retry)document.getElementById('retry').onclick=()=>ready?loadMore():loadSource()}
+function append(items){
+ let added=0;
+ for(const item of Array.isArray(items)?items:[]){
+   if(!item?.url||seen.has(item.url))continue; seen.add(item.url); total++; added++;
+   const card=document.createElement('article');card.className='card';
+   card.innerHTML='<img loading="lazy" src="'+esc(item.image||'')+'" alt=""><div class="body"><div class="date">'+esc(item.date||'')+'</div><div class="title">'+esc(item.title||'بدون عنوان')+'</div><div class="desc">'+esc(item.description||'')+'</div></div>';
+   card.onclick=()=>openArticle(item);grid.appendChild(card);
+ }
+ count.textContent=total+' خبر';return added;
+}
+function loadSource(){ready=false;ended=false;loading=false;setState('جاري تجهيز مصدر الأخبار…');sourceFrame.src=API_URL+'?action=source&_='+Date.now()}
+function loadMore(){if(!ready||loading||ended)return;loading=true;setState('جاري تحميل المزيد…');sourceFrame.contentWindow.postMessage({type:'YS_LOAD_MORE'},WORKER_ORIGIN)}
+window.addEventListener('message',e=>{
+ if(e.origin!==WORKER_ORIGIN||e.source!==sourceFrame.contentWindow)return;
+ const d=e.data||{};if(d.bridge!=='YS_NEWS_BRIDGE')return;
+ if(d.type==='ready'||d.type==='update'){ready=true;loading=false;const a=append(d.items);if(d.hasMore===false){ended=true;setState('وصلت إلى نهاية الأخبار.')}else if(total===0&&a===0)setState('المصدر فتح لكن لم تصل أخبار.',true);else setState('انزل للأسفل لتحميل المزيد.')}
+ else if(d.type==='end'){append(d.items);ended=true;loading=false;setState('وصلت إلى نهاية الأخبار.')}
+ else if(d.type==='error'){loading=false;setState('تعذر تحميل المزيد مؤقتًا.',true)}
+});
+new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting))loadMore()},{rootMargin:'1000px'}).observe(document.getElementById('sentinel'));
+
+async function openArticle(item){
+ home.style.display='none';article.classList.add('show');document.getElementById('articleData').hidden=true;document.getElementById('articleState').style.display='block';
+ const result=await getNewsArticle(item.url);const data=result.data?.data;
+ if(!data){document.getElementById('articleState').textContent='تعذر تحميل تفاصيل الخبر.';return}
+ document.getElementById('articleTitle').textContent=data.title||item.title||'';
+ document.getElementById('articleDate').textContent=data.date||item.date||'';
+ document.getElementById('articleImage').src=data.image||item.image||'';
+ const c=document.getElementById('articleContent');c.innerHTML='';
+ const ps=Array.isArray(data.paragraphs)?data.paragraphs:[data.content_text||item.description||''];
+ ps.filter(Boolean).forEach(t=>{const p=document.createElement('p');p.textContent=t;c.appendChild(p)});
+ document.getElementById('articleState').style.display='none';document.getElementById('articleData').hidden=false;scrollTo(0,0);
+}
+document.getElementById('back').onclick=()=>{article.classList.remove('show');home.style.display='block';scrollTo(0,0)};
+loadSource();
+</script>
+</body>
+</html>

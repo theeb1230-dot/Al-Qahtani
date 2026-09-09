@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#07111f">
+<title>الأفلام والمسلسلات | Al-Qahtani</title>
+<style>
+:root{color-scheme:dark;--bg:#07111f;--panel:#0d1b2c;--panel2:#132238;--line:#ffffff14;--muted:#94a8bd;--accent:#22d3ee}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#fff;font-family:Tahoma,Arial,sans-serif}.wrap{max-width:1100px;margin:auto;padding:16px}header{position:sticky;top:0;z-index:10;background:#07111feb;backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}header .wrap{display:flex;align-items:center;gap:10px}.search{display:flex;gap:8px;flex:1}.search input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);color:#fff;border-radius:12px;padding:12px}.btn{border:0;border-radius:11px;padding:10px 13px;background:#17314a;color:#fff;cursor:pointer}.btn.primary{background:var(--accent);color:#031419;font-weight:800}.section{margin:18px 0}.section h2{font-size:1rem}.cats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}.cat{background:var(--panel);border:1px solid var(--line);color:#fff;border-radius:14px;padding:14px 8px;cursor:pointer}.grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.item{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer}.item img{width:100%;aspect-ratio:2/3;object-fit:cover;background:#111}.item b{display:block;padding:8px;font-size:12px;line-height:1.5}.badge{display:inline-block;color:var(--accent);font-size:10px}.state{padding:32px;text-align:center;color:var(--muted)}.view{display:none}.view.active{display:block}.hero{display:grid;grid-template-columns:110px 1fr;gap:14px;align-items:start;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px}.hero img{width:110px;aspect-ratio:2/3;object-fit:cover;border-radius:12px;background:#111}.episodes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}.ep{border:1px solid var(--line);background:var(--panel2);color:#fff;border-radius:11px;padding:11px;cursor:pointer}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.more{display:block;margin:16px auto}.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#111d2d;border:1px solid var(--line);padding:10px 14px;border-radius:10px;display:none;z-index:20}
+@media(max-width:760px){.cats{grid-template-columns:repeat(3,1fr)}.grid{grid-template-columns:repeat(3,1fr)}.episodes{grid-template-columns:repeat(2,1fr)}}@media(max-width:420px){.grid{grid-template-columns:repeat(2,1fr)}.hero{grid-template-columns:82px 1fr}.hero img{width:82px}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><button class="btn" id="homeBtn">الرئيسية</button><div class="search"><input id="q" type="search" placeholder="ابحث عن فيلم أو مسلسل"><button class="btn primary" id="searchBtn">بحث</button></div></div></header>
+<main class="wrap">
+<section id="homeView" class="view active">
+  <div class="section"><h2>المسلسلات</h2><div id="seriesCats" class="cats"></div></div>
+  <div class="section"><h2>الأفلام</h2><div id="movieCats" class="cats"></div></div>
+</section>
+<section id="gridView" class="view"><h2 id="gridTitle"></h2><div id="mediaGrid" class="grid"></div><button id="moreBtn" class="btn more" hidden>تحميل المزيد</button></section>
+<section id="detailsView" class="view">
+  <button id="backBtn" class="btn">← رجوع</button>
+  <div class="hero"><img id="poster" alt=""><div><span id="kind" class="badge"></span><h1 id="title">...</h1><div id="detailsState" class="state">جاري التحميل…</div><div id="actions" class="actions"></div></div></div>
+  <div id="episodesWrap" class="section" hidden><h2 id="episodesTitle">الحلقات</h2><div id="episodes" class="episodes"></div></div>
+</section>
+</main>
+<div id="toast" class="toast"></div>
+<script type="module">
+import { getCinemaGenre, searchCinema, getCinemaDetails } from './web/core/api-client.js';
+
+const CATS={series:[
+['أجنبية','https://akwam.ss/series?section=30'],['عربية','https://akwam.ss/series?section=29'],['تركية','https://akwam.ss/series?section=32'],['آسيوية','https://akwam.ss/series?section=33'],['أنمي','https://akwam.ss/series?category=30'],['رمضان','https://akwam.ss/series?category=87']
+],movies:[
+['أجنبية','https://akwam.ss/movies?section=30'],['عربية','https://akwam.ss/movies?section=29'],['هندية','https://akwam.ss/movies?section=31'],['آسيوية','https://akwam.ss/movies?section=33'],['تركية','https://akwam.ss/movies?section=32'],['أنمي','https://akwam.ss/movies?category=30']
+]};
+let currentUrl='',page=1,searching=false,currentTitle='',currentPoster='',episodes=[];
+
+function view(id){document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active')}
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2200)}
+function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+function renderCats(type,id){const box=document.getElementById(id);CATS[type].forEach(([name,url])=>{const b=document.createElement('button');b.className='cat';b.textContent=name;b.onclick=()=>loadGenre(url,(type==='series'?'مسلسلات ':'أفلام ')+name,1);box.appendChild(b)})}
+renderCats('series','seriesCats');renderCats('movies','movieCats');
+
+async function loadGenre(url,title,p=1){
+ if(p===1){currentUrl=url;page=1;searching=false;document.getElementById('mediaGrid').innerHTML='';document.getElementById('gridTitle').textContent=title;view('gridView')}
+ const r=await getCinemaGenre(url,p);const data=r.data;
+ if(!data||data.status!=='success'){toast('تعذر تحميل التصنيف');return}
+ renderItems(Array.isArray(data.data)?data.data:[]);
+ document.getElementById('moreBtn').hidden=!(data.data&&data.data.length);
+}
+function renderItems(items){
+ const grid=document.getElementById('mediaGrid');
+ if(!items.length&&!grid.children.length){grid.innerHTML='<div class="state">لا توجد نتائج.</div>';return}
+ for(const item of items){const el=document.createElement('article');el.className='item';el.innerHTML='<img loading="lazy" referrerpolicy="no-referrer" src="'+esc(item.img||'')+'" alt=""><b><span class="badge">'+(item.is_series?'مسلسل':'فيلم')+'</span><br>'+esc(item.title||'بدون عنوان')+'</b>';el.onclick=()=>details(item);grid.appendChild(el)}
+}
+async function runSearch(){
+ const q=document.getElementById('q').value.trim();if(!q)return;searching=true;document.getElementById('gridTitle').textContent='نتائج البحث: '+q;document.getElementById('mediaGrid').innerHTML='';document.getElementById('moreBtn').hidden=true;view('gridView');
+ const r=await searchCinema(q);const data=r.data;if(data?.status==='success')renderItems(Array.isArray(data.data)?data.data:[]);else toast('تعذر البحث');
+}
+async function details(item){
+ currentTitle=item.title||'';currentPoster=item.img||'';episodes=[];view('detailsView');
+ document.getElementById('title').textContent='جاري التحميل...';document.getElementById('poster').src=currentPoster;document.getElementById('kind').textContent=item.is_series?'مسلسل':'فيلم';document.getElementById('actions').innerHTML='';document.getElementById('episodesWrap').hidden=true;document.getElementById('detailsState').style.display='block';
+ const r=await getCinemaDetails(item.href);const data=r.data;
+ if(!data||data.status!=='success'){document.getElementById('title').textContent='تعذر تحميل التفاصيل';return}
+ currentTitle=data.movie_title||currentTitle||'التفاصيل';document.getElementById('title').textContent=currentTitle;document.getElementById('detailsState').style.display='none';
+ episodes=Array.isArray(data.episodes)?data.episodes:[];
+ if(data.media_src||data.is_iframe)addActions(data);
+ if(episodes.length){document.getElementById('episodesWrap').hidden=false;document.getElementById('episodesTitle').textContent='الحلقات ('+episodes.length+')';renderEpisodes()}
+}
+function addActions(data){
+ const box=document.getElementById('actions');box.innerHTML='';
+ const w=document.createElement('button');w.className='btn primary';w.textContent='مشاهدة';w.onclick=()=>openPlayer(data);box.appendChild(w);
+ if(data.media_src&&!data.is_iframe){const d=document.createElement('a');d.className='btn';d.textContent='تحميل';d.href=data.media_src;d.target='_blank';d.rel='noopener';box.appendChild(d)}
+}
+function renderEpisodes(){
+ const box=document.getElementById('episodes');box.innerHTML='';
+ episodes.forEach(ep=>{const b=document.createElement('button');b.className='ep';b.textContent='الحلقة '+ep.num;b.onclick=async()=>{toast('جاري تجهيز الحلقة '+ep.num);const r=await getCinemaDetails(ep.link);if(r.data?.status==='success')openPlayer(r.data);else toast('تعذر تجهيز الحلقة')};box.appendChild(b)})
+}
+function openPlayer(data){
+ const url=data.media_src||'';if(!url){toast('لا يوجد رابط تشغيل');return}
+ const type=data.is_iframe?'embed':(/\.m3u8(?:$|\?)/i.test(url)?'m3u8':(/\.mp4(?:$|\?)/i.test(url)?'mp4':'embed'));
+ location.href='Player.html?url='+encodeURIComponent(url)+'&type='+encodeURIComponent(type);
+}
+document.getElementById('searchBtn').onclick=runSearch;document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch()});
+document.getElementById('homeBtn').onclick=()=>{document.getElementById('q').value='';view('homeView')};document.getElementById('backBtn').onclick=()=>view('gridView');
+document.getElementById('moreBtn').onclick=()=>{if(!searching)loadGenre(currentUrl,document.getElementById('gridTitle').textContent,++page)};
+</script>
+</body>
+</html>

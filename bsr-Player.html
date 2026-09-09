@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>أداة روابط المشغل</title>
+<style>body{margin:0;background:#07111f;color:#fff;font-family:Tahoma,Arial,sans-serif}.box{max-width:720px;margin:40px auto;padding:20px}.card{background:#0d1b2c;border:1px solid #ffffff18;border-radius:16px;padding:18px}label{display:block;margin:12px 0 6px;color:#9fb1c4}input,select,textarea{width:100%;box-sizing:border-box;background:#07111f;color:#fff;border:1px solid #ffffff20;border-radius:10px;padding:11px}button{margin-top:14px;border:0;border-radius:10px;padding:11px 14px;background:#22d3ee;color:#031419;font-weight:800}.note{color:#9fb1c4;line-height:1.7}</style></head>
+<body><main class="box"><div class="card"><h1>أداة روابط المشغل</h1><p class="note">هذه الأداة بديل آمن لمولّد Intent القديم. الرابط الناتج يفتح Player.html داخل الويب مباشرة ولا يعتمد على تطبيق Android خارجي.</p>
+<label>رابط البث</label><input id="url" type="url" placeholder="https://...">
+<label>نوع المصدر</label><select id="type"><option value="">تلقائي</option><option value="m3u8">HLS / m3u8</option><option value="mp4">MP4</option><option value="embed">Embed</option></select>
+<button id="make">إنشاء رابط</button><label>الرابط الناتج</label><textarea id="out" rows="4" readonly></textarea></div></main>
+<script>document.getElementById('make').onclick=()=>{const u=document.getElementById('url').value.trim();const t=document.getElementById('type').value;if(!u)return;const q=new URLSearchParams({url:u});if(t)q.set('type',t);document.getElementById('out').value=new URL('Player.html?'+q,location.href).href}</script></body></html>

@@ -1,44 +1,49 @@
 # Autonomous Development State
 
 ## Source of truth
-GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` is the behavioral baseline.
+GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` remains the behavioral baseline.
 
 ## Current branch
-- Active development branch: `migration/web-parity-01`
-- Main remains the stable baseline until the PR gates are green.
+- Active development branch: `migration/web-parity-02`
+- Previous PR #1 was merged to `main` as commit `0d82c32d2c4fb66d869c2124534ae8033ac024a2`.
 
 ## Completed in this run
-- Re-audited the current GitHub repository and confirmed only `main` existed before this run.
-- Confirmed the repository documentation was ahead of the actual web files: core provider modules existed, but the migrated HTML pages were not yet present on GitHub.
-- Re-inspected the original uploaded archive and confirmed it contains 9 files.
-- Confirmed ad-network references are in the original `index.html` and the legacy Android package is referenced by `Player.html` / `bsr-Player.html`.
-- Added a web-native `Player.html` that supports direct HLS, MP4 and embed playback.
-- Added temporary compatibility decoding for legacy `intent?data=...` payloads without launching `com.bsr.player.pro`.
-- Added `scripts/prepare_clean_web.py` to make the cleanup reproducible from the original extracted archive instead of relying on one-off manual edits.
-- Strengthened `.github/workflows/web-smoke.yml` to reject ad domains, obfuscated news bootstrap, legacy package coupling in `Player.html`, and the old cinema host lock.
-- Preserved `bsr-Player.html` as a temporary migration utility until equivalent behavior is proven in the new web-native flow.
+- Re-audited current `main`, branches, recent commits, CI configuration and migration state before making changes.
+- Confirmed the migrated web surface on `main` still lacked `news.html`, `albasri-cinema.html`, `basrimatches.html`, `bsr-Player.html` and `sitemap.xml`.
+- Re-inspected the original uploaded archive to preserve behavior rather than replacing pages from memory.
+- Centralized inherited Worker endpoints in `web/core/api-client.js` so UI files no longer need direct `workers.dev` URLs.
+- Added match session handling, token refresh on HTTP 401 and direct fallback in the provider client.
+- Refactored `index.html` to use the provider client and preserved the original 45-second match refresh cadence.
+- Added a readable `news.html` using the original source bridge/pagination behavior and provider-backed article loading.
+- Restored `albasri-cinema.html` with category browsing, search, media details, episode listing, watch and download actions.
+- Added token-aware cinema provider methods for genre, search and series/details requests.
+- Replaced the legacy `bsr-Player.html` Intent generator with a web-player URL generator that does not target `com.bsr.player.pro`.
+- Consolidated the old structured matches URL through `basrimatches.html` into the provider-backed home while keeping session and refresh behavior in the new path.
+- Added cinema/media payload contracts and normalization helpers.
+- Added `sitemap.xml` and `robots.txt` pointing at the Al-Qahtani GitHub Pages site.
+- Added explicit GitHub Pages deployment workflow and `.nojekyll`.
+- Strengthened Web smoke gates to require all migrated web pages, reject Worker URLs in UI files and reject the legacy Android package across the public web surface.
 
-## Verified original archive findings
-- `index.html`: direct ad network scripts plus an advertising `window.open()` during server selection.
-- `news.html`: XOR/base64 bootstrap that expands to a readable news page using `news.albesriali03.workers.dev`.
-- `Player.html`: legacy app bridge targeting `com.bsr.player.pro`.
-- `bsr-Player.html`: payload/Intent generator for the same legacy app.
-- `basrimatches.html`: structured match/session flow with HLS/embed handling; preserve this behavior when unifying.
-- `albasri-cinema.html`: cinema Worker plus old-host authorization lock; preserve cinema functionality while removing the lock.
+## Preserved original behavior
+- Matches: session acquisition, token refresh, server discovery, HLS/MP4/embed playback, periodic refresh.
+- News: source iframe bridge, incremental loading, article detail retrieval.
+- Cinema: category browsing, search, details, episodes, watch and download entry points.
+- Legacy player utility: retained as a compatibility tool, but it now creates web-player links instead of Android Intents.
 
-## Current limitations
-- The large cleaned HTML pages from the original archive are prepared locally during this run but are not all committed to GitHub yet.
-- GitHub Actions returned no push-associated workflow run for the previous baseline commit through the available connector endpoint, so no green claim is made for that baseline.
-- External provider liveness/playability is not yet proven by CI; static gates only protect repository structure and known regressions.
+## Known limitations
+- Provider liveness/playability is still dependent on inherited Workers and upstream sources; repository CI currently verifies static behavior and structure, not every live stream.
+- Cinema category URLs inherited from the original source are still represented in the web page and should be moved behind provider configuration in a later pass.
+- Download behavior is a browser-level direct-link action; platform-specific download management will be implemented in Flutter later.
+- Flutter migration has not started because web parity and deployment are still being proven first.
 
 ## Next run goals
-1. Commit the cleaned `index.html`, decoded `news.html`, `basrimatches.html`, unlocked `albasri-cinema.html`, and compatibility `bsr-Player.html` into the active migration branch.
-2. Update `sitemap.xml` to the Al-Qahtani GitHub Pages path.
-3. Route UI fetches through provider modules instead of adding new Worker URLs to page code.
-4. Expand normalized contracts for cinema search/details/episodes and match session/server payloads.
-5. Add player source validation and typed playable-source failure states.
-6. Add a GitHub Pages deployment workflow after static parity files are present.
-7. Run/inspect PR CI and fix failures on the same branch.
-8. Merge only after web parity gates are green.
-9. Start the Flutter workspace only after the web behavior is testable end-to-end.
-10. Add Android Mobile, Android TV and iOS build/release pipelines incrementally after Flutter parity begins.
+1. Run and inspect PR CI for `migration/web-parity-02`; repair any failures on the same branch.
+2. Merge only after Web smoke gates are green.
+3. Verify GitHub Pages deployment workflow on merged `main` and confirm the live site serves `index.html`, `news.html` and `albasri-cinema.html`.
+4. Move cinema category/source configuration out of the UI into a provider/config module.
+5. Add live provider health probes with typed transport, payload and playable-source results.
+6. Add player source validation/fallback ordering before navigation.
+7. Add browser-level smoke tests for navigation and player routing.
+8. Document normalized contracts for match sessions, cinema details/episodes and news bridge messages.
+9. Begin Flutter workspace only after the web surface is verified live.
+10. Then add Android Mobile, Android TV and iOS build/release pipelines incrementally.
