@@ -81,5 +81,16 @@ jobs:
           node --check web/core/contracts.js
           node --check web/core/api-client.js
 
+      - name: Guard provider auth headers and module retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'new Headers(init.headers' web/core/providers.js
+          grep -q "retryMatches.*class=.retry" index.html
+          if grep -q 'onclick="load()"' index.html; then
+            echo "Inline retry cannot call module-scoped load()"
+            exit 1
+          fi
+
       - name: Validate migration tooling
         run: python -m py_compile scripts/prepare_clean_web.py

@@ -24,7 +24,7 @@
 </main>
 <iframe id="sourceFrame" title="مصدر الأخبار" aria-hidden="true"></iframe>
 <script type="module">
-import { ProviderEndpoints, getNewsArticle } from './web/core/api-client.js';
+import { ProviderEndpoints, getNewsList, getNewsArticle } from './web/core/api-client.js';
 
 const API_URL=ProviderEndpoints.news, WORKER_ORIGIN=new URL(API_URL).origin;
 const grid=document.getElementById('grid'), state=document.getElementById('state'), count=document.getElementById('count');
@@ -43,7 +43,23 @@ function append(items){
  }
  count.textContent=total+' خبر';return added;
 }
-function loadSource(){ready=false;ended=false;loading=false;setState('جاري تجهيز مصدر الأخبار…');sourceFrame.src=API_URL+'?action=source&_='+Date.now()}
+async function loadSource(){
+ ready=false;ended=false;loading=false;setState('جاري تحميل الأخبار…');
+ try{
+   const result=await getNewsList();
+   const payload=result?.data;
+   const items=Array.isArray(payload?.data)?payload.data:(Array.isArray(payload?.items)?payload.items:[]);
+   if(items.length){
+     append(items);ready=true;
+     if(payload.hasMore===false){ended=true;setState('وصلت إلى نهاية الأخبار.');}
+     else setState('اسحب للأسفل أو تابع التصفح لتحميل المزيد.');
+     return;
+   }
+ }catch(_){}
+ // Compatibility fallback for the inherited source bridge.
+ sourceFrame.src=API_URL+'?action=source&_='+Date.now();
+ setTimeout(()=>{if(!ready&&total===0)setState('تعذر الوصول لمصدر الأخبار. أعد المحاولة.',true)},10000);
+}
 function loadMore(){if(!ready||loading||ended)return;loading=true;setState('جاري تحميل المزيد…');sourceFrame.contentWindow.postMessage({type:'YS_LOAD_MORE'},WORKER_ORIGIN)}
 window.addEventListener('message',e=>{
  if(e.origin!==WORKER_ORIGIN||e.source!==sourceFrame.contentWindow)return;

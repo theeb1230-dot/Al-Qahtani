@@ -41,9 +41,13 @@ function renderCats(type,id){const box=document.getElementById(id);CATS[type].fo
 renderCats('series','seriesCats');renderCats('movies','movieCats');
 
 async function loadGenre(url,title,p=1){
- if(p===1){currentUrl=url;page=1;searching=false;document.getElementById('mediaGrid').innerHTML='';document.getElementById('gridTitle').textContent=title;view('gridView')}
+ if(p===1){currentUrl=url;page=1;searching=false;document.getElementById('mediaGrid').innerHTML='<div class="state">جاري تحميل المحتوى…</div>';document.getElementById('gridTitle').textContent=title;view('gridView')}
  const r=await getCinemaGenre(url,p);const data=r.data;
- if(!data||data.status!=='success'){toast('تعذر تحميل التصنيف');return}
+ if(!data||data.status!=='success'){
+   if(p===1)document.getElementById('mediaGrid').innerHTML='<div class="state">تعذر الوصول إلى مصدر الأفلام والمسلسلات حاليًا.<br>جرّب إعادة فتح التصنيف بعد قليل.</div>';
+   toast('تعذر تحميل التصنيف');return
+ }
+ if(p===1)document.getElementById('mediaGrid').innerHTML='';
  renderItems(Array.isArray(data.data)?data.data:[]);
  document.getElementById('moreBtn').hidden=!(data.data&&data.data.length);
 }
@@ -54,13 +58,17 @@ function renderItems(items){
 }
 async function runSearch(){
  const q=document.getElementById('q').value.trim();if(!q)return;searching=true;document.getElementById('gridTitle').textContent='نتائج البحث: '+q;document.getElementById('mediaGrid').innerHTML='';document.getElementById('moreBtn').hidden=true;view('gridView');
- const r=await searchCinema(q);const data=r.data;if(data?.status==='success')renderItems(Array.isArray(data.data)?data.data:[]);else toast('تعذر البحث');
+ document.getElementById('mediaGrid').innerHTML='<div class="state">جاري البحث…</div>';
+ const r=await searchCinema(q);const data=r.data;
+ document.getElementById('mediaGrid').innerHTML='';
+ if(data?.status==='success')renderItems(Array.isArray(data.data)?data.data:[]);
+ else {document.getElementById('mediaGrid').innerHTML='<div class="state">تعذر الوصول إلى مصدر البحث حاليًا. لم تُفقد نتائجك، المشكلة من الاتصال بالمزوّد.</div>';toast('تعذر البحث');}
 }
 async function details(item){
  currentTitle=item.title||'';currentPoster=item.img||'';episodes=[];view('detailsView');
  document.getElementById('title').textContent='جاري التحميل...';document.getElementById('poster').src=currentPoster;document.getElementById('kind').textContent=item.is_series?'مسلسل':'فيلم';document.getElementById('actions').innerHTML='';document.getElementById('episodesWrap').hidden=true;document.getElementById('detailsState').style.display='block';
  const r=await getCinemaDetails(item.href);const data=r.data;
- if(!data||data.status!=='success'){document.getElementById('title').textContent='تعذر تحميل التفاصيل';return}
+ if(!data||data.status!=='success'){document.getElementById('title').textContent='تعذر تحميل التفاصيل';document.getElementById('detailsState').textContent='تعذر الاتصال بالمزوّد. ارجع وأعد المحاولة.';return}
  currentTitle=data.movie_title||currentTitle||'التفاصيل';document.getElementById('title').textContent=currentTitle;document.getElementById('detailsState').style.display='none';
  episodes=Array.isArray(data.episodes)?data.episodes:[];
  if(data.media_src||data.is_iframe)addActions(data);

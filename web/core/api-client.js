@@ -14,7 +14,7 @@ let matchSessionPromise = null;
 function baseHeaders(extra = {}) {
   const headers = new Headers(extra.headers || {});
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
-  headers.set("X-BSR-Page", location.pathname);
+  headers.set("X-BSR-Page", globalThis.location?.pathname || "/");
   return headers;
 }
 
@@ -69,22 +69,32 @@ async function matchFetchJson(url, { validate = () => true } = {}) {
 }
 
 export async function getMatches() {
-  const sessionResult = await matchFetchJson(ENDPOINTS.matches, { validate: isMatchListPayload });
-  if (sessionResult?.data) return sessionResult;
+  try {
+    const sessionResult = await matchFetchJson(ENDPOINTS.matches, { validate: isMatchListPayload });
+    if (sessionResult?.data) return sessionResult;
+  } catch (_) {
+    // Some deployments expose the public match list without a session.
+  }
 
   return fetchJsonWithHealth(ENDPOINTS.matches, {
     kind: ProviderKind.MATCHES,
     validate: isMatchListPayload,
+    init: { headers: baseHeaders() },
   });
 }
 
 export async function getMatchServers(url) {
   if (!url) return { health: "invalid_payload", data: null };
-  const sessionResult = await matchFetchJson(url, { validate: isServerListPayload });
-  if (sessionResult?.data) return sessionResult;
+  try {
+    const sessionResult = await matchFetchJson(url, { validate: isServerListPayload });
+    if (sessionResult?.data) return sessionResult;
+  } catch (_) {
+    // Fall back to the inherited public endpoint when session bootstrap is unavailable.
+  }
   return fetchJsonWithHealth(url, {
     kind: ProviderKind.MATCHES,
     validate: isServerListPayload,
+    init: { headers: baseHeaders() },
   });
 }
 
@@ -140,9 +150,14 @@ async function ensureCinemaSession(force = false) {
 }
 
 async function cinemaFetch(endpoint, retry = true) {
-  const token = await ensureCinemaSession(false);
+  let token = "";
+  try {
+    token = await ensureCinemaSession(false);
+  } catch (_) {
+    // Keep compatibility with Worker deployments where these reads are public.
+  }
   const separator = endpoint.includes("?") ? "&" : "?";
-  const url = ENDPOINTS.cinema + endpoint + separator + "token=" + encodeURIComponent(token);
+  const url = ENDPOINTS.cinema + endpoint + (token ? separator + "token=" + encodeURIComponent(token) : "");
 
   let result = await fetchJsonWithHealth(url, {
     kind: ProviderKind.CINEMA,
@@ -151,8 +166,12 @@ async function cinemaFetch(endpoint, retry = true) {
 
   if (retry && result?.error?.status === 401) {
     cinemaToken = "";
-    await ensureCinemaSession(true);
-    return cinemaFetch(endpoint, false);
+    try {
+      await ensureCinemaSession(true);
+      return cinemaFetch(endpoint, false);
+    } catch (_) {
+      return result;
+    }
   }
   return result;
 }

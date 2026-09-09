@@ -4,10 +4,19 @@
 GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` remains the behavioral baseline.
 
 ## Current branch
+- Active fix branch: `fix/mobile-provider-runtime-03` based on user iPhone Safari evidence.
 - PR #2 was merged to `main` as commit `40a2efeb8633c1c0c9de1ab7241b56257d7acb32` after Web smoke passed.
 - `main` now contains the provider-backed web parity surface.
 
 ## Completed in this run
+- Analyzed six iPhone Safari screenshots from the live GitHub Pages deployment. Confirmed Pages is deployed, but runtime provider access is inconsistent: matches fail, cinema category/search returns an empty shell, and news can either load 15 items or stall at 0.
+- Found a concrete root bug in `fetchJsonWithHealth`: spreading a `Headers` instance with `...(init.headers || {})` drops custom `X-BSR-Token` and `X-BSR-Page` headers. Fixed provider transport to normalize with `new Headers()` and preserve authentication headers.
+- Made match list/server requests resilient when session bootstrap itself is unavailable, while retaining authenticated requests when sessions work.
+- Made cinema reads tolerate Worker deployments where read endpoints are public and retain token refresh when authentication is required.
+- Added direct news JSON loading before the inherited iframe bridge, with the bridge retained as compatibility fallback and a bounded timeout instead of an endless spinner.
+- Fixed the match retry button: inline `onclick="load()"` could not call module-scoped `load()`; retry now uses an event listener.
+- Added explicit cinema loading/error states so provider failures no longer look like valid empty search/category results.
+- Added CI regression gates for preserved provider headers and module-safe retry behavior.
 - Re-audited current `main`, branches, recent commits, CI configuration and migration state before making changes.
 - Confirmed the migrated web surface on `main` still lacked `news.html`, `albasri-cinema.html`, `basrimatches.html`, `bsr-Player.html` and `sitemap.xml`.
 - Re-inspected the original uploaded archive to preserve behavior rather than replacing pages from memory.
