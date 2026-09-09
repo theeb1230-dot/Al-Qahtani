@@ -4,6 +4,7 @@ const NEWS = "https://news.albesriali03.workers.dev/";
 const CINEMA = "https://albas.albesriali03.workers.dev/";
 const LEGACY_ORIGIN = "https://www.albasritv.abrdns.com";
 const LEGACY_REFERER = LEGACY_ORIGIN + "/2026/09/movies-series.html";
+const THEEB = "https://theeb-arab-api.onrender.com";
 
 async function json(url, init = {}) {
   const started = Date.now();
@@ -74,3 +75,18 @@ async function newsSmoke() {
 await matchesSmoke().catch(e => { console.error("FAIL matches smoke", e); process.exitCode = 1; });
 await cinemaSmoke().catch(e => { console.error("FAIL cinema smoke", e); process.exitCode = 1; });
 await newsSmoke().catch(e => { console.error("FAIL news smoke", e); process.exitCode = 1; });
+
+
+async function theebSmoke() {
+  const root = await json(THEEB + "/", { headers: { Accept: "application/json" } });
+  assert(root.ok, "theeb engine root", { status: root.status, ms: root.ms, body: root.text });
+
+  const search = await json(THEEB + "/v1/search?q=" + encodeURIComponent("الذئب الوحيد"), { headers: { Accept: "application/json" } });
+  const items = search.data?.data?.items;
+  assert(search.ok && Array.isArray(items), "theeb engine v1 search", { status: search.status, ms: search.ms, count: items?.length, body: search.text });
+
+  const library = await json(THEEB + "/api/library/series", { headers: { Accept: "application/json" } });
+  assert(library.ok && library.data, "theeb engine library", { status: library.status, ms: library.ms, body: library.text });
+}
+
+await theebSmoke().catch(e => { console.error("FAIL theeb engine smoke", e); process.exitCode = 1; });
