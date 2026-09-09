@@ -1,5 +1,5 @@
 import { ProviderKind, fetchJsonWithHealth } from "./providers.js";
-import { isMatchListPayload, isServerListPayload, isNewsPayload } from "./contracts.js";
+import { isMatchListPayload, isServerListPayload, isNewsPayload, isCinemaPayload } from "./contracts.js";
 
 const ENDPOINTS = Object.freeze({
   matches: "https://api.albasritv1.workers.dev/",
@@ -113,3 +113,58 @@ export async function getCinemaStatus() {
 }
 
 export const ProviderEndpoints = ENDPOINTS;
+
+
+let cinemaToken = "";
+let cinemaSessionPromise = null;
+
+async function ensureCinemaSession(force = false) {
+  if (!force && cinemaToken) return cinemaToken;
+  if (!force && cinemaSessionPromise) return cinemaSessionPromise;
+
+  cinemaSessionPromise = (async () => {
+    const result = await fetchJsonWithHealth(ENDPOINTS.cinema + "session", {
+      kind: ProviderKind.CINEMA,
+      validate: value => Boolean(value?.status === "success" && value?.token),
+    });
+    if (!result.data?.token) throw result.error || new Error("Cinema session unavailable");
+    cinemaToken = String(result.data.token);
+    return cinemaToken;
+  })();
+
+  try {
+    return await cinemaSessionPromise;
+  } finally {
+    cinemaSessionPromise = null;
+  }
+}
+
+async function cinemaFetch(endpoint, retry = true) {
+  const token = await ensureCinemaSession(false);
+  const separator = endpoint.includes("?") ? "&" : "?";
+  const url = ENDPOINTS.cinema + endpoint + separator + "token=" + encodeURIComponent(token);
+
+  let result = await fetchJsonWithHealth(url, {
+    kind: ProviderKind.CINEMA,
+    validate: isCinemaPayload,
+  });
+
+  if (retry && result?.error?.status === 401) {
+    cinemaToken = "";
+    await ensureCinemaSession(true);
+    return cinemaFetch(endpoint, false);
+  }
+  return result;
+}
+
+export function getCinemaGenre(url, page = 1) {
+  return cinemaFetch("?action=genre&genre=" + encodeURIComponent(url) + "&p=" + Number(page || 1));
+}
+
+export function searchCinema(query) {
+  return cinemaFetch("?action=search&q=" + encodeURIComponent(String(query || "").trim()));
+}
+
+export function getCinemaDetails(url) {
+  return cinemaFetch("?action=series&series=" + encodeURIComponent(url));
+}
