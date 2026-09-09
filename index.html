@@ -23,8 +23,8 @@ header{position:sticky;top:0;z-index:5;background:#07111fe8;backdrop-filter:blur
 <section class="hero"><h1>مباريات اليوم</h1><p>نسخة ويب مستقلة بدون إعلانات أو إجبار على فتح تطبيق خارجي.</p></section>
 <div id="list" class="grid"><div class="state">جارٍ تحميل المباريات…</div></div>
 </main>
-<script>
-const API='https://api.albasritv1.workers.dev/';
+<script type="module">
+import { getMatches, getMatchServers } from './web/core/api-client.js';
 const list=document.getElementById('list');
 const cleanImg=u=>{if(!u)return '';try{return new URL(u,location.href).href}catch{return u}};
 const fmt=t=>{if(!t)return '';const m=String(t).match(/(\d{1,2}):(\d{2})/);if(!m)return t;let h=+m[1],ap=h>=12?'م':'ص';h=h%12||12;return h+':'+m[2]+' '+ap};
@@ -41,8 +41,8 @@ function card(m){
 async function openMatch(m){
  if(m.priority===2||m.priority===3){location.href='Player.html';return}
  try{
-   const r=await fetch(m.link,{cache:'no-store'}); const j=await r.json();
-   if(j.success&&Array.isArray(j.servers)&&j.servers.length){
+   const result=await getMatchServers(m.link); const j=result.data;
+   if(j?.success&&Array.isArray(j.servers)&&j.servers.length){
      const payload={servers:j.servers};
      const bytes=new TextEncoder().encode(JSON.stringify(payload));let s='';bytes.forEach(b=>s+=String.fromCharCode(b));
      const b64=btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
@@ -55,8 +55,8 @@ async function openMatch(m){
 async function load(){
  list.innerHTML='<div class="state">جارٍ تحميل المباريات…</div>';
  try{
-  const r=await fetch(API,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
-  const j=await r.json();if(!j.success||!Array.isArray(j.data))throw new Error('payload');
+  const result=await getMatches(); const j=result.data;
+  if(!j?.success||!Array.isArray(j.data))throw new Error('payload');
   list.innerHTML='';if(!j.data.length){list.innerHTML='<div class="state">لا توجد مباريات اليوم.</div>';return}
   j.data.forEach(m=>list.appendChild(card(m)));
  }catch(e){list.innerHTML='<div class="state">تعذر جلب المباريات حاليًا.<br><button class="retry" onclick="load()">إعادة المحاولة</button></div>'}
