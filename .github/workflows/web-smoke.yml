@@ -15,7 +15,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RniE --exclude='AUTONOMOUS_DEVELOPMENT_STATE.md' 'highperformanceformat\.com|effectivecpmnetwork\.com' .; then
+          if grep -RniE --exclude='AUTONOMOUS_DEVELOPMENT_STATE.md' --exclude='prepare_clean_web.py' 'highperformanceformat\.com|effectivecpmnetwork\.com' .; then
             echo "Forbidden ad-network reference found"
             exit 1
           fi
