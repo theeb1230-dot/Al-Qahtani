@@ -26,18 +26,13 @@
 <div id="toast" class="toast"></div>
 <script type="module">
 import { getCinemaGenre, searchCinema, getCinemaDetails } from './web/core/api-client.js';
-
-const CATS={series:[
-['أجنبية','https://akwam.ss/series?section=30'],['عربية','https://akwam.ss/series?section=29'],['تركية','https://akwam.ss/series?section=32'],['آسيوية','https://akwam.ss/series?section=33'],['أنمي','https://akwam.ss/series?category=30'],['رمضان','https://akwam.ss/series?category=87']
-],movies:[
-['أجنبية','https://akwam.ss/movies?section=30'],['عربية','https://akwam.ss/movies?section=29'],['هندية','https://akwam.ss/movies?section=31'],['آسيوية','https://akwam.ss/movies?section=33'],['تركية','https://akwam.ss/movies?section=32'],['أنمي','https://akwam.ss/movies?category=30']
-]};
+import { CinemaCategories } from './web/core/catalog-config.js';
 let currentUrl='',page=1,searching=false,currentTitle='',currentPoster='',episodes=[];
 
 function view(id){document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active')}
 function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2200)}
 function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
-function renderCats(type,id){const box=document.getElementById(id);CATS[type].forEach(([name,url])=>{const b=document.createElement('button');b.className='cat';b.textContent=name;b.onclick=()=>loadGenre(url,(type==='series'?'مسلسلات ':'أفلام ')+name,1);box.appendChild(b)})}
+function renderCats(type,id){const box=document.getElementById(id);CinemaCategories[type].forEach(({title:name,url})=>{const b=document.createElement('button');b.className='cat';b.textContent=name;b.onclick=()=>loadGenre(url,(type==='series'?'مسلسلات ':'أفلام ')+name,1);box.appendChild(b)})}
 renderCats('series','seriesCats');renderCats('movies','movieCats');
 
 async function loadGenre(url,title,p=1){
