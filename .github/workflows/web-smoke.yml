@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           if grep -nE 'https://[^"[:space:]]*workers\.dev' index.html news.html albasri-cinema.html Player.html bsr-Player.html basrimatches.html; then
-            echo "Worker endpoint leaked into UI file; keep it in web/core/api-client.js"
+            echo "Worker endpoint leaked into UI file; keep it in provider/backend code"
             exit 1
           fi
 
@@ -75,13 +75,14 @@ jobs:
             exit 1
           fi
 
-      - name: Validate provider modules syntax
+      - name: Validate provider and backend syntax
         run: |
           node --check web/core/providers.js
           node --check web/core/contracts.js
           node --check web/core/api-client.js
           node --check web/core/catalog-config.js
           node --check scripts/live_provider_smoke.mjs
+          node --check server/app.mjs
           node --check server/index.mjs
           node --check scripts/local_backend_smoke.mjs
 
