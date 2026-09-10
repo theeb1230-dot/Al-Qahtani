@@ -4,50 +4,54 @@
 GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` remains the behavioral baseline.
 
 ## Current state
-- `main` is at merge commit `1427bf29cf7f86747f2119ed66610ae183ac1e45` from PR #10.
-- Active PR: #11 `Harden cinema discovery against transient empty upstreams` on branch `fix/discovery-resilience-11`.
-- Al-Qahtani Render service: `https://al-qahtani-api.onrender.com`, auto-deploys `main`, starts `node server/index.mjs`.
-- Theeb Engine Render service: `https://theeb-arab-api.onrender.com`, live on commit `38720273d43acbe7fcf072a3cdaf8c6b1659b1b1`.
-- Both backends use server-to-server `THEEB_SERVICE_TOKEN` for protected `/api/providers/*`; the credential is not exposed to browser code or committed files.
+- `main` is at `f329a2bac5ef6278c3e35e11cdc9ca0553877c35`, the squash merge of PR #11.
+- Active PR: #12 `Retry transient provider playback failures` on `fix/provider-playback-retry-12`.
+- Al-Qahtani Render service `https://al-qahtani-api.onrender.com` auto-deployed `f329a2bac5ef6278c3e35e11cdc9ca0553877c35` and reached `live`.
+- Theeb Engine is `https://theeb-arab-api.onrender.com`, live on `38720273d43acbe7fcf072a3cdaf8c6b1659b1b1`.
+- Protected `/api/providers/*` calls use server-only `THEEB_SERVICE_TOKEN`; browser code never receives the credential.
 
 ## Completed / diagnosed in this run
-- Re-audited `main`, branches, PRs, recent Actions runs, Render services/deploys/logs, backend code and this handoff before changing code.
-- Confirmed the post-main `Remote runtime smoke` for PR #10 failed against the deployed backend: initial run returned empty Arabic search, empty `The Odyssey`, and empty anime category while health and matches passed.
-- Re-ran the same deployed gate after Theeb Engine was warm. Arabic search recovered with two discovery items, `الذئب الوحيد` details opened from Akwam with 20 episodes, `The Odyssey` search returned two items, and anime returned one item. This proves the earlier all-empty result was at least partly transient/cold/upstream availability rather than a deterministic UI regression.
-- The repeat gate isolated two remaining real failures:
-  - selected `الذئب الوحيد` episode reached the playback contract but returned `PROVIDER_EPISODE_UNAVAILABLE`; byte-range probing correctly skipped because no playable source existed for that selected provider episode.
-  - `The Odyssey` details still failed deterministically with `DETAILS_UNAVAILABLE`.
-- Render logs identified the Odyssey root cause: discovery returned `arabseed:d656809c0` and `wecima:a1bf79030`, but Al-Qahtani sent redirected `source_url` hosts (`arabsseed.baby`, `mywecima.courses`) into Theeb provider-series routes. Theeb correctly rejected those targets with HTTP 400 under its provider-target/SSRF validation.
-- Added `server/theeb-fetch.mjs`: bounded retry for public `/v1/discover` when HTTP 200 contains zero items, short successful-result cache, stale-on-transient-failure fallback, bounded cache size, and structured empty/http/transport/recovery logs.
-- Preserved server-only Authorization injection for protected provider routes inside the same transport wrapper; public `/v1/*` calls remain unauthenticated.
-- Added deterministic `node:test` coverage in `test/theeb-fetch.test.mjs` for empty-result recovery, stale fallback, provider-only bearer injection and unrelated-origin pass-through.
-- Wired the new module syntax and tests into `Web smoke`; the first PR #11 Web smoke passed including the new tests.
-- Updated `providerMovieCandidate` to resolve discovered movies by stable `provider_series_id` first instead of volatile redirected `source_url`. Providers rebuild their canonical URL from that stable ID, so external redirect domains no longer need to be trusted merely to open movie details.
-- PR #11 CI was retriggered by the latest commit; Web smoke and Live provider smoke are currently running and must be green before merge.
+- Re-audited main, branches, PRs, Actions runs, Render services/deploys/logs, backend code and documentation.
+- Reproduced the post-PR #10 deployed runtime failure. A later retry proved the all-empty search/category state was transient: `الذئب الوحيد`, `The Odyssey`, and anime returned live discovery results once Theeb providers recovered.
+- Isolated the deterministic Odyssey details failure from the transient discovery failure. Render logs showed ArabSeed and WeCima discovery URLs on redirected hosts were rejected by Theeb provider-target validation with HTTP 400.
+- PR #11 added `server/theeb-fetch.mjs` with bounded retry for HTTP-200 empty `/v1/discover`, fresh/stale in-memory cache, bounded cache size, and structured recovery diagnostics.
+- PR #11 preserved fail-closed provider auth and SSRF validation; it did not broadly allowlist redirect domains.
+- PR #11 changed discovered movie resolution to use stable `provider_series_id` before volatile `source_url`.
+- Added deterministic Node tests for discovery retry/cache and provider-only bearer injection; Web smoke runs them.
+- PR #11 Web smoke and Live provider E2E passed, then PR #11 was squash-merged as `f329a2bac5ef6278c3e35e11cdc9ca0553877c35`.
+- Render deployed that exact merge commit and the post-main `Remote runtime smoke` passed end to end for its current assertions:
+  - backend health passed;
+  - matches returned 12 items;
+  - `الذئب الوحيد` returned two search items and opened provider details with 20 episodes;
+  - `The Odyssey` returned two items and opened details as `provider-movie`;
+  - anime category returned one real item.
+- The same deployed gate still exposed a separate playback limitation: the selected Akwam episode returned `PROVIDER_EPISODE_UNAVAILABLE`. Theeb logs show `/api/providers/akwam/episode/:id` returned HTTP 500, so this is after successful search/details and is not the same bug.
+- PR #12 now retries protected provider GET calls only for transient transport/408/429/5xx outcomes using bounded backoff. HTTP 400 provider-target/security failures remain fail-closed and are not retried.
+- Added deterministic tests proving provider 500→200 recovery and proving HTTP 400 is attempted only once.
 
 ## Preserved original behavior
 - Matches: session acquisition, server discovery, HLS/MP4/embed playback and periodic refresh.
-- News: readable non-obfuscated source bridge/incremental loading and article details without ad-network bootstrap.
-- Cinema: categories, search, details, episodes, watch/download entry points, with canonical/discovery/legacy/provider fallbacks.
-- `Player.html` remains web-native and does not launch the legacy `com.bsr.player.pro` Android package.
-- Safari media paths remain behind Al-Qahtani Range-aware proxies; service credentials are never returned to the browser.
+- News: readable non-obfuscated bridge/incremental loading and article details without ad-network runtime code.
+- Cinema: categories, search, details, episodes, watch/download entry points, canonical/discovery/legacy/provider fallbacks.
+- `Player.html` stays web-native and does not launch `com.bsr.player.pro`.
+- Safari media paths stay behind Al-Qahtani Range-aware proxies.
 
 ## Known limitations / gates not yet passed
-- PR #11 is not mergeable until its latest Web smoke and Live provider smoke both complete successfully.
-- Full live Safari parity is not proven until PR #11 is merged, Render deploys that exact main commit, and the post-main remote runtime gate passes search → details → episodes/playback on the deployed service.
-- A valid details response is not equivalent to a playable episode. `PROVIDER_EPISODE_UNAVAILABLE` must continue to be classified separately from search/details failures and tested against alternate provider candidates before declaring playback unavailable.
-- Provider availability and redirect domains are variable. Security validation must stay fail-closed; do not solve redirect churn by broadly allowlisting arbitrary hosts.
-- Download option UX is still incomplete.
-- Flutter migration remains intentionally blocked until live Web parity is proven.
+- PR #12 must pass Web smoke and Live provider smoke before merge.
+- `PROVIDER_EPISODE_UNAVAILABLE` may be transient, but retries alone are not sufficient evidence of playback parity. If the deployed gate still gets no source, the next fix must try alternate provider candidates for the same content/episode before final failure.
+- The current remote playback assertion validates the response contract even when state is `error`; this must be tightened once alternate-provider playback fallback exists.
+- Safari byte-range media probing is still skipped whenever the selected live sample yields no playable media URL.
+- Download-option UX remains incomplete.
+- Flutter migration stays blocked until live Web playback, not just search/details, is proven.
 
 ## Next run goals
-1. Finish latest PR #11 Web smoke and Live provider smoke; inspect logs and fix any failure on `fix/discovery-resilience-11` only.
-2. Verify the stable-id Odyssey fix against ArabSeed/WeCima; require at least one `The Odyssey` detail response to succeed without relaxing SSRF/provider-target validation.
-3. Merge PR #11 only when both PR gates are green; then verify Render auto-deploys the exact merge commit.
-4. Run the post-main deployed runtime gate and require `الذئب الوحيد`, `The Odyssey`, and anime to return non-empty live results after bounded cold-start recovery.
-5. Improve playback fallback so a `PROVIDER_EPISODE_UNAVAILABLE` result tries alternate discovered/provider candidates before final failure; keep watch/download semantics separate.
-6. When any live direct media source exists, enforce Safari-style `Range: bytes=0-1023` through the Al-Qahtani media proxy and verify 200/206 plus relevant range headers.
-7. Add provider-health diagnostics that distinguish 200-empty, timeout, provider HTTP failure, invalid redirected target and no-playable-source without leaking credentials.
-8. Expand remote match server sampling and news smoke so cinema fixes cannot regress the original match/news features.
-9. Add browser-level GitHub Pages navigation coverage for search/category/details/player after the backend runtime gate is green.
-10. Only after all live Web gates pass, initialize Flutter against Al-Qahtani backend contracts, then add Android Mobile, Android TV D-pad/focus, iOS unsigned IPA CI and gated GitHub Releases.
+1. Finish PR #12 Web smoke and Live provider smoke; fix failures only on `fix/provider-playback-retry-12`.
+2. Merge PR #12 only when both gates are green and verify Render deploys the exact merge commit.
+3. Re-run the deployed runtime gate and inspect whether Akwam episode resolution recovers under bounded provider retries.
+4. If playback still fails, preserve content context in episode references and try alternate discovered providers for the same episode before returning `NO_PLAYABLE_SOURCE`.
+5. Tighten the remote playback gate to require a real playable source when at least one provider advertises one; stop treating an error contract as playback success.
+6. Exercise Safari `Range: bytes=0-1023` through `/api/cinema/media` or `/api/cinema/provider-media` when a live direct source exists and require 200/206 plus range headers.
+7. Add provider-health diagnostics separating 200-empty, timeout, 4xx validation, 5xx provider failure and no-playable-source without logging secrets.
+8. Expand matches/news regression smoke while cinema work continues.
+9. Add browser-level GitHub Pages navigation coverage after playback is green.
+10. Only after live Web search → details → episodes → playback is proven, start Flutter Android Mobile/Android TV/iOS and gated release workflows.
