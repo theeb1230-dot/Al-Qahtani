@@ -1,5 +1,6 @@
 import http from "node:http";
 import crypto from "node:crypto";
+import { createTheebFetch } from "./theeb-fetch.mjs";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 const THEEB_ORIGIN = "https://theeb-arab-api.onrender.com";
@@ -11,25 +12,11 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 const providerMedia = new Map();
 
-globalThis.fetch = async (input, init = {}) => {
-  let url;
-  try {
-    url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
-  } catch {
-    return nativeFetch(input, init);
-  }
-
-  if (url.origin === THEEB_ORIGIN && url.pathname.startsWith("/api/providers/")) {
-    const inherited = input instanceof Request ? input.headers : undefined;
-    const headers = new Headers(init.headers || inherited || {});
-    if (SERVICE_TOKEN && !headers.has("Authorization")) {
-      headers.set("Authorization", `Bearer ${SERVICE_TOKEN}`);
-    }
-    return nativeFetch(input, { ...init, headers });
-  }
-
-  return nativeFetch(input, init);
-};
+globalThis.fetch = createTheebFetch({
+  nativeFetch,
+  origin: THEEB_ORIGIN,
+  serviceToken: SERVICE_TOKEN,
+});
 
 function applyCors(req, res) {
   const origin = String(req.headers.origin || "");
