@@ -85,6 +85,7 @@ jobs:
           node --check server/app.mjs
           node --check server/index.mjs
           node --check scripts/local_backend_smoke.mjs
+          node --check scripts/remote_runtime_smoke.mjs
 
       - name: Guard provider auth headers and module retry
         shell: bash
