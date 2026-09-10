@@ -1,0 +1,17 @@
+name: Remote runtime smoke
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  deployed-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Probe deployed Render runtime and Safari flows
+        run: node scripts/remote_runtime_smoke.mjs
