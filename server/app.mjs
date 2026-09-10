@@ -254,7 +254,7 @@ async function cinemaCategory(type, name, sourceUrl = "") {
   }
 
   if (merged.length) {
-    return { status: "success", source: "discover", data: mapDiscovered(merged) };
+    return { status: "success", source: "discover", data: mapDiscovered(merged, name) };
   }
   const legacy = sourceUrl
     ? await legacyCinema("genre", { genre: sourceUrl, p: "1" })
@@ -289,15 +289,16 @@ async function canonicalDetails(id) {
   };
 }
 
-async function providerSeriesDetails(provider, id) {
+async function providerSeriesDetails(provider, id, source = "") {
   if (!/^[a-z0-9_-]+$/i.test(String(provider)) || !id) return null;
+  const target = source || id;
   const result = await fetchTextJson(
-    `${THEEB}/api/providers/${encodeURIComponent(provider)}/series/${encodeURIComponent(String(id))}`,
+    `${THEEB}/api/providers/${encodeURIComponent(provider)}/series/${encodeURIComponent(String(target))}`,
     { headers: { Accept: "application/json" } },
     45_000,
   );
   if (!result.response.ok || !result.data?.series) {
-    log("provider_details_rejected", { provider, id, status: result.response.status });
+    log("provider_details_rejected", { provider, id, target, status: result.response.status });
     return null;
   }
   const data = result.data;
@@ -312,7 +313,7 @@ async function providerSeriesDetails(provider, id) {
     episodes: episodes.map((episode, index) => ({
       num: episode.number || index + 1,
       id: episode.id,
-      link: `provider:${encodeURIComponent(provider)}:episode:${encodeURIComponent(String(episode.id || episode.page_url || ""))}`,
+      link: `provider:${encodeURIComponent(provider)}:episode:${encodeURIComponent(String(episode.source_url || episode.id || episode.page_url || ""))}`,
       watch_available: true,
       download_available: false,
     })),
@@ -331,6 +332,17 @@ async function providerEpisode(provider, id) {
 
   const data = episodeResult.data;
   const options = Array.isArray(data.watch_options) ? data.watch_options : [];
+  const embed = options.find((option) => option.can_watch !== false && option.page_url && ["embed", "external_player"].includes(option.type));
+  if (embed) {
+    return {
+      status: "success",
+      media_src: embed.page_url,
+      media_type: "embed",
+      is_iframe: true,
+      provider,
+    };
+  }
+
   for (const option of options) {
     if (!option.watch_id) continue;
     const watchResult = await fetchTextJson(
@@ -434,7 +446,7 @@ async function discoveredDetails(ref) {
   log("detail_candidates", { query: lookup, candidates: candidates.map((item) => `${item.provider}:${item.id}`) });
 
   for (const candidate of candidates.slice(0, 4)) {
-    const direct = await providerSeriesDetails(candidate.provider, candidate.id).catch(() => null);
+    const direct = await providerSeriesDetails(candidate.provider, candidate.id, candidate.source).catch(() => null);
     if (direct) {
       log("provider_details_success", { provider: candidate.provider, id: candidate.id });
       return direct;
