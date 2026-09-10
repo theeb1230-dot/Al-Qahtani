@@ -58,7 +58,11 @@ function storeMedia(url) {
 
 async function providerMovieCandidate(candidate) {
   if (!candidate?.provider || !candidate?.id) return null;
-  const target = String(candidate.source || candidate.id);
+  // Discovery source_url may be a transient redirected host (for example
+  // arabsseed.baby or mywecima.courses) that is intentionally rejected by
+  // Theeb's SSRF allowlist. The stable provider id is the contract boundary;
+  // each provider can rebuild its current canonical URL from that id.
+  const target = String(candidate.id || candidate.source);
   const episode = await getJson(
     `${THEEB_ORIGIN}/api/providers/${encodeURIComponent(candidate.provider)}/episode/${encodeURIComponent(target)}`,
     45_000,
