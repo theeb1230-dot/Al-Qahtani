@@ -1,23 +1,29 @@
-import http from "node:http";
-const MATCHES="https://api.albasritv1.workers.dev/";
-const THEEB="https://theeb-arab-api.onrender.com";
-const LEGACY_ORIGIN="https://www.albasritv.abrdns.com";
-const LEGACY_REFERER=LEGACY_ORIGIN+"/2026/09/movies-series.html";
-const ALLOWED_ORIGINS=new Set(["https://theeb1230-dot.github.io","http://localhost:8000","http://127.0.0.1:8000"]);
-function cors(req,res){const origin=String(req.headers.origin||"");if(origin&&ALLOWED_ORIGINS.has(origin))res.setHeader("Access-Control-Allow-Origin",origin);res.setHeader("Vary","Origin");res.setHeader("Access-Control-Allow-Methods","GET,OPTIONS");res.setHeader("Access-Control-Allow-Headers","Content-Type")}
-function send(res,status,data){res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"});res.end(JSON.stringify(data))}
-async function jfetch(url,init={},timeout=45000){const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),timeout);try{const r=await fetch(url,{...init,signal:ctl.signal,cache:"no-store"});const text=await r.text();let data=null;try{data=JSON.parse(text)}catch{}return{r,data,text}}finally{clearTimeout(t)}}
-function legacyHeaders(token=""){const h={Accept:"application/json",Origin:LEGACY_ORIGIN,Referer:LEGACY_REFERER,"X-BSR-Page":"/2026/09/matches.html"};if(token)h["X-BSR-Token"]=token;return h}
-async function matchSession(){const x=await jfetch(MATCHES+"session",{headers:legacyHeaders()});if(!x.r.ok||!x.data?.token)throw new Error("MATCH_SESSION_"+x.r.status);return x.data.token}
-async function matches(){const token=await matchSession();const x=await jfetch(MATCHES,{headers:legacyHeaders(token)});if(!x.r.ok)throw new Error("MATCH_LIST_"+x.r.status);return x.data}
-async function matchServers(target){const u=new URL(target);if(u.origin!==new URL(MATCHES).origin)throw new Error("BAD_MATCH_TARGET");const token=await matchSession();const x=await jfetch(u.href,{headers:legacyHeaders(token)});if(!x.r.ok)throw new Error("MATCH_SERVERS_"+x.r.status);return x.data}
-function mapLibrary(items=[]){return items.map(i=>({title:i.title,img:i.image||"",is_series:i.content_type!=="movie",href:"theeb:canonical:"+i.id,year:i.year||null}))}
-function mapDiscovered(items=[]){return items.map(i=>({title:i.display_title||i.title,img:i.image||"",is_series:i.content_type!=="movie",href:"theeb:discover:"+encodeURIComponent(JSON.stringify({provider:i.provider,id:i.provider_series_id,source:i.source_url||"",type:i.content_type||"series"})),year:i.year||null}))}
-function mapLegacy(items=[]){return items.map(i=>({title:i.title||i.name||"بدون عنوان",img:i.img||i.image||i.poster||"",is_series:i.is_series!==false,href:i.href||i.url||i.link||"",year:i.year||null})).filter(i=>i.href)}
-async function legacyCinema(action,params={}){const session=await jfetch("https://albas.albesriali03.workers.dev/session",{headers:{Accept:"application/json",Origin:LEGACY_ORIGIN,Referer:LEGACY_REFERER}},15000);if(!session.r.ok||!session.data?.token)return[];const q=new URLSearchParams({action,token:String(session.data.token),...params});const x=await jfetch("https://albas.albesriali03.workers.dev/?"+q,{headers:{Accept:"application/json",Origin:LEGACY_ORIGIN,Referer:LEGACY_REFERER}},30000);return x.r.ok&&x.data?.status==="success"?mapLegacy(x.data.data||[]):[]}
-async function cinemaSearch(q){let x=await jfetch(THEEB+"/v1/search?q="+encodeURIComponent(q),{headers:{Accept:"application/json"}});let items=x.data?.data?.items||[];if(items.length)return{status:"success",source:"library",data:mapLibrary(items)};x=await jfetch(THEEB+"/v1/discover?q="+encodeURIComponent(q),{headers:{Accept:"application/json"}},60000);items=x.data?.data?.items||[];if(items.length)return{status:"success",source:"discover",data:mapDiscovered(items)};const legacy=await legacyCinema("search",{q});return{status:"success",source:legacy.length?"legacy":"empty",data:legacy}}
-async function cinemaCategory(type,name,url=""){const kind=type==="movie"?"فيلم":"مسلسل";const queries=[kind+" "+name,name+" "+kind,name];const seen=new Set(),merged=[];for(const q of queries){const x=await jfetch(THEEB+"/v1/discover?q="+encodeURIComponent(q),{headers:{Accept:"application/json"}},60000);for(const item of(x.data?.data?.items||[])){const key=String(item.provider||"")+":"+String(item.provider_series_id||"");if(!key||seen.has(key))continue;seen.add(key);merged.push(item);if(merged.length>=36)break}if(merged.length>=18)break}if(merged.length)return{status:"success",source:"discover",data:mapDiscovered(merged)};const legacy=url?await legacyCinema("genre",{genre:url,p:"1"}):[];return{status:"success",source:legacy.length?"legacy":"empty",data:legacy}}
-async function canonicalDetails(id){const[s,e]=await Promise.all([jfetch(THEEB+"/v1/series/"+id,{headers:{Accept:"application/json"}}),jfetch(THEEB+"/v1/series/"+id+"/episodes",{headers:{Accept:"application/json"}})]);if(!s.r.ok)throw new Error("SERIES_"+s.r.status);const series=s.data?.data||{},eps=e.data?.data?.items||[];return{status:"success",movie_title:series.title||"",poster:series.image||"",episodes:eps.map(x=>({num:x.episode_number||x.id,link:"theeb:episode:"+x.id,id:x.id,watch_available:x.watch_available,download_available:x.download_available}))}}
-async function discoveredDetails(ref){const p=JSON.parse(decodeURIComponent(ref));const created=await jfetch(THEEB+"/v1/imports",{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({provider:p.provider,provider_series_id:p.id,source_url:p.source||undefined,content_type:p.type==="movie"?"movie":"series"})},60000);if(!created.r.ok||!created.data?.data?.job_id)throw new Error("IMPORT_"+created.r.status);const jobId=created.data.data.job_id;for(let i=0;i<30;i++){await new Promise(r=>setTimeout(r,i<2?500:1500));const job=await jfetch(THEEB+"/v1/imports/"+encodeURIComponent(jobId),{headers:{Accept:"application/json"}},15000);const d=job.data?.data;if(d?.status==="completed"&&d.result?.canonical_series_id)return canonicalDetails(d.result.canonical_series_id);if(["failed","cancelled"].includes(d?.status))throw new Error("IMPORT_"+String(d.status).toUpperCase())}throw new Error("IMPORT_TIMEOUT")}
-async function episodePlayback(id){const episodeId=Number(id);if(!Number.isSafeInteger(episodeId)||episodeId<1)throw new Error("BAD_EPISODE");const created=await jfetch(THEEB+"/v1/playback/sessions",{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify({canonical_episode_id:episodeId,quality:"auto",client:{platform:"web",version:"al-qahtani-web"}})},60000);if(!created.r.ok)throw new Error("PLAYBACK_CREATE_"+created.r.status);let session=created.data?.data;if(!session)throw new Error("PLAYBACK_EMPTY");for(let i=0;i<8&&session.state==="planning";i++){await new Promise(r=>setTimeout(r,750));const poll=await jfetch(THEEB+"/v1/playback/sessions/"+encodeURIComponent(session.id),{headers:{Accept:"application/json"}},15000);if(poll.data?.data)session=poll.data.data}if(session.state!=="ready"||!session.id)return{status:"error",message:"NO_PLAYABLE_SOURCE"};const mediaUrl=THEEB+"/v1/playback/sessions/"+encodeURIComponent(session.id)+"/media";const downloads=await jfetch(THEEB+"/v1/episodes/"+episodeId+"/download-options",{headers:{Accept:"application/json"}},15000).catch(()=>null);return{status:"success",media_src:mediaUrl,media_type:"stream",is_iframe:false,playback_session_id:session.id,download_options:downloads?.data?.data?.items||[]}}
-const server=http.createServer(async(req,res)=>{cors(req,res);if(req.method==="OPTIONS"){res.writeHead(204);return res.end()}const u=new URL(req.url,"http://localhost");try{if(u.pathname==="/health")return send(res,200,{status:"ok"});if(u.pathname==="/api/matches")return send(res,200,await matches());if(u.pathname==="/api/matches/servers")return send(res,200,await matchServers(u.searchParams.get("url")||""));if(u.pathname==="/api/cinema/search")return send(res,200,await cinemaSearch((u.searchParams.get("q")||"").trim()));if(u.pathname==="/api/cinema/category")return send(res,200,await cinemaCategory(u.searchParams.get("type")||"series",(u.searchParams.get("name")||"").trim(),u.searchParams.get("url")||""));if(u.pathname==="/api/cinema/details"){const ref=u.searchParams.get("ref")||"";if(ref.startsWith("theeb:canonical:"))return send(res,200,await canonicalDetails(ref.split(":").pop()));if(ref.startsWith("theeb:discover:"))return send(res,200,await discoveredDetails(ref.slice("theeb:discover:".length)));if(ref.startsWith("theeb:episode:"))return send(res,200,await episodePlayback(ref.split(":").pop()));return send(res,400,{status:"error",message:"BAD_REFERENCE"})}return send(res,404,{error:"NOT_FOUND"})}catch(e){return send(res,502,{status:"error",message:String(e?.message||"UPSTREAM_FAILED")})}});server.listen(Number(process.env.PORT||3000),"0.0.0.0",()=>console.log("Al-Qahtani backend listening"));
+const nativeFetch = globalThis.fetch.bind(globalThis);
+const THEEB_ORIGIN = "https://theeb-arab-api.onrender.com";
+const SERVICE_TOKEN = String(process.env.THEEB_SERVICE_TOKEN || "").trim();
+
+globalThis.fetch = async (input, init = {}) => {
+  let url;
+  try {
+    url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+  } catch {
+    return nativeFetch(input, init);
+  }
+
+  if (url.origin === THEEB_ORIGIN && url.pathname.startsWith("/api/providers/")) {
+    const inherited = input instanceof Request ? input.headers : undefined;
+    const headers = new Headers(init.headers || inherited || {});
+    if (SERVICE_TOKEN && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${SERVICE_TOKEN}`);
+    }
+    return nativeFetch(input, { ...init, headers });
+  }
+
+  return nativeFetch(input, init);
+};
+
+const { createServer } = await import("./app.mjs");
+const port = Number(process.env.PORT || 3000);
+createServer().listen(port, "0.0.0.0", () => {
+  console.log(`Al-Qahtani backend listening on ${port}`);
+});
