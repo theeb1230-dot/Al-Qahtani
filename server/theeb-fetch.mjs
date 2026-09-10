@@ -53,6 +53,8 @@ export function createTheebFetch({
   serviceToken = "",
   retries = 2,
   retryDelaysMs = [250, 750],
+  discoveryRetries = 4,
+  discoveryRetryDelaysMs = [750, 1500, 3000, 6000],
   freshTtlMs = 10 * 60_000,
   staleTtlMs = 60 * 60_000,
   maxEntries = 120,
@@ -70,8 +72,8 @@ export function createTheebFetch({
     while (cache.size > maxEntries) cache.delete(cache.keys().next().value);
   }
 
-  async function waitForRetry(attempt) {
-    const delay = retryDelaysMs[Math.min(attempt, retryDelaysMs.length - 1)] ?? 500;
+  async function waitForRetry(attempt, delays = retryDelaysMs) {
+    const delay = delays[Math.min(attempt, delays.length - 1)] ?? 500;
     await wait(Math.max(0, delay));
   }
 
@@ -127,7 +129,7 @@ export function createTheebFetch({
 
     let lastResponse = null;
     let lastError = null;
-    const attempts = Math.max(1, retries + 1);
+    const attempts = Math.max(1, discoveryRetries + 1);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
         const response = await nativeFetch(input, init);
@@ -162,13 +164,20 @@ export function createTheebFetch({
         log("theeb_discovery_transport_error", { query: url.searchParams.get("q") || "", attempt: attempt + 1, error: String(error?.message || error) });
       }
 
-      if (attempt + 1 < attempts) await waitForRetry(attempt);
+      if (attempt + 1 < attempts) await waitForRetry(attempt, discoveryRetryDelaysMs);
     }
 
     if (cached && timestamp - cached.storedAt <= staleTtlMs) {
       log("theeb_discovery_stale_hit", { query: url.searchParams.get("q") || "", age_ms: timestamp - cached.storedAt });
       return responseFromCache(cached);
     }
+    log("theeb_discovery_exhausted", {
+      query: url.searchParams.get("q") || "",
+      attempts,
+      status: lastResponse?.status || null,
+      cached: Boolean(cached),
+      transport_error: lastError ? String(lastError?.message || lastError) : null,
+    });
     if (lastResponse) return lastResponse;
     throw lastError || new Error("THEEB_DISCOVERY_UNAVAILABLE");
   };
