@@ -1,17 +1,20 @@
 name: Remote runtime smoke
 
 on:
-  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   deployed-runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Wait briefly for Render auto-deploy
+        run: sleep 35
       - name: Probe deployed Render runtime and Safari flows
         run: node scripts/remote_runtime_smoke.mjs
