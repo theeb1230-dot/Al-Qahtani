@@ -76,31 +76,29 @@ async function openAnyDetails(items, label) {
   return null;
 }
 
-async function maybeProbePlayback(details) {
-  if (!details?.data) return;
+async function requirePlayback(details) {
+  if (!details?.data) {
+    assert(false, "remote playback has details payload");
+    return;
+  }
   const episodes = Array.isArray(details.data.episodes) ? details.data.episodes : [];
   const episode = episodes.find((item) => item?.watch_available !== false && item?.link);
   if (!episode) {
-    console.log("SKIP remote playback source probe: no playable episode in selected live detail sample");
+    assert(false, "remote playback sample exposes a playable episode", { episodes: episodes.length });
     return;
   }
 
   const play = await request("/api/cinema/details?ref=" + encodeURIComponent(episode.link), { timeoutMs: 120_000 });
-  assert(play.response.ok && ["success", "error"].includes(play.data?.status), "remote playback contract", {
+  const playable = play.response.ok && play.data?.status === "success" && Boolean(play.data?.media_src || play.data?.media_path);
+  if (!assert(playable, "remote playback resolves a real source", {
     status: play.response.status,
     state: play.data?.status,
     message: play.data?.message || "",
-  });
-  if (play.data?.status !== "success") {
-    console.log("SKIP byte-range media probe: upstream currently has no playable source for selected episode");
-    return;
-  }
+    provider: play.data?.provider || "",
+  })) return;
 
   const mediaUrl = String(play.data?.media_src || play.data?.media_path || "");
-  if (!mediaUrl.includes("/api/cinema/media?session=")) {
-    assert(false, "playback remains behind Al-Qahtani media proxy", { mediaUrl });
-    return;
-  }
+  if (!assert(mediaUrl.includes("/api/cinema/media?session=") || mediaUrl.includes("/api/cinema/provider-media?id="), "playback remains behind Al-Qahtani media proxy", { mediaUrl })) return;
 
   const url = mediaUrl.startsWith("http") ? mediaUrl : BASE + mediaUrl;
   const controller = new AbortController();
@@ -147,7 +145,7 @@ try {
     ms: wolf.ms,
   });
   const wolfDetails = await openAnyDetails(wolfItems, "deployed Arabic search opens details");
-  await maybeProbePlayback(wolfDetails);
+  await requirePlayback(wolfDetails);
 
   const odyssey = await search("The Odyssey");
   const odysseyItems = odyssey.data?.data || [];
