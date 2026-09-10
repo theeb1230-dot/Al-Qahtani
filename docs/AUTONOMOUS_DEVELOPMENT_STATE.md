@@ -4,76 +4,46 @@
 GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` remains the behavioral baseline.
 
 ## Current state
-- PR #7 was merged to `main` as `841e6b6d41d01bdeb124b4cc86eb6673eefb7925` after Web smoke and Live provider/backend E2E passed.
-- Render auto-deployed that exact commit to `https://al-qahtani-api.onrender.com` and reported the deploy as live.
-- GitHub Pages now routes matches and cinema through the dedicated Al-Qahtani backend rather than directly depending on the locked cinema Worker.
+- PR #9 was merged to `main` as `1260a6385722345327e8a7478b467c15d5f64c5a` after Web smoke and Live provider/backend E2E passed.
+- Render auto-deployed that exact commit to `https://al-qahtani-api.onrender.com`; the deploy reached `live` and logs confirm `node server/index.mjs` now boots the refactored `server/app.mjs` runtime.
+- Theeb Engine `theeb-arab-api` is deployed with service-token authentication support, and both Render services have the same server-to-server `THEEB_SERVICE_TOKEN` configured without exposing it to the browser or repository.
+- Active branch: `test/remote-runtime-smoke-10`.
 
 ## Completed in this run
-- Verified the dedicated Render backend auto-deployed merge commit `15c512bb00d7c679b2d0314fc6a63af4c26c488e` and reached live state.
-- Completed the discovered-result path by importing selected provider results through Theeb Engine `/v1/imports`, polling the public import job, then switching to canonical series details.
-- Added canonical episode playback resolution through Theeb Engine playback sessions.
-- Added `theeb:episode:<id>` handling in the Al-Qahtani backend and return a stable session media handoff instead of leaking temporary provider URLs.
-- Updated `Player.html` with a `stream` playback type for backend/Theeb media handoffs.
-- Removed the misleading direct-download action from media details; the UI now reports real download-option availability from the canonical API.
-- Extended local backend E2E coverage to test canonical details and, when a watchable sample exists, the episode playback contract.
-- PR #4 passed both static and live provider smoke tests and was merged to `main` as `7597ac37ff7409469ad1fde1788d45c758b8afba`.
-- Created and deployed a dedicated free Render backend service for this repository at `https://al-qahtani-api.onrender.com`, auto-deploying from `main`.
-- Confirmed the backend service reached live state on Render and started successfully with `node server/index.mjs`.
-- Added backend routes for match list/server discovery that server-side the legacy Worker origin requirements.
-- Added cinema search fallback through Theeb Engine `/v1/search` then `/v1/discover` when the local canonical library has no result.
-- Added cinema category discovery fallback so category buttons no longer depend on the locked legacy cinema Worker.
-- Refactored `web/core/api-client.js` so matches and cinema use the dedicated Al-Qahtani backend instead of direct legacy Workers.
-- Refactored the cinema UI to request category type/name rather than expose raw Akwam category URLs.
-- Added `scripts/local_backend_smoke.mjs` and wired it into CI to boot the backend from the PR source and test health, matches, cinema search and cinema category routes end to end.
-- PR #3 passed all Web smoke gates and was merged to `main` as `fd40c883e5a56e2d1f55637f6e9b36a85a531fd6`.
-- Added `web/core/catalog-config.js` and moved cinema category/source configuration out of `albasri-cinema.html`.
-- Added `scripts/live_provider_smoke.mjs` to probe match session/list/server discovery, cinema session/category/search/details, and the news JSON endpoint using the inherited production Workers.
-- Added `.github/workflows/live-provider-smoke.yml` so live provider health is tested inside GitHub Actions instead of inferred from screenshots.
-- Extended static smoke syntax checks to cover the catalog config and live provider smoke script.
-- Analyzed six iPhone Safari screenshots from the live GitHub Pages deployment. Confirmed Pages is deployed, but runtime provider access is inconsistent: matches fail, cinema category/search returns an empty shell, and news can either load 15 items or stall at 0.
-- Found a concrete root bug in `fetchJsonWithHealth`: spreading a `Headers` instance with `...(init.headers || {})` drops custom `X-BSR-Token` and `X-BSR-Page` headers. Fixed provider transport to normalize with `new Headers()` and preserve authentication headers.
-- Made match list/server requests resilient when session bootstrap itself is unavailable, while retaining authenticated requests when sessions work.
-- Made cinema reads tolerate Worker deployments where read endpoints are public and retain token refresh when authentication is required.
-- Added direct news JSON loading before the inherited iframe bridge, with the bridge retained as compatibility fallback and a bounded timeout instead of an endless spinner.
-- Fixed the match retry button: inline `onclick="load()"` could not call module-scoped `load()`; retry now uses an event listener.
-- Added explicit cinema loading/error states so provider failures no longer look like valid empty search/category results.
-- Added CI regression gates for preserved provider headers and module-safe retry behavior.
-- Re-audited current `main`, branches, recent commits, CI configuration and migration state before making changes.
-- Confirmed the migrated web surface on `main` still lacked `news.html`, `albasri-cinema.html`, `basrimatches.html`, `bsr-Player.html` and `sitemap.xml`.
-- Re-inspected the original uploaded archive to preserve behavior rather than replacing pages from memory.
-- Centralized inherited Worker endpoints in `web/core/api-client.js` so UI files no longer need direct `workers.dev` URLs.
-- Added match session handling, token refresh on HTTP 401 and direct fallback in the provider client.
-- Refactored `index.html` to use the provider client and preserved the original 45-second match refresh cadence.
-- Added a readable `news.html` using the original source bridge/pagination behavior and provider-backed article loading.
-- Restored `albasri-cinema.html` with category browsing, search, media details, episode listing, watch and download actions.
-- Added token-aware cinema provider methods for genre, search and series/details requests.
-- Replaced the legacy `bsr-Player.html` Intent generator with a web-player URL generator that does not target `com.bsr.player.pro`.
-- Consolidated the old structured matches URL through `basrimatches.html` into the provider-backed home while keeping session and refresh behavior in the new path.
-- Added cinema/media payload contracts and normalization helpers.
-- Added `sitemap.xml` and `robots.txt` pointing at the Al-Qahtani GitHub Pages site.
-- Added explicit GitHub Pages deployment workflow and `.nojekyll`.
-- Strengthened Web smoke gates to require all migrated web pages, reject Worker URLs in UI files and reject the legacy Android package across the public web surface.
+- Re-audited `main`, branches, the open PR, CI, Render service state and handoff documentation before continuing.
+- Found the runtime split that explained why some GitHub fixes did not affect production: Render executed `server/index.mjs` while newer provider-details/media-proxy logic lived in `server/app.mjs`.
+- Replaced `server/index.mjs` with a small runtime entrypoint that starts `createServer()` from `server/app.mjs`.
+- Added server-only authorization injection for protected Theeb Engine `/api/providers/*` requests using `THEEB_SERVICE_TOKEN`; the token is never sent to GitHub Pages or committed to GitHub.
+- Configured the same service token on `al-qahtani-api` and `theeb-arab-api` in Render. The Theeb Engine deployment completed successfully.
+- Kept public `/v1/*` calls public while protecting provider recovery paths behind server-to-server Bearer authentication.
+- Preserved the Range-aware `/api/cinema/media` proxy for Safari playback so the browser does not talk directly to protected/upstream media endpoints.
+- Updated local CI so public smoke tests do not require secrets; protected recovery remains validated only when the service token is present.
+- Web smoke and Live provider/backend E2E passed on PR #9, then PR #9 was squash-merged.
+- Verified Render auto-deployed merge commit `1260a6385722345327e8a7478b467c15d5f64c5a` and reported it live.
+- Added `scripts/remote_runtime_smoke.mjs` to test the actual deployed Render backend, not localhost only. It covers backend health, matches, Arabic search `الذئب الوحيد`, details fallback across multiple results, optional episode playback and byte-range media proxying, `The Odyssey`, and the anime category.
+- Added `.github/workflows/remote-runtime-smoke.yml` and included the remote smoke script in static syntax validation.
 
 ## Preserved original behavior
-- Matches: session acquisition, token refresh, server discovery, HLS/MP4/embed playback, periodic refresh.
-- News: source iframe bridge, incremental loading, article detail retrieval.
-- Cinema: category browsing, search, details, episodes, watch and download entry points.
-- Legacy player utility: retained as a compatibility tool, but it now creates web-player links instead of Android Intents.
+- Matches: session acquisition, server discovery, HLS/MP4/embed playback and periodic refresh.
+- News: source bridge/incremental loading and article details.
+- Cinema: categories, search, details, episodes, watch/download entry points, with fallback across canonical/discovery/legacy/provider paths.
+- Legacy player utility remains only as a web compatibility tool and does not launch `com.bsr.player.pro`.
 
 ## Known limitations
-- Provider liveness/playability is still dependent on inherited Workers and upstream sources; repository CI currently verifies static behavior and structure, not every live stream.
-- Cinema category URLs inherited from the original source are still represented in the web page and should be moved behind provider configuration in a later pass.
-- Download behavior is a browser-level direct-link action; platform-specific download management will be implemented in Flutter later.
-- Flutter migration has not started because web parity and deployment are still being proven first.
+- Remote deployed runtime smoke is being introduced now; do not claim full Safari parity until that gate passes against the live Render backend.
+- Provider availability is inherently variable. CI must distinguish an upstream empty/no-playable-source condition from a repository regression.
+- Free Render services can cold-start; runtime probes include bounded retries/timeouts instead of treating the first slow request as a permanent failure.
+- Download option UX is not complete yet.
+- Flutter migration remains intentionally blocked until the live web chain is proven from search/category through details/episodes/playback.
 
 ## Next run goals
-1. Add remote smoke probes against the deployed Al-Qahtani Render backend, not only localhost.
-2. Add browser-level GitHub Pages navigation tests for matches, search, categories, details, episodes and player routing.
-3. Validate real match server availability across all current matches instead of sampling only one.
-4. Add playback-source health/fallback telemetry and distinguish empty server lists from transport failures.
-5. Finish user-selectable download-option opening through Theeb Engine without exposing temporary provider URLs.
-6. Improve cinema category quality/ranking and deduplication from discovery results.
-7. Add persistent lightweight caching in the Al-Qahtani backend to soften free-tier cold starts.
-8. Once web runtime gates are proven live, initialize the Flutter workspace against the same backend contract.
-9. Add Android Mobile and Android TV CI/build pipelines with TV focus/D-pad behavior.
-10. Add unsigned iOS IPA CI and gated GitHub Releases after the Flutter baseline is stable.
+1. Run PR CI for `test/remote-runtime-smoke-10` and inspect the exact live Render failures, if any.
+2. Require `الذئب الوحيد` and `The Odyssey` to return real search items and at least one detail result from the deployed backend.
+3. Require the anime category to return real items, not merely `status: success` with an empty array.
+4. When a live playable episode exists, verify the Al-Qahtani media proxy accepts Safari-style HTTP Range requests and never exposes the service token.
+5. Add remote match server availability sampling across all current matches and classify empty server lists separately from transport/auth failures.
+6. Add browser-level GitHub Pages navigation coverage for matches, search, category, details and Player routing.
+7. Add short-lived backend cache/deduplication for search/category/detail requests to reduce cold-start/upstream jitter.
+8. Finish download-option open flow through Theeb Engine without exposing temporary raw provider URLs.
+9. Only after all live web runtime gates are green, initialize Flutter against the same Al-Qahtani backend contracts.
+10. Then add Android Mobile, Android TV D-pad/focus, iOS unsigned IPA CI, and gated GitHub Releases.
