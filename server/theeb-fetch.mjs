@@ -17,6 +17,14 @@ function inheritedHeaders(input, init) {
   return new Headers(init.headers || inherited || {});
 }
 
+function methodOf(input, init) {
+  return String(init.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+}
+
+function retryableStatus(status) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
 async function inspectDiscovery(response) {
   let data = null;
   try {
@@ -62,19 +70,48 @@ export function createTheebFetch({
     while (cache.size > maxEntries) cache.delete(cache.keys().next().value);
   }
 
+  async function waitForRetry(attempt) {
+    const delay = retryDelaysMs[Math.min(attempt, retryDelaysMs.length - 1)] ?? 500;
+    await wait(Math.max(0, delay));
+  }
+
   return async function theebFetch(input, init = {}) {
     const url = inputUrl(input);
     if (!url || url.origin !== origin) return nativeFetch(input, init);
 
+    const method = methodOf(input, init);
     if (url.pathname.startsWith("/api/providers/")) {
       const headers = inheritedHeaders(input, init);
       if (serviceToken && !headers.has("Authorization")) {
         headers.set("Authorization", `Bearer ${serviceToken}`);
       }
-      return nativeFetch(input, { ...init, headers });
+      const requestInit = { ...init, headers };
+      if (method !== "GET") return nativeFetch(input, requestInit);
+
+      let lastResponse = null;
+      let lastError = null;
+      const attempts = Math.max(1, retries + 1);
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+          const response = await nativeFetch(input, requestInit);
+          lastResponse = response;
+          if (!retryableStatus(response.status)) {
+            if (attempt > 0) {
+              log("theeb_provider_recovered", { path: url.pathname, attempt: attempt + 1, status: response.status });
+            }
+            return response;
+          }
+          log("theeb_provider_http_error", { path: url.pathname, attempt: attempt + 1, status: response.status });
+        } catch (error) {
+          lastError = error;
+          log("theeb_provider_transport_error", { path: url.pathname, attempt: attempt + 1, error: String(error?.message || error) });
+        }
+        if (attempt + 1 < attempts) await waitForRetry(attempt);
+      }
+      if (lastResponse) return lastResponse;
+      throw lastError || new Error("THEEB_PROVIDER_UNAVAILABLE");
     }
 
-    const method = String(init.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
     if (method !== "GET" || url.pathname !== "/v1/discover") {
       return nativeFetch(input, init);
     }
@@ -115,7 +152,7 @@ export function createTheebFetch({
             attempt: attempt + 1,
             ...inspected.diagnostics,
           });
-        } else if (![408, 429].includes(response.status) && response.status < 500) {
+        } else if (!retryableStatus(response.status)) {
           return response;
         } else {
           log("theeb_discovery_http_error", { query: url.searchParams.get("q") || "", attempt: attempt + 1, status: response.status });
@@ -125,10 +162,7 @@ export function createTheebFetch({
         log("theeb_discovery_transport_error", { query: url.searchParams.get("q") || "", attempt: attempt + 1, error: String(error?.message || error) });
       }
 
-      if (attempt + 1 < attempts) {
-        const delay = retryDelaysMs[Math.min(attempt, retryDelaysMs.length - 1)] ?? 500;
-        await wait(Math.max(0, delay));
-      }
+      if (attempt + 1 < attempts) await waitForRetry(attempt);
     }
 
     if (cached && timestamp - cached.storedAt <= staleTtlMs) {
