@@ -66,6 +66,42 @@ test("injects the service bearer token only for protected provider routes", asyn
   assert.equal(seen[1].headers.get("Authorization"), null);
 });
 
+test("retries transient 5xx failures from protected provider GET routes", async () => {
+  const responses = [jsonResponse({ error: "temporary" }, 500), jsonResponse({ episode: { id: "44" } }, 200)];
+  let calls = 0;
+  const events = [];
+  const fetcher = createTheebFetch({
+    serviceToken: "secret-token",
+    nativeFetch: async () => responses[calls++],
+    retries: 2,
+    retryDelaysMs: [0, 0],
+    wait: async () => {},
+    log: (event) => events.push(event),
+  });
+  const response = await fetcher("https://theeb-arab-api.onrender.com/api/providers/akwam/episode/44");
+  assert.equal(response.status, 200);
+  assert.equal(calls, 2);
+  assert.ok(events.includes("theeb_provider_http_error"));
+  assert.ok(events.includes("theeb_provider_recovered"));
+});
+
+test("does not retry provider target validation failures", async () => {
+  let calls = 0;
+  const fetcher = createTheebFetch({
+    serviceToken: "secret-token",
+    nativeFetch: async () => {
+      calls += 1;
+      return jsonResponse({ error: "INVALID_PROVIDER_TARGET" }, 400);
+    },
+    retries: 2,
+    wait: async () => {},
+    log: () => {},
+  });
+  const response = await fetcher("https://theeb-arab-api.onrender.com/api/providers/akwam/episode/not-valid");
+  assert.equal(response.status, 400);
+  assert.equal(calls, 1);
+});
+
 test("passes unrelated origins through without mutation", async () => {
   let calls = 0;
   const fetcher = createTheebFetch({
