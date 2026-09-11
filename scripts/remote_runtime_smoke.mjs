@@ -108,23 +108,61 @@ async function openAnyDetails(items, label) {
   return null;
 }
 
+async function resolvePlayback(details) {
+  if (details?.response?.ok && details.data?.status === "success" && details.data?.media_path) return details;
+
+  const candidates = (Array.isArray(details?.data?.episodes) ? details.data.episodes : [])
+    .filter((item) => item?.watch_available !== false && item?.link)
+    .slice(0, 3);
+
+  let last = null;
+  for (const [index, episode] of candidates.entries()) {
+    try {
+      const play = await request("/api/cinema/details?ref=" + encodeURIComponent(episode.link), { timeoutMs: 45_000 });
+      last = play;
+      if (play.response.ok && play.data?.status === "success" && play.data?.media_path) {
+        if (index > 0) {
+          console.log("PASS remote playback recovered with bounded episode candidate", {
+            candidate: index + 1,
+            episode: episode.num || null,
+            ms: play.ms,
+          });
+        }
+        return play;
+      }
+      console.warn("PLAYBACK_CANDIDATE_FAILED", {
+        candidate: index + 1,
+        episode: episode.num || null,
+        status: play.response.status,
+        state: play.data?.status || "",
+        message: play.data?.message || "",
+        ms: play.ms,
+      });
+    } catch (error) {
+      console.warn("PLAYBACK_CANDIDATE_ERROR", {
+        candidate: index + 1,
+        episode: episode.num || null,
+        error: String(error?.message || error),
+      });
+    }
+  }
+  return last;
+}
+
 async function requirePlayback(details) {
   if (!details?.data) {
     assert(false, "remote playback has details payload");
     return;
   }
-  const episodes = Array.isArray(details.data.episodes) ? details.data.episodes : [];
-  const episode = episodes.find((item) => item?.watch_available !== false && item?.link);
-  let play = details;
-  if (episode) {
-    play = await request("/api/cinema/details?ref=" + encodeURIComponent(episode.link), { timeoutMs: 120_000 });
-  }
-  const playable = play.response.ok && play.data?.status === "success" && Boolean(play.data?.media_path);
+
+  const play = await resolvePlayback(details);
+  const playable = Boolean(play?.response?.ok && play.data?.status === "success" && play.data?.media_path);
   if (!assert(playable, "remote playback resolves a real proxied source", {
-    status: play.response.status,
-    state: play.data?.status,
-    message: play.data?.message || "",
-    mediaPath: play.data?.media_path || "",
+    status: play?.response?.status,
+    state: play?.data?.status,
+    message: play?.data?.message || "",
+    mediaPath: play?.data?.media_path || "",
+    attemptedEpisodes: (details.data.episodes || []).filter((item) => item?.watch_available !== false && item?.link).slice(0, 3).length,
   })) return;
 
   const mediaUrl = String(play.data.media_path);
