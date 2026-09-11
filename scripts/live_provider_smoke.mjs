@@ -30,12 +30,19 @@ function assert(cond, message, detail = {}) {
 }
 
 const safeRef = value => {
-  try { return new URL(String(value)).href; } catch { return encodeURI(String(value)); }
+  const raw = String(value || "");
+  try {
+    const url = new URL(raw);
+    url.pathname = url.pathname.split("/").map(segment => encodeURIComponent(decodeURIComponent(segment))).join("/");
+    return url.href;
+  } catch {
+    return encodeURI(raw);
+  }
 };
 const jsonHeaders = (page, extra = {}) => ({
   Accept: "application/json",
   Origin: ORIGIN,
-  Referer: ORIGIN + page,
+  Referer: safeRef(ORIGIN + page),
   "X-BSR-Page": page,
   ...extra,
 });
