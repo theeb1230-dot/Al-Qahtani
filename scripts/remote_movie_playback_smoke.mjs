@@ -70,6 +70,38 @@ async function probeRange(mediaPath) {
   }
 }
 
+async function probeDownload(mediaPath) {
+  const sep = mediaPath.includes("?") ? "&" : "?";
+  const path = `${mediaPath}${sep}download=1`;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 60000);
+  try {
+    const response = await fetch(BASE + path, {
+      headers: { Origin: ORIGIN, Range: "bytes=0-1023" },
+      cache: "no-store",
+      redirect: "follow",
+      signal: ctl.signal,
+    });
+    const disposition = response.headers.get("content-disposition") || "";
+    const nosniff = response.headers.get("x-content-type-options") || "";
+    const contentRange = response.headers.get("content-range") || "";
+    if (![200, 206].includes(response.status)) throw new Error(`DOWNLOAD_STATUS_${response.status}`);
+    if (!disposition.toLowerCase().startsWith("attachment;")) throw new Error(`BAD_DOWNLOAD_DISPOSITION_${disposition}`);
+    if (nosniff.toLowerCase() !== "nosniff") throw new Error(`BAD_DOWNLOAD_NOSNIFF_${nosniff}`);
+    if (response.status === 206 && !/^bytes 0-1023\//.test(contentRange)) throw new Error(`BAD_DOWNLOAD_RANGE_${contentRange}`);
+    pass(`${LABEL} movie bounded download stays behind proxy`, {
+      status: response.status,
+      disposition,
+      nosniff,
+      contentRange,
+      path,
+    });
+    try { await response.body?.cancel(); } catch {}
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const health = await waitForHealth();
 pass(`${LABEL} backend health`, { ms: health.ms, base: BASE });
 
@@ -113,3 +145,4 @@ if (playable.episodes !== 0) {
 }
 pass(`${LABEL} movie resolves real proxied playback`, playable);
 await probeRange(playable.mediaPath);
+await probeDownload(playable.mediaPath);
