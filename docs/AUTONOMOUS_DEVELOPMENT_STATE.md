@@ -4,53 +4,59 @@
 GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main.zip` remains the behavioral baseline.
 
 ## Product boundary
-- `Al-Qahtani` is an independent project derived from the original Al-Basri web project.
-- It must not depend on `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, or any Theeb provider/search/playback API.
-- The original Basri workers/contracts are the content/runtime source of truth for matches, cinema and news, with Al-Qahtani backend acting only as a secure proxy where browser exposure would be unsafe.
-- The historical category URLs passed to the Basri cinema worker are part of that original Basri contract; they are not an integration with the separate `akwam-indexer` repository.
+- `Al-Qahtani` is independent from `theeb1230-dot/akwam-indexer` and Theeb Engine.
+- The original Basri project behavior is the compatibility baseline.
+- Matches/news continue to use the original Basri workers.
+- Cinema keeps the original Basri category URLs and content behavior, but the legacy cinema worker is currently returning `403 FORBIDDEN_ORIGIN` even for the historical Basri origins. Because the underlying original source remains reachable, the Al-Qahtani backend now has a bounded server-side direct fallback that reproduces the original category/search/details/episode/watch chain without exposing source URLs or media URLs to the browser.
 
 ## Current state
-- `main` is at `77672755fc5171e898e087297edbf8579e8719a9` after PR #15.
-- PR #16 was closed without merge after the product boundary was corrected.
+- `main` remains at `77672755fc5171e898e087297edbf8579e8719a9` while PR #17 is under repair.
+- Active PR: #17 `Restore original Basri cinema runtime`.
 - Active branch: `fix/restore-basri-cinema-17`.
-- The branch removes the cross-project Theeb runtime wrapper and restores cinema search/category/details/episode calls to the original Basri cinema worker contract.
+- Latest branch work adds direct Basri-source fallback plus CI/runtime probes. Merge is still blocked until both Web smoke and Live provider smoke are green.
 
-## Completed in this run
-- Confirmed there were no open PRs before starting the corrective branch.
-- Re-read the original pre-Theeb `albasri-cinema.html` and `web/core/api-client.js`; both used the original Basri cinema worker `https://albas.albesriali03.workers.dev/` with `session`, `action=genre`, `action=search` and `action=series` contracts.
-- Replaced `server/app.mjs` so cinema now uses only the Basri worker session/token flow. Tokens remain server-side and are not returned to the browser.
-- Preserved the dedicated Al-Qahtani backend for CORS isolation, match proxying and Safari-compatible media proxying.
-- Added opaque, short-lived backend media references so direct media URLs are not exposed to the browser; Range requests are forwarded and range/content headers are preserved.
-- Simplified `server/index.mjs` to run the Basri-only backend directly.
-- Removed `server/theeb-fetch.mjs` and its Theeb-specific test file.
-- Updated `scripts/live_provider_smoke.mjs` so it probes only the original Basri matches/cinema/news providers.
-- Updated `scripts/local_backend_smoke.mjs` to verify that search/category/details use `source: basri-worker` and that direct media remains behind `/api/cinema/media?id=...`.
-- Updated Web smoke CI with a hard guard rejecting future Theeb/Akwam-project integration strings.
+## Root cause established
+- Matches provider is healthy and returns live match data.
+- News provider is healthy.
+- The legacy cinema worker `https://albas.albesriali03.workers.dev/` returns `403 FORBIDDEN_ORIGIN` for both historical Basri origins, including the exact host hard-coded in the original archive.
+- Direct requests to the original cinema source category are healthy. The live CI probe fetched the foreign-series category successfully, found real content cards, loaded a series details page, discovered seven episodes, loaded an episode, discovered its watch URL, and resolved a real media source.
+- A second defect was found while validating Arabic episode paths: Node/undici rejects raw non-ASCII `Referer` header values. Referers are now canonicalized/percent-encoded before server-side requests.
 
-## Preserved behavior
-- Matches remain on the original Basri match worker and keep server discovery.
-- News remains on the readable Basri news worker bridge with no ad-network runtime code.
-- Cinema keeps the original Basri category/search/details contract and the same category source URLs used by the original project.
-- `Player.html` remains web-native and does not launch the legacy Android application package.
-- No ad/pop-up/tracking runtime is reintroduced.
+## Completed on PR #17
+- Removed the cross-project Theeb runtime integration.
+- Restored the original Basri product boundary.
+- Added `server/basri-source.mjs` with strict allowlisting for `akwam.ss` and `.downet.net` media only.
+- Added server-side fallback for category, search, details, episodes and watch resolution when the legacy cinema worker is forbidden, errors, or returns an empty result.
+- Preserved opaque short-lived `/api/cinema/media?id=...` references so direct media URLs stay out of the browser UI.
+- Preserved CORS controls and Safari-style byte-range forwarding.
+- Added validation that the original source category is genuinely populated instead of accepting `200 + []` as success.
+- Added a live chain probe: category -> details -> episode -> watch -> media.
+- Added local backend E2E coverage for category -> details -> episode -> proxied playback -> Range request.
+- Fixed non-ASCII Referer handling for Arabic paths.
+- Web smoke remains green on the repaired architecture.
 
-## Gates still required
-- Open PR #17 and run Web smoke plus Live provider smoke.
-- Repair any CI failure on the same branch only.
-- Merge only after required PR gates are green.
-- After merge, verify Render/GitHub Pages deploy the exact merge commit.
-- Run deployed runtime smoke against the live site and backend: matches, news, all cinema categories, search, details, episodes, playback and Safari byte-range handling.
-- Do not report success to the user until the live deployed path works.
-- Flutter remains blocked until live Web parity is proven.
+## Current CI state
+- Web smoke has been green on the recent PR revisions.
+- The previous Live provider smoke failure was caused by the raw Arabic Referer ByteString exception after the direct chain had already passed category/details/episode discovery. That defect is fixed on the latest branch revision.
+- A fresh CI run is required on the current head before merging.
+
+## Required gate before merge
+1. Web smoke green on current head.
+2. Live provider smoke green on current head, including direct category/details/episode/watch/media and local backend E2E.
+3. No regression in matches/news.
+4. Merge PR #17 only after both workflows are green.
+5. Verify Render deploys the exact merged commit.
+6. Run deployed remote runtime smoke through GitHub Pages/Render, including all visible cinema categories, search, details, episodes, playback, and `Range: bytes=0-1023`.
+7. Keep Flutter blocked until deployed Web parity is proven.
 
 ## Next run goals
-1. Open PR #17 from `fix/restore-basri-cinema-17` and inspect every changed file for accidental Theeb references.
-2. Run Web smoke and Live provider smoke; fix failures on the same branch.
-3. Verify the Basri cinema session/search/category/details contracts still accept server-side Origin/Referer/X-BSR headers.
-4. If a search/category returns an empty array, diagnose the Basri worker response rather than introducing another provider project.
-5. Normalize any original Basri episode/result shapes that differ from the current UI contract without dropping fields.
-6. Confirm direct media is proxied and Safari `Range: bytes=0-1023` returns 200/206 with useful headers.
-7. Keep matches and news green as regression controls.
-8. Merge only when PR gates are green, then verify exact deployment commit.
-9. Run the full deployed browser/runtime gate from GitHub Pages through Render to the Basri workers.
-10. Begin Flutter only after that deployed Web gate is green.
+1. Inspect the fresh CI runs for the latest PR #17 head.
+2. Fix any remaining live/local smoke failure on the same branch only.
+3. Confirm direct search parsing returns real results for known queries where the source has matches, without treating empty as a healthy terminal result.
+4. Confirm every visible movie/series category returns cards through the backend fallback.
+5. Confirm series details preserve title/poster/episode numbering.
+6. Confirm episode playback resolves media and the proxy handles Safari Range correctly.
+7. Merge PR #17 only after all required checks are green.
+8. Verify exact Render deployment commit after merge.
+9. Run remote deployed smoke and compare against the iPhone Safari regression symptoms.
+10. Start Flutter work only after deployed Web parity is green.
