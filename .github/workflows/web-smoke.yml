@@ -11,6 +11,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Inspect original Basri archive contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re, zipfile
+          pat=re.compile(r'workers\.dev|abrdns|FORBIDDEN_ORIGIN|ALLOWED_HOST|movies-series|session',re.I)
+          with zipfile.ZipFile('albasritv.github.io-main.zip') as z:
+              for name in z.namelist():
+                  if not name.lower().endswith(('.html','.js','.json','.txt')):
+                      continue
+                  try:
+                      text=z.read(name).decode('utf-8','ignore')
+                  except Exception:
+                      continue
+                  hits=[line.strip() for line in text.splitlines() if pat.search(line)]
+                  if hits:
+                      print('FILE',name)
+                      for line in hits[:40]:
+                          print(line[:500])
+          PY
+
       - name: Reject ad-network runtime references
         shell: bash
         run: |
