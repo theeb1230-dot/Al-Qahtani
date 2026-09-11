@@ -1,0 +1,15 @@
+name: Original Basri download contract
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  archive-download-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recover original download behavior from baseline archive
+        run: python scripts/original_download_contract.py
