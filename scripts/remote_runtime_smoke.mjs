@@ -88,7 +88,18 @@ async function requirePlayback(details) {
     return;
   }
 
-  const play = await request("/api/cinema/details?ref=" + encodeURIComponent(episode.link), { timeoutMs: 120_000 });
+  let play;
+  if (String(episode.link).startsWith("provider:")) {
+    play = await request(
+      "/api/cinema/provider-play?ref=" + encodeURIComponent(episode.link) +
+      "&title=" + encodeURIComponent(details.data.movie_title || "") +
+      "&episode=" + encodeURIComponent(episode.num || ""),
+      { timeoutMs: 180_000 },
+    );
+  } else {
+    play = await request("/api/cinema/details?ref=" + encodeURIComponent(episode.link), { timeoutMs: 120_000 });
+  }
+
   const playable = play.response.ok && play.data?.status === "success" && Boolean(play.data?.media_src || play.data?.media_path);
   if (!assert(playable, "remote playback resolves a real source", {
     status: play.response.status,
@@ -110,11 +121,13 @@ async function requirePlayback(details) {
       cache: "no-store",
       signal: controller.signal,
     });
-    assert([200, 206].includes(response.status), "Safari media proxy accepts byte-range request", {
+    const contentRange = response.headers.get("content-range");
+    const acceptRanges = response.headers.get("accept-ranges");
+    assert(response.status === 206 && Boolean(contentRange || acceptRanges), "Safari media proxy serves a byte range", {
       status: response.status,
       contentType: response.headers.get("content-type"),
-      contentRange: response.headers.get("content-range"),
-      acceptRanges: response.headers.get("accept-ranges"),
+      contentRange,
+      acceptRanges,
     });
     if (response.body) {
       const reader = response.body.getReader();
@@ -124,6 +137,20 @@ async function requirePlayback(details) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function requireCategory({ type, name, url }) {
+  const result = await request(
+    "/api/cinema/category?type=" + encodeURIComponent(type) +
+    "&name=" + encodeURIComponent(name) +
+    "&url=" + encodeURIComponent(url),
+    { timeoutMs: 180_000 },
+  );
+  assert(result.response.ok && result.data?.status === "success" && Array.isArray(result.data?.data) && result.data.data.length > 0, `deployed ${type} ${name} category returns real items`, {
+    source: result.data?.source,
+    count: result.data?.data?.length,
+    ms: result.ms,
+  });
 }
 
 try {
@@ -156,15 +183,21 @@ try {
   });
   await openAnyDetails(odysseyItems, "deployed The Odyssey opens details");
 
-  const anime = await request(
-    "/api/cinema/category?type=series&name=" + encodeURIComponent("أنمي") + "&url=" + encodeURIComponent("https://akwam.ss/series?category=30"),
-    { timeoutMs: 120_000 },
-  );
-  assert(anime.response.ok && anime.data?.status === "success" && Array.isArray(anime.data?.data) && anime.data.data.length > 0, "deployed anime category returns real items", {
-    source: anime.data?.source,
-    count: anime.data?.data?.length,
-    ms: anime.ms,
-  });
+  const categories = [
+    { type: "series", name: "أجنبية", url: "https://akwam.ss/series?section=30" },
+    { type: "series", name: "عربية", url: "https://akwam.ss/series?section=29" },
+    { type: "series", name: "تركية", url: "https://akwam.ss/series?section=32" },
+    { type: "series", name: "آسيوية", url: "https://akwam.ss/series?section=33" },
+    { type: "series", name: "أنمي", url: "https://akwam.ss/series?category=30" },
+    { type: "series", name: "رمضان", url: "https://akwam.ss/series?category=87" },
+    { type: "movie", name: "أجنبية", url: "https://akwam.ss/movies?section=30" },
+    { type: "movie", name: "عربية", url: "https://akwam.ss/movies?section=29" },
+    { type: "movie", name: "هندية", url: "https://akwam.ss/movies?section=31" },
+    { type: "movie", name: "آسيوية", url: "https://akwam.ss/movies?section=33" },
+    { type: "movie", name: "تركية", url: "https://akwam.ss/movies?section=32" },
+    { type: "movie", name: "أنمي", url: "https://akwam.ss/movies?category=30" },
+  ];
+  for (const category of categories) await requireCategory(category);
 } catch (error) {
   console.error("REMOTE_RUNTIME_FATAL", error);
   process.exitCode = 1;
