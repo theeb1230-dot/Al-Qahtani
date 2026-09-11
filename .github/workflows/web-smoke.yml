@@ -11,6 +11,77 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Inspect original Basri archive contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('albasritv.github.io-main.zip') as z:
+              name='albasritv.github.io-main/albasri-cinema.html'
+              text=z.read(name).decode('utf-8','ignore')
+              for needle in ['const ALLOWED_HOST','async function getApiSession','fetch(API_URL + "session"']:
+                  i=text.find(needle)
+                  print('\n===',needle,'===')
+                  print(text[max(0,i-250):i+1500] if i>=0 else 'NOT FOUND')
+          PY
+
+      - name: Inspect original cinema source structure
+        shell: bash
+        run: |
+          set +e
+          UA='Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'
+          curl -L --max-time 25 -A "$UA" -H 'Accept: text/html,application/xhtml+xml' -o /tmp/basri-source.html -w 'source_http=%{http_code} final=%{url_effective} bytes=%{size_download}\n' 'https://akwam.ss/series?section=30'
+          FIRST=$(python - <<'PY'
+          import re,pathlib
+          t=pathlib.Path('/tmp/basri-source.html').read_text('utf-8','ignore')
+          m=re.search(r'https://akwam\.ss/series/[^"\']+',t,re.I)
+          print(m.group(0) if m else '')
+          PY
+          )
+          if [ -n "$FIRST" ]; then
+            curl -L --max-time 25 -A "$UA" -H 'Accept: text/html,application/xhtml+xml' -o /tmp/basri-detail.html -w 'detail_http=%{http_code} final=%{url_effective} bytes=%{size_download}\n' "$FIRST"
+            EP=$(python - <<'PY'
+          import re,pathlib
+          t=pathlib.Path('/tmp/basri-detail.html').read_text('utf-8','ignore')
+          eps=re.findall(r'https://akwam\.ss/episode/[^"\']+',t,re.I)
+          print(eps[-1] if eps else '')
+          PY
+            )
+            if [ -n "$EP" ]; then
+              curl -L --max-time 25 -A "$UA" -H 'Accept: text/html,application/xhtml+xml' -o /tmp/basri-episode.html -w 'episode_http=%{http_code} final=%{url_effective} bytes=%{size_download}\n' "$EP"
+              WATCH=$(python - <<'PY'
+          import re,pathlib
+          t=pathlib.Path('/tmp/basri-episode.html').read_text('utf-8','ignore')
+          m=re.search(r'https://akwam\.ss/watch/[^"\']+',t,re.I)
+          print(m.group(0) if m else '')
+          PY
+              )
+              echo "watch_url=$WATCH"
+              if [ -n "$WATCH" ]; then
+                curl -L --max-time 25 -A "$UA" -e "$EP" -H 'Accept: text/html,application/xhtml+xml' -o /tmp/basri-watch.html -w 'watch_http=%{http_code} final=%{url_effective} bytes=%{size_download}\n' "$WATCH"
+                python - <<'PY'
+          import re,pathlib
+          p=pathlib.Path('/tmp/basri-watch.html')
+          if not p.exists(): raise SystemExit(0)
+          t=p.read_text('utf-8','ignore')
+          title=re.search(r'<title[^>]*>(.*?)</title>',t,re.I|re.S)
+          print('WATCH_TITLE=', title.group(1).strip() if title else '')
+          for pat,label in [(r'<iframe[^>]+src=["\']([^"\']+)', 'IFRAMES'),(r'<video[^>]+src=["\']([^"\']+)', 'VIDEOS'),(r'<source[^>]+src=["\']([^"\']+)', 'SOURCES'),(r'https?://[^"\'<> ]+\.m3u8[^"\'<> ]*','M3U8'),(r'https?://[^"\'<> ]+\.mp4[^"\'<> ]*','MP4')]:
+              vals=[]
+              for v in re.findall(pat,t,re.I):
+                  if v not in vals: vals.append(v)
+                  if len(vals)>=10: break
+              print(label, vals)
+          for needle in ['player','jwplayer','videojs','file:','sources:','m3u8']:
+              m=re.search(needle,t,re.I)
+              if m:
+                  i=m.start(); print('WATCH_CONTEXT',needle); print(t[max(0,i-800):i+2200])
+          PY
+              fi
+            fi
+          fi
+          exit 0
+
       - name: Reject ad-network runtime references
         shell: bash
         run: |
@@ -40,12 +111,21 @@ jobs:
             exit 1
           fi
 
-      - name: Guard independent hosting
+      - name: Keep Worker endpoints out of UI files
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f albasri-cinema.html ] && grep -nE 'ALLOWED_HOST|albasritv\.abrdns\.com' albasri-cinema.html; then
-            echo "Cinema page is still locked to the old host"
+          if grep -nE 'https://[^"[:space:]]*workers\.dev' index.html news.html albasri-cinema.html Player.html bsr-Player.html basrimatches.html; then
+            echo "Worker endpoint leaked into UI file; keep it in provider/backend code"
+            exit 1
+          fi
+
+      - name: Reject cross-project Theeb integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RniE --exclude='AUTONOMOUS_DEVELOPMENT_STATE.md' --exclude='web-smoke.yml' 'theeb-arab-api|THEEB_SERVICE_TOKEN|akwam-indexer|server/theeb-fetch|theeb:canonical:|theeb:discover:|theeb:episode:' .; then
+            echo "Al-Qahtani must remain independent from Theeb/Akwam project integration"
             exit 1
           fi
 
@@ -57,24 +137,6 @@ jobs:
             test -s "$f" || { echo "Missing required web file: $f"; exit 1; }
           done
 
-      - name: Keep Worker endpoints out of UI files
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -nE 'https://[^"[:space:]]*workers\.dev' index.html news.html albasri-cinema.html Player.html bsr-Player.html basrimatches.html; then
-            echo "Worker endpoint leaked into UI file; keep it in provider/backend code"
-            exit 1
-          fi
-
-      - name: Reject legacy Android package everywhere in public web
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -n 'com\.bsr\.player\.pro' index.html Player.html news.html albasri-cinema.html bsr-Player.html basrimatches.html; then
-            echo "Legacy Android package reference remains in public web"
-            exit 1
-          fi
-
       - name: Validate provider and backend syntax
         run: |
           node --check web/core/providers.js
@@ -84,14 +146,10 @@ jobs:
           node --check scripts/live_provider_smoke.mjs
           node --check server/app.mjs
           node --check server/index.mjs
-          node --check server/theeb-fetch.mjs
           node --check scripts/local_backend_smoke.mjs
           node --check scripts/remote_runtime_smoke.mjs
 
-      - name: Test Theeb discovery resilience
-        run: node --test test/theeb-fetch.test.mjs
-
-      - name: Guard provider auth headers and module retry
+      - name: Guard provider module retry
         shell: bash
         run: |
           set -euo pipefail

@@ -1,10 +1,19 @@
 import http from "node:http";
+import https from "node:https";
+import crypto from "node:crypto";
+import {
+  assertSourceUrl,
+  directCategory,
+  directSearch,
+  directDetails,
+  directWatch,
+  BasriSource,
+} from "./basri-source.mjs";
 
 const MATCHES = "https://api.albasritv1.workers.dev/";
-const THEEB = "https://theeb-arab-api.onrender.com";
-const LEGACY_CINEMA = "https://albas.albesriali03.workers.dev/";
-const LEGACY_ORIGIN = "https://www.albasritv.abrdns.com";
-const LEGACY_REFERER = `${LEGACY_ORIGIN}/2026/09/movies-series.html`;
+const CINEMA = "https://albas.albesriali03.workers.dev/";
+const BASRI_ORIGIN = "https://www.albasritv.abrdns.com";
+const BASRI_REFERER = `${BASRI_ORIGIN}/2026/09/movies-series.html`;
 
 const ALLOWED_ORIGINS = new Set([
   "https://theeb1230-dot.github.io",
@@ -12,35 +21,22 @@ const ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:8000",
 ]);
 
-const CATEGORY_ALIASES = {
-  "أنمي": ["anime", "انمي", "أنيمي"],
-  "أجنبية": ["english", "foreign"],
-  "عربية": ["عربي", "arabic"],
-  "تركية": ["تركي", "turkish"],
-  "آسيوية": ["asian", "كوري", "ياباني"],
-  "هندية": ["هندي", "indian"],
-  "رمضان": ["رمضانية"],
-};
+const mediaRefs = new Map();
+let cinemaToken = "";
+let cinemaTokenExpiresAt = 0;
+let cinemaSessionPromise = null;
 
 function applyCors(req, res) {
   const origin = String(req.headers.origin || "");
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
+  if (origin && ALLOWED_ORIGINS.has(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Range");
-  res.setHeader(
-    "Access-Control-Expose-Headers",
-    "Content-Length,Content-Range,Accept-Ranges,Content-Type",
-  );
+  res.setHeader("Access-Control-Expose-Headers", "Content-Type,Content-Length,Content-Range,Accept-Ranges");
 }
 
 function sendJson(res, status, data) {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-  });
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(JSON.stringify(data));
 }
 
@@ -48,52 +44,50 @@ function log(event, data = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...data }));
 }
 
+function safeHeaderUrl(value) {
+  const raw = String(value || "");
+  try {
+    const url = new URL(raw);
+    url.pathname = url.pathname.split("/").map(segment => encodeURIComponent(decodeURIComponent(segment))).join("/");
+    return url.href;
+  } catch {
+    return encodeURI(raw);
+  }
+}
+
 async function fetchTextJson(url, init = {}, timeoutMs = 45_000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      cache: "no-store",
-    });
+    const response = await fetch(url, { ...init, signal: controller.signal, cache: "no-store", redirect: "follow" });
     const text = await response.text();
     let data = null;
-    try {
-      data = JSON.parse(text);
-    } catch {}
+    try { data = JSON.parse(text); } catch {}
     return { response, data, text };
   } finally {
     clearTimeout(timer);
   }
 }
 
-function legacyMatchHeaders(token = "") {
-  const headers = {
+function basriHeaders(page = "/2026/09/movies-series.html", extra = {}) {
+  return {
     Accept: "application/json",
-    Origin: LEGACY_ORIGIN,
-    Referer: LEGACY_REFERER,
-    "X-BSR-Page": "/2026/09/matches.html",
+    Origin: BASRI_ORIGIN,
+    Referer: `${BASRI_ORIGIN}${page}`,
+    "X-BSR-Page": page,
+    ...extra,
   };
-  if (token) headers["X-BSR-Token"] = token;
-  return headers;
 }
 
 async function getMatchToken() {
-  const result = await fetchTextJson(`${MATCHES}session`, {
-    headers: legacyMatchHeaders(),
-  });
-  if (!result.response.ok || !result.data?.token) {
-    throw new Error(`MATCH_SESSION_${result.response.status}`);
-  }
+  const result = await fetchTextJson(`${MATCHES}session`, { headers: basriHeaders("/2026/09/matches.html") });
+  if (!result.response.ok || !result.data?.token) throw new Error(`MATCH_SESSION_${result.response.status}`);
   return String(result.data.token);
 }
 
 async function getMatches() {
   const token = await getMatchToken();
-  const result = await fetchTextJson(MATCHES, {
-    headers: legacyMatchHeaders(token),
-  });
+  const result = await fetchTextJson(MATCHES, { headers: basriHeaders("/2026/09/matches.html", { "X-BSR-Token": token }) });
   if (!result.response.ok) throw new Error(`MATCH_LIST_${result.response.status}`);
   return result.data;
 }
@@ -102,464 +96,248 @@ async function getMatchServers(target) {
   const url = new URL(target);
   if (url.origin !== new URL(MATCHES).origin) throw new Error("BAD_MATCH_TARGET");
   const token = await getMatchToken();
-  const result = await fetchTextJson(url.href, {
-    headers: legacyMatchHeaders(token),
-  });
+  const result = await fetchTextJson(url.href, { headers: basriHeaders("/2026/09/matches.html", { "X-BSR-Token": token }) });
   if (!result.response.ok) throw new Error(`MATCH_SERVERS_${result.response.status}`);
   return result.data;
 }
 
-function mapLibrary(items = []) {
-  return items.map((item) => ({
-    title: item.title,
-    img: item.image || "",
-    is_series: item.content_type !== "movie",
-    href: `theeb:canonical:${item.id}`,
-    year: item.year || null,
-  }));
+async function ensureCinemaSession(force = false) {
+  const now = Date.now();
+  if (!force && cinemaToken && cinemaTokenExpiresAt > now + 10_000) return cinemaToken;
+  if (!force && cinemaSessionPromise) return cinemaSessionPromise;
+  cinemaSessionPromise = (async () => {
+    const result = await fetchTextJson(`${CINEMA}session`, { headers: { Accept: "application/json" } }, 15_000);
+    if (!result.response.ok || !result.data?.token) throw new Error(`CINEMA_SESSION_${result.response.status}`);
+    cinemaToken = String(result.data.token);
+    const expiresAt = Number(result.data.expiresAt || 0);
+    cinemaTokenExpiresAt = expiresAt > 10_000_000_000 ? expiresAt : expiresAt > 0 ? expiresAt * 1000 : Date.now() + 5 * 60_000;
+    return cinemaToken;
+  })();
+  try { return await cinemaSessionPromise; } finally { cinemaSessionPromise = null; }
 }
 
-function encodeDiscovery(item, query = "") {
-  return encodeURIComponent(JSON.stringify({
-    provider: item.provider,
-    id: item.provider_series_id,
-    source: item.source_url || "",
-    type: item.content_type || item.type || "series",
-    title: item.title || item.display_title || "",
-    display_title: item.display_title || item.title || "",
-    query,
-  }));
-}
-
-function mapDiscovered(items = [], query = "") {
-  return items.map((item) => ({
-    title: item.display_title || item.title,
-    img: item.image || "",
-    is_series: (item.content_type || item.type) !== "movie",
-    href: `theeb:discover:${encodeDiscovery(item, query)}`,
-    year: item.year || null,
-  }));
-}
-
-function mapLegacy(items = []) {
-  return items
-    .map((item) => {
-      const raw = item.href || item.url || item.link || "";
-      return {
-        title: item.title || item.name || "بدون عنوان",
-        img: item.img || item.image || item.poster || "",
-        is_series: item.is_series !== false,
-        href: raw ? `legacy:${encodeURIComponent(raw)}` : "",
-        year: item.year || null,
-      };
-    })
-    .filter((item) => item.href);
-}
-
-async function getLegacyCinemaToken() {
-  const result = await fetchTextJson(`${LEGACY_CINEMA}session`, {
-    headers: {
-      Accept: "application/json",
-      Origin: LEGACY_ORIGIN,
-      Referer: LEGACY_REFERER,
-    },
-  }, 15_000);
-  return result.response.ok && result.data?.token ? String(result.data.token) : "";
-}
-
-async function legacyCinema(action, params = {}) {
-  const token = await getLegacyCinemaToken();
-  if (!token) return [];
+async function cinemaWorkerRequest(action, params = {}, retry = true) {
+  const token = await ensureCinemaSession(false);
   const query = new URLSearchParams({ action, token, ...params });
-  const result = await fetchTextJson(`${LEGACY_CINEMA}?${query}`, {
-    headers: {
-      Accept: "application/json",
-      Origin: LEGACY_ORIGIN,
-      Referer: LEGACY_REFERER,
-    },
-  }, 30_000);
-  return result.response.ok && result.data?.status === "success"
-    ? mapLegacy(result.data.data || [])
-    : [];
-}
-
-async function legacyDetails(url) {
-  const token = await getLegacyCinemaToken();
-  if (!token) throw new Error("LEGACY_SESSION");
-  const query = new URLSearchParams({ action: "series", series: url, token });
-  const result = await fetchTextJson(`${LEGACY_CINEMA}?${query}`, {
-    headers: {
-      Accept: "application/json",
-      Origin: LEGACY_ORIGIN,
-      Referer: LEGACY_REFERER,
-    },
-  }, 45_000);
-  if (!result.response.ok || result.data?.status !== "success") {
-    throw new Error(`LEGACY_DETAILS_${result.response.status}`);
+  const result = await fetchTextJson(`${CINEMA}?${query}`, { headers: { Accept: "application/json" } }, 45_000);
+  if (retry && result.response.status === 401) {
+    cinemaToken = "";
+    cinemaTokenExpiresAt = 0;
+    await ensureCinemaSession(true);
+    return cinemaWorkerRequest(action, params, false);
   }
+  if (!result.response.ok) throw new Error(`CINEMA_${action.toUpperCase()}_${result.response.status}`);
+  if (result.data?.status !== "success") throw new Error(`CINEMA_${action.toUpperCase()}_REJECTED`);
   return result.data;
 }
 
+async function workerOrDirect(label, workerFn, directFn) {
+  try {
+    const data = await workerFn();
+    const count = Array.isArray(data?.data) ? data.data.length : null;
+    if (count === 0) throw new Error(`${label}_EMPTY`);
+    return { data, source: "basri-worker" };
+  } catch (error) {
+    log("cinema_worker_fallback", { label, reason: String(error?.message || error) });
+    return { data: await directFn(), source: "basri-direct" };
+  }
+}
+
+function normalizeCatalog(items = []) {
+  return items.map((item) => {
+    const raw = item.href || item.url || item.link || "";
+    return {
+      title: item.title || item.name || "بدون عنوان",
+      img: item.img || item.image || item.poster || "",
+      is_series: item.is_series !== false,
+      href: raw ? `legacy:${encodeURIComponent(raw)}` : "",
+      year: item.year || null,
+    };
+  }).filter((item) => item.href);
+}
+
+function storeMedia(url, referer = BasriSource.origin + "/") {
+  const parsed = assertSourceUrl(url, { allowMedia: true });
+  const id = crypto.randomBytes(18).toString("base64url");
+  mediaRefs.set(id, { url: parsed.href, referer, expiresAt: Date.now() + 15 * 60_000 });
+  if (mediaRefs.size > 256) {
+    const now = Date.now();
+    for (const [key, value] of mediaRefs) if (value.expiresAt <= now) mediaRefs.delete(key);
+  }
+  return id;
+}
+
+function wrapEpisodes(episodes = []) {
+  return episodes.map((episode, index) => {
+    const raw = episode.link || episode.url || episode.href || "";
+    return {
+      ...episode,
+      num: Number(episode.num || episode.number || index + 1),
+      link: raw ? `legacy:${encodeURIComponent(String(raw))}` : "",
+      watch_available: episode.watch_available !== false && Boolean(raw),
+    };
+  });
+}
+
+function normalizeWorkerDetails(data = {}) {
+  const normalized = { ...data, status: "success", source: "basri-worker", episodes: wrapEpisodes(data.episodes || []) };
+  if (data.media_src && !data.is_iframe) {
+    const id = storeMedia(String(data.media_src), BASRI_REFERER);
+    normalized.media_path = `/api/cinema/media?id=${encodeURIComponent(id)}`;
+    delete normalized.media_src;
+    normalized.media_type = data.media_type || "stream";
+  }
+  return normalized;
+}
+
 async function cinemaSearch(query) {
-  let result = await fetchTextJson(
-    `${THEEB}/v1/search?q=${encodeURIComponent(query)}`,
-    { headers: { Accept: "application/json" } },
+  const result = await workerOrDirect(
+    "search",
+    () => cinemaWorkerRequest("search", { q: query }),
+    () => directSearch(query),
   );
-  let items = result.data?.data?.items || [];
-  if (items.length) return { status: "success", source: "library", data: mapLibrary(items) };
-
-  result = await fetchTextJson(
-    `${THEEB}/v1/discover?q=${encodeURIComponent(query)}`,
-    { headers: { Accept: "application/json" } },
-    60_000,
-  );
-  items = result.data?.data?.items || [];
-  if (items.length) {
-    return { status: "success", source: "discover", data: mapDiscovered(items, query) };
-  }
-
-  const legacy = await legacyCinema("search", { q: query });
-  return { status: "success", source: legacy.length ? "legacy" : "empty", data: legacy };
+  const items = result.source === "basri-worker" ? (result.data.data || []) : result.data;
+  return { status: "success", source: result.source, data: normalizeCatalog(items) };
 }
 
-async function cinemaCategory(type, name, sourceUrl = "") {
-  const kind = type === "movie" ? "فيلم" : "مسلسل";
-  const queries = [...new Set([
-    name,
-    `${kind} ${name}`,
-    `${name} ${kind}`,
-    ...(CATEGORY_ALIASES[name] || []),
-  ].filter(Boolean))];
-
-  const settled = await Promise.allSettled(
-    queries.map((query) => fetchTextJson(
-      `${THEEB}/v1/discover?q=${encodeURIComponent(query)}`,
-      { headers: { Accept: "application/json" } },
-      40_000,
-    )),
+async function cinemaCategory(sourceUrl, page = 1) {
+  if (!sourceUrl) return { status: "success", source: "basri-direct", data: [] };
+  assertSourceUrl(sourceUrl);
+  const result = await workerOrDirect(
+    "category",
+    () => cinemaWorkerRequest("genre", { genre: sourceUrl, p: String(page || 1) }),
+    () => directCategory(sourceUrl, page),
   );
-
-  const seen = new Set();
-  const merged = [];
-  for (const result of settled) {
-    if (result.status !== "fulfilled") continue;
-    for (const item of result.value.data?.data?.items || []) {
-      const key = `${item.provider || ""}:${item.provider_series_id || ""}`;
-      if (!item.provider_series_id || seen.has(key)) continue;
-      seen.add(key);
-      merged.push(item);
-      if (merged.length >= 36) break;
-    }
-    if (merged.length >= 36) break;
-  }
-
-  if (merged.length) {
-    return { status: "success", source: "discover", data: mapDiscovered(merged, name) };
-  }
-  const legacy = sourceUrl
-    ? await legacyCinema("genre", { genre: sourceUrl, p: "1" })
-    : [];
-  return { status: "success", source: legacy.length ? "legacy" : "empty", data: legacy };
+  const items = result.source === "basri-worker" ? (result.data.data || []) : result.data;
+  return { status: "success", source: result.source, data: normalizeCatalog(items) };
 }
 
-async function canonicalDetails(id) {
-  const [seriesResult, episodeResult] = await Promise.all([
-    fetchTextJson(`${THEEB}/v1/series/${encodeURIComponent(id)}`, {
-      headers: { Accept: "application/json" },
-    }),
-    fetchTextJson(`${THEEB}/v1/series/${encodeURIComponent(id)}/episodes`, {
-      headers: { Accept: "application/json" },
-    }),
-  ]);
-  if (!seriesResult.response.ok) throw new Error(`SERIES_${seriesResult.response.status}`);
-  const series = seriesResult.data?.data || {};
-  const episodes = episodeResult.data?.data?.items || [];
-  return {
-    status: "success",
-    source: "canonical",
-    movie_title: series.title || "",
-    poster: series.image || "",
-    episodes: episodes.map((episode) => ({
-      num: episode.episode_number || episode.id,
-      id: episode.id,
-      link: `theeb:episode:${episode.id}`,
-      watch_available: episode.watch_available,
-      download_available: episode.download_available,
-    })),
-  };
-}
-
-async function providerSeriesDetails(provider, id, source = "") {
-  if (!/^[a-z0-9_-]+$/i.test(String(provider)) || !id) return null;
-  const target = source || id;
-  const result = await fetchTextJson(
-    `${THEEB}/api/providers/${encodeURIComponent(provider)}/series/${encodeURIComponent(String(target))}`,
-    { headers: { Accept: "application/json" } },
-    45_000,
-  );
-  if (!result.response.ok || !result.data?.series) {
-    log("provider_details_rejected", { provider, id, target, status: result.response.status });
-    return null;
+async function directDetailsResolved(target) {
+  const details = await directDetails(target);
+  if (Array.isArray(details.episodes) && details.episodes.length) {
+    return { ...details, episodes: wrapEpisodes(details.episodes) };
   }
-  const data = result.data;
-  const episodes = Array.isArray(data.episodes) ? data.episodes : [];
-  return {
-    status: "success",
-    source: "provider",
-    provider,
-    movie_title: data.series.title || "",
-    poster: data.series.image || "",
-    description: data.series.description || "",
-    episodes: episodes.map((episode, index) => ({
-      num: episode.number || index + 1,
-      id: episode.id,
-      link: `provider:${encodeURIComponent(provider)}:episode:${encodeURIComponent(String(episode.source_url || episode.id || episode.page_url || ""))}`,
-      watch_available: true,
-      download_available: false,
-    })),
-  };
-}
-
-async function providerEpisode(provider, id) {
-  const episodeResult = await fetchTextJson(
-    `${THEEB}/api/providers/${encodeURIComponent(provider)}/episode/${encodeURIComponent(String(id))}`,
-    { headers: { Accept: "application/json" } },
-    45_000,
-  );
-  if (!episodeResult.response.ok || !episodeResult.data) {
-    return { status: "error", message: "PROVIDER_EPISODE_UNAVAILABLE" };
-  }
-
-  const data = episodeResult.data;
-  const options = Array.isArray(data.watch_options) ? data.watch_options : [];
-  const embed = options.find((option) => option.can_watch !== false && option.page_url && ["embed", "external_player"].includes(option.type));
-  if (embed) {
+  if (Array.isArray(details.watch) && details.watch.length) {
+    const watch = await directWatch(details.watch[0], target);
+    if (watch.status !== "success" || !watch.media_src) throw new Error("DIRECT_WATCH_NO_MEDIA");
+    const id = storeMedia(watch.media_src, details.watch[0]);
     return {
       status: "success",
-      media_src: embed.page_url,
-      media_type: "embed",
-      is_iframe: true,
-      provider,
+      source: "basri-direct",
+      movie_title: details.movie_title || watch.movie_title || "",
+      episodes: [],
+      media_path: `/api/cinema/media?id=${encodeURIComponent(id)}`,
+      media_type: "stream",
+      is_iframe: false,
+      download_options: details.downloads || [],
     };
   }
-
-  for (const option of options) {
-    if (!option.watch_id) continue;
-    const watchResult = await fetchTextJson(
-      `${THEEB}/api/providers/${encodeURIComponent(provider)}/watch/${encodeURIComponent(String(option.watch_id))}/${encodeURIComponent(String(data.episode?.id || id))}`,
-      { headers: { Accept: "application/json" } },
-      45_000,
-    );
-    const playable = (watchResult.data?.sources || []).find((source) => source.direct_url);
-    if (playable) {
-      return {
-        status: "success",
-        media_src: playable.direct_url,
-        media_type: /m3u8/i.test(playable.direct_url) ? "m3u8" : "stream",
-        is_iframe: false,
-        provider,
-        quality: playable.quality || option.quality || null,
-      };
-    }
-  }
-  return { status: "error", message: "NO_PLAYABLE_SOURCE" };
+  return { ...details, episodes: wrapEpisodes(details.episodes || []) };
 }
 
-async function findCanonicalByTitle(title) {
-  if (!title) return null;
-  const result = await fetchTextJson(
-    `${THEEB}/v1/search?q=${encodeURIComponent(title)}`,
-    { headers: { Accept: "application/json" } },
-    30_000,
-  );
-  const items = result.data?.data?.items || [];
-  const normalized = String(title).trim().toLowerCase();
-  const exact = items.find((item) => String(item.title || "").trim().toLowerCase() === normalized);
-  return exact?.id || items[0]?.id || null;
-}
-
-async function tryImportCandidate(candidate) {
-  let created;
+async function cinemaDetails(ref) {
+  if (!ref.startsWith("legacy:")) throw new Error("BAD_CINEMA_REFERENCE");
+  const target = decodeURIComponent(ref.slice("legacy:".length));
+  assertSourceUrl(target);
   try {
-    created = await fetchTextJson(`${THEEB}/v1/imports`, {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({
-        provider: candidate.provider,
-        provider_series_id: String(candidate.id),
-      }),
-    }, 45_000);
+    const data = await cinemaWorkerRequest("series", { series: target });
+    return normalizeWorkerDetails(data);
   } catch (error) {
-    log("import_transport_failed", { provider: candidate.provider, id: candidate.id, error: String(error) });
-    return null;
+    log("cinema_details_direct_fallback", { reason: String(error?.message || error), targetType: new URL(target).pathname.split("/")[1] || "" });
+    return directDetailsResolved(target);
   }
-  if (!created.response.ok || !created.data?.data?.job_id) return null;
-
-  const jobId = created.data.data.job_id;
-  for (let index = 0; index < 18; index += 1) {
-    await new Promise((resolve) => setTimeout(resolve, index < 2 ? 400 : 1_000));
-    const job = await fetchTextJson(`${THEEB}/v1/imports/${encodeURIComponent(jobId)}`, {
-      headers: { Accept: "application/json" },
-    }, 12_000);
-    const state = job.data?.data;
-    if (state?.status === "completed" && state.result?.canonical_series_id) {
-      return state.result.canonical_series_id;
-    }
-    if (["failed", "cancelled"].includes(state?.status)) {
-      log("import_terminal", { provider: candidate.provider, id: candidate.id, status: state.status });
-      return null;
-    }
-  }
-  return null;
 }
 
-async function discoverAlternatives(query) {
-  if (!query) return [];
-  const result = await fetchTextJson(
-    `${THEEB}/v1/discover?q=${encodeURIComponent(query)}`,
-    { headers: { Accept: "application/json" } },
-    60_000,
-  );
-  return (result.data?.data?.items || []).map((item) => ({
-    provider: item.provider,
-    id: item.provider_series_id,
-    source: item.source_url || "",
-    type: item.content_type || item.type || "series",
-    title: item.title || item.display_title || query,
-    display_title: item.display_title || item.title || query,
-    query,
-  }));
+function requestMedia(target, headers, { allowBrokenChain = false, redirects = 0 } = {}) {
+  return new Promise((resolve, reject) => {
+    const request = https.request(target, {
+      method: "GET",
+      headers,
+      rejectUnauthorized: !allowBrokenChain,
+    }, (response) => {
+      const status = Number(response.statusCode || 0);
+      const location = response.headers.location;
+      if ([301, 302, 303, 307, 308].includes(status) && location && redirects < 4) {
+        response.resume();
+        try {
+          const next = assertSourceUrl(new URL(location, target).href, { allowMedia: true });
+          resolve(requestMedia(next, headers, { allowBrokenChain, redirects: redirects + 1 }));
+        } catch (error) {
+          reject(error);
+        }
+        return;
+      }
+      resolve(response);
+    });
+    request.setTimeout(60_000, () => request.destroy(new Error("MEDIA_UPSTREAM_TIMEOUT")));
+    request.on("error", reject);
+    request.end();
+  });
 }
 
-async function discoveredDetails(ref) {
-  const primary = JSON.parse(decodeURIComponent(ref));
-  const lookup = primary.query || primary.title || primary.display_title || "";
-  const alternatives = await discoverAlternatives(lookup).catch(() => []);
-  const seen = new Set();
-  const candidates = [];
-  for (const candidate of [primary, ...alternatives]) {
-    const key = `${candidate.provider}:${candidate.id}`;
-    if (!candidate.provider || !candidate.id || seen.has(key)) continue;
-    seen.add(key);
-    candidates.push(candidate);
-  }
-  log("detail_candidates", { query: lookup, candidates: candidates.map((item) => `${item.provider}:${item.id}`) });
-
-  for (const candidate of candidates.slice(0, 4)) {
-    const direct = await providerSeriesDetails(candidate.provider, candidate.id, candidate.source).catch(() => null);
-    if (direct) {
-      log("provider_details_success", { provider: candidate.provider, id: candidate.id });
-      return direct;
-    }
-    const canonicalId = await tryImportCandidate(candidate);
-    if (canonicalId) return canonicalDetails(canonicalId);
-  }
-
-  const canonicalId = await findCanonicalByTitle(primary.title || lookup);
-  if (canonicalId) return canonicalDetails(canonicalId);
-  throw new Error("DETAILS_UNAVAILABLE");
-}
-
-async function episodePlayback(id) {
-  const episodeId = Number(id);
-  if (!Number.isSafeInteger(episodeId) || episodeId < 1) throw new Error("BAD_EPISODE");
-  const created = await fetchTextJson(`${THEEB}/v1/playback/sessions`, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({
-      canonical_episode_id: episodeId,
-      quality: "auto",
-      client: { platform: "web", version: "al-qahtani-web" },
-    }),
-  }, 60_000);
-  if (!created.response.ok) throw new Error(`PLAYBACK_CREATE_${created.response.status}`);
-  let session = created.data?.data;
-  if (!session) throw new Error("PLAYBACK_EMPTY");
-
-  for (let index = 0; index < 10 && session.state === "planning"; index += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 750));
-    const polled = await fetchTextJson(`${THEEB}/v1/playback/sessions/${encodeURIComponent(session.id)}`, {
-      headers: { Accept: "application/json" },
-    }, 15_000);
-    if (polled.data?.data) session = polled.data.data;
-  }
-  if (session.state !== "ready" || !session.id) {
-    return { status: "error", message: "NO_PLAYABLE_SOURCE" };
-  }
-  return {
-    status: "success",
-    media_path: `/api/cinema/media?session=${encodeURIComponent(session.id)}`,
-    media_type: "stream",
-    is_iframe: false,
-    playback_session_id: session.id,
-  };
-}
-
-async function proxyMedia(req, res, sessionId) {
-  if (!/^[A-Za-z0-9._:-]{1,200}$/.test(sessionId)) {
-    return sendJson(res, 400, { status: "error", message: "BAD_SESSION" });
-  }
-  const headers = { Accept: "*/*" };
-  if (req.headers.range) headers.Range = req.headers.range;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60_000);
+async function openMedia(target, headers) {
   try {
-    const upstream = await fetch(
-      `${THEEB}/v1/playback/sessions/${encodeURIComponent(sessionId)}/media`,
-      { headers, signal: controller.signal, redirect: "follow", cache: "no-store" },
-    );
-    if (!upstream.ok && upstream.status !== 206) {
-      return sendJson(res, upstream.status, {
-        status: "error",
-        message: `MEDIA_UPSTREAM_${upstream.status}`,
-      });
+    return await requestMedia(target, headers);
+  } catch (error) {
+    const tlsCodes = new Set(["UNABLE_TO_VERIFY_LEAF_SIGNATURE", "SELF_SIGNED_CERT_IN_CHAIN", "DEPTH_ZERO_SELF_SIGNED_CERT"]);
+    const host = target.hostname.toLowerCase();
+    if (!tlsCodes.has(String(error?.code || "")) || !host.endsWith(".downet.net")) throw error;
+    log("media_tls_compat", { host, code: String(error.code) });
+    return requestMedia(target, headers, { allowBrokenChain: true });
+  }
+}
+
+async function proxyMedia(req, res, id) {
+  const entry = mediaRefs.get(id);
+  if (!entry || entry.expiresAt <= Date.now()) {
+    mediaRefs.delete(id);
+    return sendJson(res, 404, { status: "error", message: "MEDIA_REFERENCE_EXPIRED" });
+  }
+  const target = assertSourceUrl(entry.url, { allowMedia: true });
+  const headers = {
+    Accept: "*/*",
+    Referer: safeHeaderUrl(entry.referer || BasriSource.origin + "/"),
+    "User-Agent": BasriSource.userAgent,
+  };
+  if (req.headers.range) headers.Range = req.headers.range;
+  try {
+    const upstream = await openMedia(target, headers);
+    const status = Number(upstream.statusCode || 502);
+    if (status < 200 || status >= 300) {
+      upstream.resume();
+      return sendJson(res, status, { status: "error", message: `MEDIA_UPSTREAM_${status}` });
     }
     applyCors(req, res);
-    for (const header of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
-      const value = upstream.headers.get(header);
-      if (value) res.setHeader(header, value);
+    for (const name of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
+      const value = upstream.headers[name];
+      if (value) res.setHeader(name, value);
     }
+    if (!upstream.headers["content-type"]) res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Cache-Control", "no-store");
-    res.statusCode = upstream.status;
-    if (!upstream.body) return res.end();
-    for await (const chunk of upstream.body) res.write(chunk);
+    res.statusCode = status;
+    for await (const chunk of upstream) res.write(chunk);
     res.end();
   } catch (error) {
+    log("media_proxy_failed", { host: target.hostname, code: String(error?.code || ""), error: String(error?.message || error) });
     if (!res.headersSent) return sendJson(res, 502, { status: "error", message: "MEDIA_PROXY_FAILED" });
     res.destroy(error);
-  } finally {
-    clearTimeout(timer);
   }
 }
 
 export function createServer() {
   return http.createServer(async (req, res) => {
     applyCors(req, res);
-    if (req.method === "OPTIONS") {
-      res.writeHead(204);
-      return res.end();
-    }
+    if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
     const url = new URL(req.url, "http://localhost");
     const started = Date.now();
     try {
-      if (url.pathname === "/health") return sendJson(res, 200, { status: "ok" });
+      if (url.pathname === "/health") return sendJson(res, 200, { status: "ok", cinema_source: "basri-original" });
       if (url.pathname === "/api/matches") return sendJson(res, 200, await getMatches());
       if (url.pathname === "/api/matches/servers") return sendJson(res, 200, await getMatchServers(url.searchParams.get("url") || ""));
       if (url.pathname === "/api/cinema/search") return sendJson(res, 200, await cinemaSearch((url.searchParams.get("q") || "").trim()));
-      if (url.pathname === "/api/cinema/category") return sendJson(res, 200, await cinemaCategory(url.searchParams.get("type") || "series", (url.searchParams.get("name") || "").trim(), url.searchParams.get("url") || ""));
-      if (url.pathname === "/api/cinema/media") return proxyMedia(req, res, url.searchParams.get("session") || "");
-      if (url.pathname === "/api/cinema/details") {
-        const ref = url.searchParams.get("ref") || "";
-        if (ref.startsWith("theeb:canonical:")) return sendJson(res, 200, await canonicalDetails(ref.split(":").pop()));
-        if (ref.startsWith("theeb:discover:")) return sendJson(res, 200, await discoveredDetails(ref.slice("theeb:discover:".length)));
-        if (ref.startsWith("theeb:episode:")) return sendJson(res, 200, await episodePlayback(ref.split(":").pop()));
-        if (ref.startsWith("provider:")) {
-          const match = ref.match(/^provider:([^:]+):episode:(.+)$/);
-          if (match) return sendJson(res, 200, await providerEpisode(decodeURIComponent(match[1]), decodeURIComponent(match[2])));
-        }
-        if (ref.startsWith("legacy:")) return sendJson(res, 200, await legacyDetails(decodeURIComponent(ref.slice(7))));
-        return sendJson(res, 400, { status: "error", message: "BAD_REFERENCE" });
-      }
+      if (url.pathname === "/api/cinema/category") return sendJson(res, 200, await cinemaCategory(url.searchParams.get("url") || "", Number(url.searchParams.get("p") || 1)));
+      if (url.pathname === "/api/cinema/details") return sendJson(res, 200, await cinemaDetails(url.searchParams.get("ref") || ""));
+      if (url.pathname === "/api/cinema/media") return proxyMedia(req, res, url.searchParams.get("id") || "");
       return sendJson(res, 404, { error: "NOT_FOUND" });
     } catch (error) {
       log("request_failed", { path: url.pathname, ms: Date.now() - started, error: String(error?.message || error) });
