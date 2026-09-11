@@ -89,6 +89,8 @@ try {
         "accept-ranges": "bytes",
         "content-range": `bytes ${start}-${start + body.length - 1}/${TOTAL_BYTES}`,
         "content-length": String(body.length),
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "Content-Type, Content-Length, Content-Range, Accept-Ranges",
       },
       body,
     });
