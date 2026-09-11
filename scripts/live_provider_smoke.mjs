@@ -2,25 +2,21 @@
 const MATCHES = "https://api.albasritv1.workers.dev/";
 const NEWS = "https://news.albesriali03.workers.dev/";
 const CINEMA = "https://albas.albesriali03.workers.dev/";
-const LEGACY_ORIGINS = [
-  "https://www.albasritv.abrdns.com",
-  "https://albasritv.abrdns.com",
-];
+const SOURCE = "https://akwam.ss";
+const ORIGIN = "https://www.albasritv.abrdns.com";
 const SAFARI_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1";
 
-async function json(url, init = {}) {
+async function request(url, init = {}, timeoutMs = 45000) {
   const started = Date.now();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 45000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
+    const res = await fetch(url, { ...init, signal: controller.signal, cache: "no-store", redirect: "follow" });
     const text = await res.text();
     let data = null;
     try { data = JSON.parse(text); } catch {}
-    return { ok: res.ok, status: res.status, data, text: text.slice(0, 300), ms: Date.now() - started };
-  } finally {
-    clearTimeout(timer);
-  }
+    return { ok: res.ok, status: res.status, headers: res.headers, data, text, ms: Date.now() - started, finalUrl: res.url };
+  } finally { clearTimeout(timer); }
 }
 
 function assert(cond, message, detail = {}) {
@@ -33,95 +29,90 @@ function assert(cond, message, detail = {}) {
   return true;
 }
 
-const headersFor = (origin, page, extra = {}) => ({
+const jsonHeaders = (page, extra = {}) => ({
   Accept: "application/json",
-  Origin: origin,
-  Referer: origin + page,
+  Origin: ORIGIN,
+  Referer: ORIGIN + page,
   "X-BSR-Page": page,
   ...extra,
 });
-
-const cinemaHeaders = (origin, extra = {}) => headersFor(origin, "/2026/09/movies-series.html", {
-  "User-Agent": SAFARI_UA,
+const htmlHeaders = (referer = SOURCE + "/") => ({
+  Accept: "text/html,application/xhtml+xml",
   "Accept-Language": "ar-SA,ar;q=0.9,en-US;q=0.8,en;q=0.7",
-  "Sec-Fetch-Site": "cross-site",
-  "Sec-Fetch-Mode": "cors",
-  "Sec-Fetch-Dest": "empty",
-  ...extra,
+  "User-Agent": SAFARI_UA,
+  Referer: referer,
 });
 
+function uniqueMatches(text, re) {
+  const out = [];
+  for (const m of text.matchAll(re)) if (!out.includes(m[1])) out.push(m[1]);
+  return out;
+}
+
 async function matchesSmoke() {
-  const origin = LEGACY_ORIGINS[0];
   const page = "/2026/09/matches.html";
-  const session = await json(MATCHES + "session", { headers: headersFor(origin, page) });
-  if (!assert(session.ok && session.data?.success === true && session.data?.token, "matches session", { status: session.status, ms: session.ms, body: session.text })) return;
-  const token = String(session.data.token);
-  const list = await json(MATCHES, { headers: headersFor(origin, page, { "X-BSR-Token": token }) });
-  assert(list.ok && list.data?.success === true && Array.isArray(list.data?.data), "matches list", { status: list.status, ms: list.ms, count: list.data?.data?.length, body: list.text });
+  const session = await request(MATCHES + "session", { headers: jsonHeaders(page) });
+  if (!assert(session.ok && session.data?.success === true && session.data?.token, "matches session", { status: session.status, ms: session.ms })) return;
+  const list = await request(MATCHES, { headers: jsonHeaders(page, { "X-BSR-Token": String(session.data.token) }) });
+  assert(list.ok && list.data?.success === true && Array.isArray(list.data?.data) && list.data.data.length > 0, "matches list", { status: list.status, count: list.data?.data?.length, ms: list.ms });
 }
 
-async function probePublicCinema(origin) {
-  const search = await json(CINEMA + "?action=search&q=" + encodeURIComponent("الذئب الوحيد"), { headers: cinemaHeaders(origin) });
-  console.log("INFO cinema public search probe", { origin, status: search.status, state: search.data?.status || "", message: search.data?.message || "", count: search.data?.data?.length, ms: search.ms });
-  const genreUrl = encodeURIComponent("https://akwam.ss/series?section=30");
-  const genre = await json(CINEMA + "?action=genre&genre=" + genreUrl + "&p=1", { headers: cinemaHeaders(origin) });
-  console.log("INFO cinema public category probe", { origin, status: genre.status, state: genre.data?.status || "", message: genre.data?.message || "", count: genre.data?.data?.length, ms: genre.ms });
-  if (search.ok && search.data?.status === "success" && Array.isArray(search.data?.data)) return { origin, search, genre };
-  return null;
+async function workerProbe() {
+  const page = "/2026/09/movies-series.html";
+  const probe = await request(CINEMA + "session", { headers: jsonHeaders(page) }, 20000);
+  if (probe.ok && probe.data?.token) console.log("INFO cinema worker session available", { status: probe.status, ms: probe.ms });
+  else console.log("INFO cinema worker unavailable; backend direct fallback is required", { status: probe.status, message: probe.data?.message || "", ms: probe.ms });
 }
 
-async function findCinemaSession() {
-  let last = null;
-  for (const origin of LEGACY_ORIGINS) {
-    const publicProbe = await probePublicCinema(origin);
-    if (publicProbe) return { origin, publicProbe, public: true };
-    const session = await json(CINEMA + "session", { headers: cinemaHeaders(origin) });
-    console.log("INFO cinema origin probe", { origin, status: session.status, message: session.data?.message || "", ms: session.ms });
-    if (session.ok && session.data?.status === "success" && session.data?.token) return { origin, session, public: false };
-    last = session;
-    if (!(session.status === 403 && session.data?.message === "FORBIDDEN_ORIGIN")) break;
-  }
-  assert(false, "cinema access", { status: last?.status, body: last?.text });
-  return null;
-}
+async function cinemaDirectSmoke() {
+  const category = await request(SOURCE + "/series?section=30", { headers: htmlHeaders() });
+  if (!assert(category.ok && category.text.length > 20000, "direct cinema category HTML", { status: category.status, bytes: category.text.length, ms: category.ms })) return;
+  const series = uniqueMatches(category.text, /href=["'](https:\/\/akwam\.ss\/series\/[^"']+)["']/gi);
+  if (!assert(series.length > 0, "direct cinema category has items", { count: series.length })) return;
 
-async function cinemaSmoke() {
-  const selected = await findCinemaSession();
-  if (!selected) return;
-  const { origin } = selected;
-  let search;
-  let genre;
-  let suffix = "";
-  if (selected.public) {
-    search = selected.publicProbe.search;
-    genre = selected.publicProbe.genre;
-  } else {
-    const token = encodeURIComponent(String(selected.session.data.token));
-    suffix = "&token=" + token;
-    const genreUrl = encodeURIComponent("https://akwam.ss/series?section=30");
-    genre = await json(CINEMA + "?action=genre&genre=" + genreUrl + "&p=1" + suffix, { headers: cinemaHeaders(origin) });
-    search = await json(CINEMA + "?action=search&q=" + encodeURIComponent("الذئب الوحيد") + suffix, { headers: cinemaHeaders(origin) });
-  }
-  assert(genre.ok && genre.data?.status === "success" && Array.isArray(genre.data?.data), "cinema category", { status: genre.status, ms: genre.ms, count: genre.data?.data?.length, body: genre.text });
-  assert(search.ok && search.data?.status === "success" && Array.isArray(search.data?.data), "cinema search contract", { status: search.status, ms: search.ms, count: search.data?.data?.length, body: search.text });
+  const search = await request(SOURCE + "/search?q=" + encodeURIComponent("الذئب الوحيد"), { headers: htmlHeaders() });
+  assert(search.ok, "direct cinema search reachable", { status: search.status, bytes: search.text.length, ms: search.ms });
 
-  const sample = (search.data?.data || []).find(x => x?.href) || (genre.data?.data || []).find(x => x?.href);
-  if (sample?.href) {
-    const details = await json(CINEMA + "?action=series&series=" + encodeURIComponent(sample.href) + suffix, { headers: cinemaHeaders(origin) });
-    assert(details.ok && details.data?.status === "success", "cinema details", { status: details.status, ms: details.ms, episodes: details.data?.episodes?.length, media: Boolean(details.data?.media_src), iframe: Boolean(details.data?.is_iframe), body: details.text });
-  } else {
-    assert(false, "cinema sample has href", { searchCount: search.data?.data?.length, genreCount: genre.data?.data?.length });
+  const detail = await request(series[0], { headers: htmlHeaders(SOURCE + "/series?section=30") });
+  if (!assert(detail.ok, "direct cinema details", { status: detail.status, ms: detail.ms })) return;
+  const episodes = uniqueMatches(detail.text, /href=["'](https:\/\/akwam\.ss\/episode\/[^"']+)["']/gi);
+  if (!assert(episodes.length > 0, "direct cinema details has episodes", { count: episodes.length })) return;
+
+  const episode = await request(episodes.at(-1), { headers: htmlHeaders(series[0]) });
+  if (!assert(episode.ok, "direct cinema episode", { status: episode.status, ms: episode.ms })) return;
+  const watch = uniqueMatches(episode.text, /href=["'](https:\/\/akwam\.ss\/watch\/[^"']+)["']/gi);
+  if (!assert(watch.length > 0, "direct cinema episode has watch source", { count: watch.length })) return;
+
+  const watchPage = await request(watch[0], { headers: htmlHeaders(episodes.at(-1)) });
+  if (!assert(watchPage.ok, "direct cinema watch page", { status: watchPage.status, ms: watchPage.ms })) return;
+  const media = uniqueMatches(watchPage.text, /<source[^>]+src=["'](https:\/\/[^"']+)["']/gi);
+  if (!assert(media.length > 0, "direct cinema watch resolves media", { count: media.length })) return;
+
+  const range = await fetch(media[0], {
+    method: "GET",
+    redirect: "follow",
+    headers: { Range: "bytes=0-1023", Referer: watch[0], "User-Agent": SAFARI_UA, Accept: "*/*" },
+  });
+  try {
+    assert(range.status === 206 || range.status === 200, "direct media responds to Safari range probe", {
+      status: range.status,
+      contentRange: range.headers.get("content-range") || "",
+      acceptRanges: range.headers.get("accept-ranges") || "",
+      contentType: range.headers.get("content-type") || "",
+    });
+  } finally {
+    try { await range.body?.cancel(); } catch {}
   }
 }
 
 async function newsSmoke() {
-  const origin = LEGACY_ORIGINS[0];
   const page = "/2026/09/news.html";
-  const result = await json(NEWS + "?_=" + Date.now(), { headers: headersFor(origin, page) });
+  const result = await request(NEWS + "?_=" + Date.now(), { headers: jsonHeaders(page) });
   const shapeOk = result.ok && result.data && (result.data.status === "success" || result.data.success === true);
-  assert(shapeOk, "news JSON endpoint", { status: result.status, ms: result.ms, body: result.text });
+  assert(shapeOk, "news JSON endpoint", { status: result.status, ms: result.ms });
 }
 
 await matchesSmoke().catch(e => { console.error("FAIL matches smoke", e); process.exitCode = 1; });
-await cinemaSmoke().catch(e => { console.error("FAIL cinema smoke", e); process.exitCode = 1; });
+await workerProbe().catch(e => console.log("INFO cinema worker probe failed", String(e?.message || e)));
+await cinemaDirectSmoke().catch(e => { console.error("FAIL direct cinema smoke", e); process.exitCode = 1; });
 await newsSmoke().catch(e => { console.error("FAIL news smoke", e); process.exitCode = 1; });
