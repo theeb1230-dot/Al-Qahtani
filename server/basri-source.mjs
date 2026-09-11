@@ -199,6 +199,29 @@ export function parseEpisode(html = "", pageUrl = "") {
   return { status: "success", source: "basri-direct", movie_title: pageTitle(html), watch, downloads, page_url: pageUrl };
 }
 
+export function mediaKindFromUrl(value = "") {
+  let path = "";
+  try { path = new URL(value).pathname.toLowerCase(); } catch { return "unknown"; }
+  if (/\.m3u8$/.test(path)) return "hls";
+  if (/\.(?:ts|m2ts)$/.test(path)) return "mpeg-ts";
+  if (/\.mp4$/.test(path)) return "mp4";
+  if (/\.webm$/.test(path)) return "webm";
+  if (/\.mkv$/.test(path)) return "matroska";
+  return "unknown";
+}
+
+function isMediaCandidate(value = "") {
+  const kind = mediaKindFromUrl(value);
+  if (kind !== "unknown") return true;
+  try {
+    const url = new URL(value);
+    return MEDIA_HOST_SUFFIXES.some(suffix => url.hostname.toLowerCase().endsWith(suffix))
+      && /\/(?:download|stream|media|video)\//i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 export function parseWatch(html = "", pageUrl = "") {
   const candidates = [];
   for (const re of [
@@ -208,11 +231,23 @@ export function parseWatch(html = "", pageUrl = "") {
   ]) {
     for (const m of html.matchAll(re)) {
       const url = absoluteUrl(m[1], pageUrl || SOURCE_ORIGIN);
-      if (!url || candidates.includes(url)) continue;
+      if (!url || candidates.includes(url) || !isMediaCandidate(url)) continue;
       try { assertSourceUrl(url, { allowMedia: true }); candidates.push(url); } catch {}
     }
   }
-  return { status: candidates.length ? "success" : "error", source: "basri-direct", media_src: candidates[0] || "", candidates, movie_title: pageTitle(html), page_url: pageUrl };
+  const preferred = [...candidates].sort((a, b) => {
+    const rank = kind => ({ hls: 0, mp4: 1, "mpeg-ts": 2, webm: 3, matroska: 4, unknown: 5 }[kind] ?? 9);
+    return rank(mediaKindFromUrl(a)) - rank(mediaKindFromUrl(b));
+  });
+  return {
+    status: preferred.length ? "success" : "error",
+    source: "basri-direct",
+    media_src: preferred[0] || "",
+    media_type: mediaKindFromUrl(preferred[0] || ""),
+    candidates: preferred,
+    movie_title: pageTitle(html),
+    page_url: pageUrl,
+  };
 }
 
 export async function directCategory(sourceUrl, page = 1) {
