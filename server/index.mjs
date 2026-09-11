@@ -1,6 +1,7 @@
 import http from "node:http";
 import crypto from "node:crypto";
 import { createTheebFetch } from "./theeb-fetch.mjs";
+import { pickEpisodeByNumber } from "./provider-episode-context.mjs";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 const THEEB_ORIGIN = "https://theeb-arab-api.onrender.com";
@@ -32,6 +33,10 @@ function json(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+function log(event, data = {}) {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...data }));
+}
+
 async function getJson(url, timeoutMs = 45_000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -56,12 +61,108 @@ function storeMedia(url) {
   return id;
 }
 
+function proxiedMedia(source, provider) {
+  const mediaId = storeMedia(source.direct_url);
+  return {
+    status: "success",
+    source: "provider-episode",
+    provider,
+    media_src: `https://al-qahtani-api.onrender.com/api/cinema/provider-media?id=${encodeURIComponent(mediaId)}`,
+    media_type: /\.m3u8(?:$|\?)/i.test(source.direct_url) ? "m3u8" : "stream",
+    is_iframe: false,
+    quality: source.quality || null,
+  };
+}
+
+async function providerEpisodeCandidate(provider, target) {
+  if (!provider || !target) return null;
+  const episode = await getJson(
+    `${THEEB_ORIGIN}/api/providers/${encodeURIComponent(provider)}/episode/${encodeURIComponent(String(target))}`,
+    45_000,
+  ).catch(() => null);
+  if (!episode?.response?.ok || !episode.data) return null;
+
+  const details = episode.data;
+  const options = Array.isArray(details.watch_options) ? details.watch_options : [];
+  for (const option of options) {
+    if (!option?.watch_id) continue;
+    const watch = await getJson(
+      `${THEEB_ORIGIN}/api/providers/${encodeURIComponent(provider)}/watch/${encodeURIComponent(String(option.watch_id))}/${encodeURIComponent(String(details.episode?.id || target))}`,
+      45_000,
+    ).catch(() => null);
+    const source = (watch?.data?.sources || []).find((item) => item?.direct_url);
+    if (source?.direct_url) return proxiedMedia({ ...source, quality: source.quality || option.quality || null }, provider);
+  }
+
+  const embed = options.find((option) => option?.can_watch !== false && option?.page_url && ["embed", "external_player"].includes(option.type));
+  if (embed) {
+    return {
+      status: "success",
+      source: "provider-episode",
+      provider,
+      media_src: embed.page_url,
+      media_type: "embed",
+      is_iframe: true,
+    };
+  }
+  return null;
+}
+
+function decodeLegacyProviderRef(ref) {
+  const match = String(ref || "").match(/^provider:([^:]+):episode:(.+)$/);
+  if (!match) return null;
+  try {
+    return { provider: decodeURIComponent(match[1]), target: decodeURIComponent(match[2]) };
+  } catch {
+    return null;
+  }
+}
+
+async function providerEpisodeWithFallback(ref, title, episodeNumber) {
+  const primary = decodeLegacyProviderRef(ref);
+  if (!primary) return { status: "error", message: "BAD_PROVIDER_REFERENCE" };
+
+  const direct = await providerEpisodeCandidate(primary.provider, primary.target);
+  if (direct) return direct;
+
+  const lookup = String(title || "").trim();
+  if (!lookup || !String(episodeNumber || "").trim()) {
+    return { status: "error", message: "PROVIDER_EPISODE_UNAVAILABLE" };
+  }
+
+  const discovery = await getJson(`${THEEB_ORIGIN}/v1/discover?q=${encodeURIComponent(lookup)}`, 60_000).catch(() => null);
+  const items = discovery?.data?.data?.items || [];
+  const seen = new Set([primary.provider]);
+  for (const candidate of items.slice(0, 8)) {
+    const provider = String(candidate?.provider || "").trim();
+    const seriesId = String(candidate?.provider_series_id || "").trim();
+    if (!provider || !seriesId || seen.has(provider) || (candidate.content_type || candidate.type) === "movie") continue;
+    seen.add(provider);
+
+    const series = await getJson(
+      `${THEEB_ORIGIN}/api/providers/${encodeURIComponent(provider)}/series/${encodeURIComponent(seriesId)}`,
+      45_000,
+    ).catch(() => null);
+    if (!series?.response?.ok || !Array.isArray(series.data?.episodes)) continue;
+
+    const episode = pickEpisodeByNumber(series.data.episodes, episodeNumber);
+    if (!episode) continue;
+    const target = String(episode.source_url || episode.id || episode.page_url || "").trim();
+    if (!target) continue;
+
+    const resolved = await providerEpisodeCandidate(provider, target);
+    if (resolved) {
+      log("provider_episode_fallback_success", { from: primary.provider, to: provider, episode: String(episodeNumber) });
+      return resolved;
+    }
+  }
+
+  log("provider_episode_fallback_exhausted", { provider: primary.provider, episode: String(episodeNumber), candidates: items.length });
+  return { status: "error", message: "NO_PLAYABLE_SOURCE" };
+}
+
 async function providerMovieCandidate(candidate) {
   if (!candidate?.provider || !candidate?.id) return null;
-  // Discovery source_url may be a transient redirected host (for example
-  // arabsseed.baby or mywecima.courses) that is intentionally rejected by
-  // Theeb's SSRF allowlist. The stable provider id is the contract boundary;
-  // each provider can rebuild its current canonical URL from that id.
   const target = String(candidate.id || candidate.source);
   const episode = await getJson(
     `${THEEB_ORIGIN}/api/providers/${encodeURIComponent(candidate.provider)}/episode/${encodeURIComponent(target)}`,
@@ -185,6 +286,14 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   if (url.pathname === "/api/cinema/provider-media") {
     return proxyProviderMedia(req, res, url.searchParams.get("id") || "");
+  }
+  if (url.pathname === "/api/cinema/provider-play") {
+    const result = await providerEpisodeWithFallback(
+      url.searchParams.get("ref") || "",
+      url.searchParams.get("title") || "",
+      url.searchParams.get("episode") || "",
+    ).catch(() => ({ status: "error", message: "NO_PLAYABLE_SOURCE" }));
+    return json(res, 200, result);
   }
   if (url.pathname === "/api/cinema/details") {
     const ref = url.searchParams.get("ref") || "";
