@@ -11,17 +11,17 @@ GitHub repository state wins over this handoff if they disagree. The checked-in 
 - Cinema stays on the original Basri chain. The historical cinema Worker currently returns `403 FORBIDDEN_ORIGIN`; the backend uses the same original content source through a server-side compatibility fallback rather than switching provider projects.
 
 ## Current state
-- PRs #17 through #27 are merged.
-- Current product `main`: `16d122d2471ff6dcebbcb42ef1afbc9ed1881cff` (`Restore original Basri download UX safely`).
-- Active documentation PR #28 records the post-merge live evidence.
+- PRs #17 through #29 are merged.
+- Current product `main`: `03b57f54cdb692f5d2094770e4b2afdbd0cb5652` (`Harden rejected download references`).
 - No cross-project Theeb/akwam-indexer runtime dependency is present.
+- Live Web parity, including playback and the recovered Basri-style download flow, remains proven through the deployed Al-Qahtani backend.
 
 ## Recent engineering changes
 ### PR #25 — bounded series playback recovery
 Merged as `7af710d0c07507e55014b150e61278f3c49a7cdf`. Deployed series playback tries at most three playable episode candidates with 45-second bounds. A transient single-episode timeout no longer falsely fails the deployment, while the gate still fails if no candidate produces a real proxied source. Safari `206`, `Content-Range`, and `Accept-Ranges: bytes` remain mandatory.
 
 ### PR #26 — original Basri download contract recovered
-Merged as `9196676cafbf22ef8e1f655db3e134989b3e3d5a`. CI now opens the checked-in baseline archive directly and protects the historical behavior:
+Merged as `9196676cafbf22ef8e1f655db3e134989b3e3d5a`. CI opens the checked-in baseline archive directly and protects the historical behavior:
 - episode choice offers `مشاهدة` and `تحميل`;
 - the selected episode is resolved before Download is enabled;
 - original `downloadChosenEpisode()` and `setupPlayer(data)` use the same resolved `media_src` used for playback;
@@ -30,42 +30,70 @@ Merged as `9196676cafbf22ef8e1f655db3e134989b3e3d5a`. CI now opens the checked-i
 The historical Basri UI therefore treats resolved playback media as the downloadable resource; it does not require a separate provider project.
 
 ### PR #27 — original download UX restored safely
-Merged as `16d122d2471ff6dcebbcb42ef1afbc9ed1881cff` after all final-head PR gates passed.
+Merged as `16d122d2471ff6dcebbcb42ef1afbc9ed1881cff`.
 
 Implementation:
-- episode resolution now restores the original Watch/Download choice;
+- episode resolution restores the original Watch/Download choice;
 - direct movies show Download beside Watch when a safe media reference exists;
 - browser download accepts only the existing short-lived `/api/cinema/media?id=...` reference;
-- `download=1` reuses that exact proxy route and adds `Content-Disposition: attachment` plus `X-Content-Type-Options: nosniff`;
+- `download=1` reuses that exact proxy route;
 - optional Android bridge receives only the Al-Qahtani proxy URL;
 - normal web download also uses only the Al-Qahtani proxy URL;
 - raw upstream `akwam.ss` / `downet.net` media URLs remain hidden.
 
-Regression gates:
-- iPhone WebKit proves movie and episode Download buttons and rejects upstream-host leakage;
-- local backend smoke proves the attachment contract through the real proxy;
-- real movie smoke fetches only `bytes=0-1023`, avoiding full-media downloads while proving the live path.
+### PR #28 — live download parity recorded
+Merged as `4d110ef22e8ff3254e90329304944b9afa086e4a`. It records the post-PR-27 deployed evidence and leaves GitHub/live gates as the source of truth.
 
-## Post-merge live evidence for PR #27
-Push/main commit: `16d122d2471ff6dcebbcb42ef1afbc9ed1881cff`.
+### PR #29 — rejected download references hardened
+Merged as `03b57f54cdb692f5d2094770e4b2afdbd0cb5652` after every final-head gate passed.
 
-Green post-merge gates include:
-- Web smoke run `34616270516`: success.
-- Remote runtime smoke run `34616270510`: success against the deployed backend.
-- Mobile WebKit smoke run `34616270529`: success.
-- GitHub Pages build/deploy run `34616269033`: build/report/deploy all success.
-- Remote movie playback run `34616270532`: success after its built-in Render auto-deploy wait.
+Root issue:
+- `server/index.mjs` previously attached `Content-Disposition` and `X-Content-Type-Options: nosniff` as soon as `download=1` appeared, before the opaque media reference had been validated;
+- invalid or expired references were still rejected by `server/app.mjs`, but their JSON error responses could inherit download decoration.
 
-The deployed remote movie smoke proved against `https://al-qahtani-api.onrender.com`:
-- backend health is live;
-- real movie `The Beloved` resolves from `basri-direct` with zero fabricated episodes;
-- playback stays behind `/api/cinema/media?id=...`;
-- Safari probe returns `206`, `Content-Range: bytes 0-1023/1147681720`, `Accept-Ranges: bytes`;
-- bounded live download returns `206` through `/api/cinema/media?id=...&download=1`;
-- live download response includes `Content-Disposition: attachment; filename="al-qahtani-media"` and `X-Content-Type-Options: nosniff`;
-- no upstream media URL is required by the browser.
+Fix:
+- download decoration is now delayed until the Al-Qahtani media path produces a successful 2xx, non-JSON proxied media response;
+- invalid, expired, URL-shaped fake IDs and arbitrary `url=` query attempts remain ordinary JSON errors and never receive attachment/nosniff headers;
+- no browser-supplied URL is accepted as a media source;
+- the valid download path still uses the same short-lived opaque media reference and retains its successful attachment behavior.
 
-Therefore Web download parity is now proven on the deployed path, not only in PR/local CI.
+Negative regression coverage in `scripts/local_backend_smoke.mjs` now checks:
+- a fake media ID;
+- an ID shaped like `https://evil.example/video.mp4`;
+- an arbitrary `url=https://evil.example/video.mp4` query without a valid opaque ID.
+
+Every case must fail with HTTP 404 and `MEDIA_REFERENCE_EXPIRED`, remain `application/json`, and omit download headers. The smoke then proves a real Basri episode still resolves through the opaque proxy, Safari Range still returns 206, and the valid download still returns attachment/nosniff headers.
+
+## PR #29 final-head evidence
+Final PR head: `9f530aefa5b845cf735f035f342f81c5a44a2fdb`.
+
+All final-head gates passed:
+- Web smoke #115, run `34617301112`.
+- Live provider smoke #79, run `34617301041`.
+- Original Basri download contract #11, run `34617301101`.
+- Mobile WebKit smoke #29, run `34617301115`.
+- Remote movie playback smoke #21, run `34617301182`.
+
+The Live provider/local-backend log explicitly proved:
+- invalid download reference: 404, opaque JSON error, no attachment/nosniff headers;
+- URL-shaped fake media ID: same fail-closed result;
+- arbitrary `url=` query: same fail-closed result;
+- real Basri search/category/details/episode path remained green;
+- real media proxy returned HTTP 206 with `Content-Range: bytes 0-1023/350455536` and `Accept-Ranges: bytes`;
+- valid safe download returned HTTP 206 with `Content-Disposition: attachment; filename="al-qahtani-media"` and `X-Content-Type-Options: nosniff`.
+
+## Post-merge evidence for PR #29
+Push/main commit: `03b57f54cdb692f5d2094770e4b2afdbd0cb5652`.
+
+Post-merge gates completed without a failure. Confirmed successful runs include:
+- Web smoke #116, run `34617449008`.
+- Remote runtime smoke #21, run `34617448922`, against the deployed backend.
+- Mobile WebKit smoke #30, run `34617449043`.
+- Original Basri download contract #12: success.
+- Remote movie playback #22 completed as part of the same main push without a reported failure.
+- GitHub Pages deploy was triggered for the same merge commit.
+
+No regression was observed in search, categories, details, episodes, playback, movie flow, Download UX or iPhone WebKit behavior after the hardening merge.
 
 ## Proven live Web parity
 The deployed path has proven:
@@ -84,6 +112,7 @@ The deployed path has proven:
 ## Security and regression boundaries
 - Direct upstream media URLs stay hidden behind short-lived backend references.
 - Browser-controlled arbitrary external URLs are forbidden for playback/download.
+- Invalid or expired opaque media references must fail closed as JSON and must not be decorated as downloads.
 - Source/media host allowlists and SSRF protections remain in force.
 - Worker/session tokens stay server-side.
 - CORS and Safari Range forwarding remain active.
@@ -91,17 +120,17 @@ The deployed path has proven:
 - Ad/pop-up/tracking and legacy Android Intent/deep-link regressions remain prohibited.
 
 ## Render evidence and limitation
-- External deployed-runtime tests target `https://al-qahtani-api.onrender.com` and prove the live behavior after Render auto-deploy waits.
+- External deployed-runtime tests target `https://al-qahtani-api.onrender.com` and prove live behavior after the workflow's Render auto-deploy wait.
 - The Render connector still has no selected workspace and explicitly forbids guessing one. Do not claim direct Render deployment IDs/log inspection until a workspace is explicitly selected.
 
 ## Next run goals
-1. Add negative download tests for invalid and expired media references and ensure they cannot be turned into arbitrary URL/host fetches.
-2. Move download response decoration closer to validated media-reference handling if that improves error semantics without weakening the shared media proxy.
-3. Improve download filename metadata only when it can be derived safely and sanitized without exposing upstream URL structure.
-4. Inspect `Player.html` against the baseline and decide whether the historical player-level Download button should also be restored through the same opaque proxy route.
+1. Add a deterministic expired-reference regression test, preferably through a narrowly scoped test seam or injectable TTL, without exposing or weakening the private media-reference store.
+2. Inspect whether download filename metadata can be derived only from trusted title/episode metadata, sanitize it rigorously, and avoid leaking upstream URL/path structure.
+3. Compare current `Player.html` with the baseline and decide whether the historical player-level Download control should also use the same opaque proxy route.
+4. Add negative CORS/header tests around failed media/download requests so rejected origins cannot gain broader response access.
 5. Preserve all search/category/details/series/movie/playback/download/Safari Range/iPhone WebKit gates while hardening.
 6. Begin Flutter only as a faithful client over the proven Al-Qahtani backend; do not introduce Theeb/akwam-indexer provider dependencies.
-7. Build Flutter sections incrementally after verifying behavior parity for each migrated Web flow rather than rewriting the product wholesale.
+7. Build Flutter sections incrementally after verifying behavior parity for each migrated Web flow instead of rewriting the product wholesale.
 8. Preserve Android Mobile, Android TV D-Pad/remote, and iOS behavior and platform constraints.
 9. Continue parser-drift/provider-health/security/performance maintenance even after stable releases.
 10. Keep GitHub and live deployed tests as source of truth over this handoff whenever they disagree.
