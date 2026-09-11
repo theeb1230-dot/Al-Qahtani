@@ -26,7 +26,9 @@ server.on("request", (req, res) => {
       if (decorated || res.statusCode < 200 || res.statusCode >= 300) return;
       const contentType = String(res.getHeader("Content-Type") || "").toLowerCase();
       if (contentType.includes("application/json")) return;
-      res.setHeader("Content-Disposition", 'attachment; filename="al-qahtani-media"');
+      if (!res.hasHeader("Content-Disposition")) {
+        res.setHeader("Content-Disposition", 'attachment; filename="al-qahtani-media"');
+      }
       res.setHeader("X-Content-Type-Options", "nosniff");
       decorated = true;
     };
