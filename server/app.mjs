@@ -3,8 +3,10 @@ import crypto from "node:crypto";
 
 const MATCHES = "https://api.albasritv1.workers.dev/";
 const CINEMA = "https://albas.albesriali03.workers.dev/";
-const BASRI_ORIGIN = "https://www.albasritv.abrdns.com";
-const BASRI_REFERER = `${BASRI_ORIGIN}/2026/09/movies-series.html`;
+const BASRI_ORIGINS = [
+  "https://www.albasritv.abrdns.com",
+  "https://albasritv.abrdns.com",
+];
 
 const ALLOWED_ORIGINS = new Set([
   "https://theeb1230-dot.github.io",
@@ -16,6 +18,11 @@ const mediaRefs = new Map();
 let cinemaToken = "";
 let cinemaTokenExpiresAt = 0;
 let cinemaSessionPromise = null;
+let activeCinemaOrigin = BASRI_ORIGINS[0];
+
+function refererFor(origin, page = "/2026/09/movies-series.html") {
+  return `${origin}${page}`;
+}
 
 function applyCors(req, res) {
   const origin = String(req.headers.origin || "");
@@ -49,25 +56,27 @@ async function fetchTextJson(url, init = {}, timeoutMs = 45_000) {
   }
 }
 
-function basriHeaders(extra = {}) {
+function basriHeaders(origin = BASRI_ORIGINS[0], page = "/2026/09/movies-series.html", extra = {}) {
   return {
     Accept: "application/json",
-    Origin: BASRI_ORIGIN,
-    Referer: BASRI_REFERER,
-    "X-BSR-Page": "/2026/09/movies-series.html",
+    Origin: origin,
+    Referer: refererFor(origin, page),
+    "X-BSR-Page": page,
     ...extra,
   };
 }
 
 async function getMatchToken() {
-  const result = await fetchTextJson(`${MATCHES}session`, { headers: basriHeaders({ "X-BSR-Page": "/2026/09/matches.html" }) });
+  const origin = BASRI_ORIGINS[0];
+  const result = await fetchTextJson(`${MATCHES}session`, { headers: basriHeaders(origin, "/2026/09/matches.html") });
   if (!result.response.ok || !result.data?.token) throw new Error(`MATCH_SESSION_${result.response.status}`);
   return String(result.data.token);
 }
 
 async function getMatches() {
+  const origin = BASRI_ORIGINS[0];
   const token = await getMatchToken();
-  const result = await fetchTextJson(MATCHES, { headers: basriHeaders({ "X-BSR-Page": "/2026/09/matches.html", "X-BSR-Token": token }) });
+  const result = await fetchTextJson(MATCHES, { headers: basriHeaders(origin, "/2026/09/matches.html", { "X-BSR-Token": token }) });
   if (!result.response.ok) throw new Error(`MATCH_LIST_${result.response.status}`);
   return result.data;
 }
@@ -75,10 +84,15 @@ async function getMatches() {
 async function getMatchServers(target) {
   const url = new URL(target);
   if (url.origin !== new URL(MATCHES).origin) throw new Error("BAD_MATCH_TARGET");
+  const origin = BASRI_ORIGINS[0];
   const token = await getMatchToken();
-  const result = await fetchTextJson(url.href, { headers: basriHeaders({ "X-BSR-Page": "/2026/09/matches.html", "X-BSR-Token": token }) });
+  const result = await fetchTextJson(url.href, { headers: basriHeaders(origin, "/2026/09/matches.html", { "X-BSR-Token": token }) });
   if (!result.response.ok) throw new Error(`MATCH_SERVERS_${result.response.status}`);
   return result.data;
+}
+
+async function createCinemaSessionForOrigin(origin) {
+  return fetchTextJson(`${CINEMA}session`, { headers: basriHeaders(origin) }, 20_000);
 }
 
 async function ensureCinemaSession(force = false) {
@@ -86,12 +100,23 @@ async function ensureCinemaSession(force = false) {
   if (!force && cinemaToken && cinemaTokenExpiresAt > now + 10_000) return cinemaToken;
   if (!force && cinemaSessionPromise) return cinemaSessionPromise;
   cinemaSessionPromise = (async () => {
-    const result = await fetchTextJson(`${CINEMA}session`, { headers: basriHeaders() }, 20_000);
-    if (!result.response.ok || !result.data?.token) throw new Error(`CINEMA_SESSION_${result.response.status}`);
-    cinemaToken = String(result.data.token);
-    const expiresAt = Number(result.data.expiresAt || result.data.expires_at || 0);
-    cinemaTokenExpiresAt = expiresAt > 10_000_000_000 ? expiresAt : expiresAt > 0 ? expiresAt * 1000 : Date.now() + 5 * 60_000;
-    return cinemaToken;
+    const orderedOrigins = [activeCinemaOrigin, ...BASRI_ORIGINS.filter((origin) => origin !== activeCinemaOrigin)];
+    let lastStatus = 0;
+    for (const origin of orderedOrigins) {
+      const result = await createCinemaSessionForOrigin(origin);
+      lastStatus = result.response.status;
+      if (result.response.ok && result.data?.token) {
+        activeCinemaOrigin = origin;
+        cinemaToken = String(result.data.token);
+        const expiresAt = Number(result.data.expiresAt || result.data.expires_at || 0);
+        cinemaTokenExpiresAt = expiresAt > 10_000_000_000 ? expiresAt : expiresAt > 0 ? expiresAt * 1000 : Date.now() + 5 * 60_000;
+        log("cinema_session_ok", { origin });
+        return cinemaToken;
+      }
+      log("cinema_session_rejected", { origin, status: result.response.status, code: result.data?.message || "" });
+      if (result.response.status !== 403 || result.data?.message !== "FORBIDDEN_ORIGIN") break;
+    }
+    throw new Error(`CINEMA_SESSION_${lastStatus || "FAILED"}`);
   })();
   try { return await cinemaSessionPromise; } finally { cinemaSessionPromise = null; }
 }
@@ -99,7 +124,7 @@ async function ensureCinemaSession(force = false) {
 async function cinemaRequest(action, params = {}, retry = true) {
   const token = await ensureCinemaSession(false);
   const query = new URLSearchParams({ action, token, ...params });
-  const result = await fetchTextJson(`${CINEMA}?${query}`, { headers: basriHeaders() }, 60_000);
+  const result = await fetchTextJson(`${CINEMA}?${query}`, { headers: basriHeaders(activeCinemaOrigin) }, 60_000);
   if (retry && result.response.status === 401) {
     cinemaToken = "";
     cinemaTokenExpiresAt = 0;
@@ -182,7 +207,7 @@ async function proxyMedia(req, res, id) {
   let target;
   try { target = new URL(entry.url); } catch { return sendJson(res, 400, { status: "error", message: "BAD_MEDIA_REFERENCE" }); }
   if (!/^https?:$/.test(target.protocol)) return sendJson(res, 400, { status: "error", message: "BAD_MEDIA_SCHEME" });
-  const headers = { Accept: "*/*", Referer: BASRI_REFERER };
+  const headers = { Accept: "*/*", Referer: refererFor(activeCinemaOrigin) };
   if (req.headers.range) headers.Range = req.headers.range;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60_000);
@@ -214,7 +239,7 @@ export function createServer() {
     const url = new URL(req.url, "http://localhost");
     const started = Date.now();
     try {
-      if (url.pathname === "/health") return sendJson(res, 200, { status: "ok", cinema_source: "basri-worker" });
+      if (url.pathname === "/health") return sendJson(res, 200, { status: "ok", cinema_source: "basri-worker", cinema_origin: activeCinemaOrigin });
       if (url.pathname === "/api/matches") return sendJson(res, 200, await getMatches());
       if (url.pathname === "/api/matches/servers") return sendJson(res, 200, await getMatchServers(url.searchParams.get("url") || ""));
       if (url.pathname === "/api/cinema/search") return sendJson(res, 200, await cinemaSearch((url.searchParams.get("q") || "").trim()));
