@@ -322,7 +322,7 @@ async function inspectMediaCandidate(value, referer) {
   const contentDisposition = String(upstream.headers["content-disposition"] || "");
   const kind = classifyMediaBytes(bytes, contentType);
   const attachment = /attachment/i.test(contentDisposition);
-  const playable = !attachment && ["hls", "mp4", "mpeg-ts"].includes(kind);
+  const playable = ["hls", "mp4", "mpeg-ts"].includes(kind);
   return { playable, kind, status, attachment, contentType, contentDisposition };
 }
 
