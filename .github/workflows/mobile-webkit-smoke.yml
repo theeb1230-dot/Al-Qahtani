@@ -1,0 +1,22 @@
+name: Mobile WebKit smoke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  iphone-webkit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright WebKit
+        run: |
+          npm install --no-save --no-package-lock playwright@1.55.0
+          npx playwright install --with-deps webkit
+      - name: Exercise cinema navigation in iPhone WebKit
+        run: node scripts/mobile_webkit_smoke.mjs
