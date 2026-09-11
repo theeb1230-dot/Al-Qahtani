@@ -97,6 +97,12 @@ function bytesLookLikeMatroska(bytes){
   return bytes.length>=4&&bytes[0]===0x1a&&bytes[1]===0x45&&bytes[2]===0xdf&&bytes[3]===0xa3;
 }
 
+function bytesLookLikeMpegTs(bytes){
+  if(bytes.length<188||bytes[0]!==0x47)return false;
+  if(bytes.length>=376&&bytes[188]!==0x47)return false;
+  return true;
+}
+
 function bytesLookLikeHls(bytes){
   try{return new TextDecoder().decode(bytes.slice(0,64)).trimStart().startsWith('#EXTM3U')}catch{return false}
 }
@@ -108,8 +114,9 @@ async function inspectStream(url){
   const bytes=new Uint8Array(await response.arrayBuffer());
   const mp4=bytesLookLikeMp4(bytes)||contentType.includes('video/mp4');
   const matroska=bytesLookLikeMatroska(bytes)||contentType.includes('matroska')||contentType.includes('webm');
+  const mpegTs=bytesLookLikeMpegTs(bytes)||contentType.includes('video/mp2t');
   const hls=bytesLookLikeHls(bytes)||contentType.includes('mpegurl');
-  return {contentType,mp4,matroska,hls};
+  return {contentType,mp4,matroska,mpegTs,hls};
 }
 
 function playHls(source){
@@ -147,10 +154,13 @@ async function playDirectStream(source,generation){
   const src=document.createElement('source');
   src.src=source.url;
   if(inspection?.mp4)src.type='video/mp4';
+  else if(inspection?.mpegTs)src.type='video/mp2t';
   v.appendChild(src);
   v.load();
   if(inspection?.matroska){
     statusEl.textContent='المصدر بصيغة Matroska/WebM وغير مدعوم مباشرة في Safari؛ جارٍ تجربة التشغيل المتاح';
+  }else if(inspection?.mpegTs){
+    statusEl.textContent='تم التحقق من MPEG-TS — جارٍ التشغيل';
   }else if(inspection?.mp4){
     statusEl.textContent='تم التحقق من MP4 — جارٍ التشغيل';
   }else if(inspection?.contentType){
