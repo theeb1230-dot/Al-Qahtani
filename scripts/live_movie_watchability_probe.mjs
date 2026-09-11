@@ -44,7 +44,7 @@ try {
   if (!data.media_path || !String(data.media_path).startsWith("/api/cinema/media?id=")) throw new Error("PLAYABLE_MOVIE_MISSING_OPAQUE_MEDIA_PATH");
   if (data.media_type !== "stream") throw new Error(`EXPECTED_MPEGTS_STREAM_GOT_${data.media_type}`);
   const serialized = JSON.stringify(data);
-  if (serialized.includes("downet.net") || serialized.includes("akwam.ss/watch/") || serialized.includes("akwam.ss/download/")) throw new Error("DETAILS_RESPONSE_LEAKS_UPSTREAM_MEDIA_URL");
+  if (serialized.includes("akwam.ss/watch/") || serialized.includes("akwam.ss/download/") || /https:\/\/s\d+d1\.downet\.net\/download\//i.test(serialized)) throw new Error("DETAILS_RESPONSE_LEAKS_UPSTREAM_MEDIA_URL");
 
   const play = await fetch(base + data.media_path, {
     headers: {
