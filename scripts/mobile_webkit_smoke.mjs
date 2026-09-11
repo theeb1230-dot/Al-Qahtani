@@ -96,6 +96,7 @@ async function installBackendMocks(page) {
           "content-range": "bytes 0-3/4",
           "accept-ranges": "bytes",
           "content-length": "4",
+          ...(u.searchParams.get("download") === "1" ? { "content-disposition": 'attachment; filename="al-qahtani-media"' } : {}),
         },
         body: Buffer.from([0, 0, 0, 0]),
       });
@@ -115,6 +116,13 @@ async function assertNoHorizontalOverflow(page, label) {
     innerWidth: window.innerWidth,
   }));
   assert(m.scrollWidth <= m.innerWidth + 1, `${label} fits iPhone viewport`, m);
+}
+
+async function installAndroidDownloadCapture(page) {
+  await page.evaluate(() => {
+    window.__capturedDownload = "";
+    window.Android = { downloadFile(url) { window.__capturedDownload = String(url || ""); } };
+  });
 }
 
 let browser;
@@ -144,9 +152,19 @@ try {
   assert((await page.locator("#episodes .ep").first().textContent()) === "الحلقة 1", "episode number metadata renders");
   await assertNoHorizontalOverflow(page, "series details view");
 
+  await page.locator("#episodes .ep").first().click();
+  await page.locator("#episodeModal.show").waitFor({ state: "visible" });
+  assert(!(await page.locator("#choiceDownloadBtn").isHidden()), "episode choice restores original download action");
+  assert((await page.locator("#choiceTitle").textContent())?.includes("الحلقة 1"), "episode choice identifies selected episode");
+  await installAndroidDownloadCapture(page);
+  await page.locator("#choiceDownloadBtn").click();
+  let downloadUrl = await page.evaluate(() => window.__capturedDownload);
+  assert(downloadUrl === `${BACKEND}/api/cinema/media?id=webkit-smoke&download=1`, "episode download uses opaque Al-Qahtani reference", { downloadUrl });
+  assert(!downloadUrl.includes("akwam.ss") && !downloadUrl.includes("downet.net"), "episode download does not leak upstream host", { downloadUrl });
+
   await Promise.all([
     page.waitForURL(/Player\.html\?/),
-    page.locator("#episodes .ep").first().click(),
+    page.locator("#choiceWatchBtn").click(),
   ]);
   await page.locator("#player video").waitFor({ state: "attached" });
   let src = await page.locator("#player video").getAttribute("src");
@@ -165,7 +183,15 @@ try {
   assert((await page.locator("#poster").getAttribute("src")) === moviePoster, "movie poster metadata survives navigation");
   assert(await page.locator("#episodesWrap").isHidden(), "movie direct-watch path does not fabricate episodes");
   assert((await page.locator("#actions .primary").textContent()) === "مشاهدة", "movie direct-watch action renders");
+  assert(await page.locator("#actions .download").count() === 1, "movie restores download action beside watch");
   await assertNoHorizontalOverflow(page, "movie details view");
+
+  await installAndroidDownloadCapture(page);
+  await page.locator("#actions .download").click();
+  downloadUrl = await page.evaluate(() => window.__capturedDownload);
+  assert(downloadUrl === `${BACKEND}/api/cinema/media?id=webkit-movie&download=1`, "movie download uses opaque Al-Qahtani reference", { downloadUrl });
+  assert(!downloadUrl.includes("akwam.ss") && !downloadUrl.includes("downet.net"), "movie download does not leak upstream host", { downloadUrl });
+
   await Promise.all([
     page.waitForURL(/Player\.html\?/),
     page.locator("#actions .primary").click(),
