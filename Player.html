@@ -22,6 +22,7 @@ const player=document.getElementById('player');
 const statusEl=document.getElementById('status');
 const serversEl=document.getElementById('servers');
 let hls=null;
+let transientObjectUrl='';
 let playGeneration=0;
 
 function b64uDecode(s){
@@ -67,6 +68,7 @@ function collectSources(){
 function stop(){
   playGeneration++;
   if(hls){hls.destroy();hls=null}
+  if(transientObjectUrl){URL.revokeObjectURL(transientObjectUrl);transientObjectUrl=''}
   player.innerHTML='';
 }
 
@@ -136,6 +138,24 @@ function playHls(source){
   v.play().catch(()=>{});
 }
 
+function playMpegTsAsHls(source){
+  const segmentUrl=new URL(source.url,location.href).href;
+  const manifest=[
+    '#EXTM3U',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+    '#EXT-X-TARGETDURATION:43200',
+    '#EXT-X-MEDIA-SEQUENCE:0',
+    '#EXTINF:43200.000,',
+    segmentUrl,
+    '#EXT-X-ENDLIST',
+    '',
+  ].join('\n');
+  transientObjectUrl=URL.createObjectURL(new Blob([manifest],{type:'application/vnd.apple.mpegurl'}));
+  statusEl.textContent='تم التحقق من MPEG-TS — جارٍ تشغيله عبر HLS المتوافق مع Safari';
+  playHls({...source,url:transientObjectUrl,type:'m3u8'});
+}
+
 async function playDirectStream(source,generation){
   let inspection=null;
   try{
@@ -148,19 +168,20 @@ async function playDirectStream(source,generation){
     playHls({...source,type:'m3u8'});
     return;
   }
+  if(inspection?.mpegTs){
+    playMpegTsAsHls(source);
+    return;
+  }
   const v=createVideo();
   bindVideoStatus(v,source);
   player.appendChild(v);
   const src=document.createElement('source');
   src.src=source.url;
   if(inspection?.mp4)src.type='video/mp4';
-  else if(inspection?.mpegTs)src.type='video/mp2t';
   v.appendChild(src);
   v.load();
   if(inspection?.matroska){
     statusEl.textContent='المصدر بصيغة Matroska/WebM وغير مدعوم مباشرة في Safari؛ جارٍ تجربة التشغيل المتاح';
-  }else if(inspection?.mpegTs){
-    statusEl.textContent='تم التحقق من MPEG-TS — جارٍ التشغيل';
   }else if(inspection?.mp4){
     statusEl.textContent='تم التحقق من MP4 — جارٍ التشغيل';
   }else if(inspection?.contentType){
