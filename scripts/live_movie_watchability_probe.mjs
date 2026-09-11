@@ -1,54 +1,8 @@
 #!/usr/bin/env node
-import { directDetails, directWatch, fetchSourceHtml } from "../server/basri-source.mjs";
+import { directDetails, directWatch } from "../server/basri-source.mjs";
+import { createServer } from "../server/app.mjs";
 
 const TARGET = "https://akwam.ss/movie/11343/grand-theft-auto-vi-an-extended-look";
-const SAFARI_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1";
-
-function classify(bytes, contentType = "") {
-  const type = String(contentType || "").toLowerCase();
-  const mp4 = bytes.length >= 12 && Buffer.from(bytes.subarray(4, 8)).toString("ascii") === "ftyp";
-  const ts = bytes.length >= 188 && bytes[0] === 0x47 && (bytes.length < 376 || bytes[188] === 0x47);
-  const hls = Buffer.from(bytes.subarray(0, 64)).toString("utf8").trimStart().startsWith("#EXTM3U");
-  const matroska = bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3;
-  if (mp4 || type.includes("video/mp4")) return "mp4";
-  if (ts || type.includes("video/mp2t")) return "mpeg-ts";
-  if (hls || type.includes("mpegurl")) return "hls";
-  if (matroska || type.includes("matroska") || type.includes("webm")) return "matroska-webm";
-  return "unknown";
-}
-
-async function probeMedia(url, referer) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      redirect: "follow",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: {
-        Range: "bytes=0-4095",
-        Referer: referer,
-        "User-Agent": SAFARI_UA,
-        Accept: "*/*",
-      },
-    });
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    return {
-      status: response.status,
-      contentType: response.headers.get("content-type") || "",
-      contentDisposition: response.headers.get("content-disposition") || "",
-      contentRange: response.headers.get("content-range") || "",
-      acceptRanges: response.headers.get("accept-ranges") || "",
-      finalUrl: response.url,
-      bytes: bytes.length,
-      kind: classify(bytes, response.headers.get("content-type") || ""),
-      first16: Buffer.from(bytes.subarray(0, 16)).toString("hex"),
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 const details = await directDetails(TARGET);
 console.log("INFO movie details", {
@@ -58,21 +12,43 @@ console.log("INFO movie details", {
 });
 if (!Array.isArray(details.watch) || details.watch.length === 0) throw new Error("MOVIE_HAS_NO_WATCH_LINK");
 
-let playable = 0;
-for (const watchUrl of details.watch.slice(0, 3)) {
+for (const watchUrl of details.watch.slice(0, 2)) {
   const watch = await directWatch(watchUrl, TARGET);
-  console.log("INFO watch parse", { watchUrl, status: watch.status, candidates: watch.candidates });
-  for (const media of (watch.candidates || []).slice(0, 3)) {
-    try {
-      const result = await probeMedia(media, watchUrl);
-      console.log("INFO media probe", { watchUrl, mediaHost: new URL(media).hostname, ...result });
-      if (["mp4", "mpeg-ts", "hls"].includes(result.kind) && [200, 206].includes(result.status) && !/attachment/i.test(result.contentDisposition)) playable += 1;
-    } catch (error) {
-      const code = String(error?.cause?.code || error?.code || "");
-      console.log("INFO media probe failed", { watchUrl, mediaHost: new URL(media).hostname, code, message: String(error?.message || error) });
-    }
-  }
+  console.log("INFO watch parse", { watchUrl, status: watch.status, mediaType: watch.media_type, candidates: watch.candidates });
+  if (!Array.isArray(watch.candidates) || watch.candidates.length === 0) throw new Error("WATCH_HAS_NO_MEDIA_CANDIDATES");
+  if (watch.candidates.some(url => /\.(?:jpe?g|png|svg|js)(?:$|\?)/i.test(url))) throw new Error("WATCH_PARSER_LEAKED_PAGE_ASSET");
+  if (!watch.candidates.every(url => /\.(?:mkv|mp4|m3u8|ts|m2ts|webm)(?:$|\?)/i.test(url))) throw new Error("WATCH_PARSER_RETURNED_NON_MEDIA_URL");
 }
 
-if (!playable) throw new Error("MOVIE_WATCH_LINKS_RESOLVE_TO_NO_PLAYABLE_MEDIA");
-console.log("PASS problematic movie resolves at least one playable watch source", { playable });
+const server = createServer();
+await new Promise((resolve, reject) => {
+  server.once("error", reject);
+  server.listen(0, "127.0.0.1", resolve);
+});
+try {
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("BACKEND_ADDRESS_UNAVAILABLE");
+  const ref = `legacy:${encodeURIComponent(TARGET)}`;
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/cinema/details?ref=${encodeURIComponent(ref)}`, {
+    headers: { Origin: "https://theeb1230-dot.github.io" },
+  });
+  const data = await response.json();
+  console.log("INFO backend movie classification", {
+    status: response.status,
+    source: data.source,
+    playbackUnavailable: data.playback_unavailable,
+    playbackReason: data.playback_reason,
+    unsupportedMediaTypes: data.unsupported_media_types,
+    hasMediaPath: Boolean(data.media_path),
+  });
+  if (!response.ok || data.status !== "success") throw new Error("BACKEND_DETAILS_FAILED");
+  if (data.media_path) throw new Error("UNSUPPORTED_MOVIE_EXPOSED_AS_PLAYABLE_MEDIA");
+  if (data.playback_unavailable !== true) throw new Error("UNSUPPORTED_MOVIE_NOT_MARKED_UNAVAILABLE");
+  if (data.playback_reason !== "UNSUPPORTED_MEDIA_CONTAINER") throw new Error(`WRONG_UNAVAILABLE_REASON_${data.playback_reason}`);
+  if (!Array.isArray(data.unsupported_media_types) || !data.unsupported_media_types.includes("matroska-webm")) throw new Error("MISSING_MATROSKA_CLASSIFICATION");
+  const serialized = JSON.stringify(data);
+  if (serialized.includes("downet.net") || serialized.includes("akwam.ss/watch/") || serialized.includes("akwam.ss/download/")) throw new Error("DETAILS_RESPONSE_LEAKS_UPSTREAM_MEDIA_URL");
+  console.log("PASS problematic movie is preserved as content but blocked from unsupported Safari playback");
+} finally {
+  await new Promise(resolve => server.close(resolve));
+}
