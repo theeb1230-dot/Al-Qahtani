@@ -93,12 +93,12 @@ async function installBackendMocks(page) {
         status: 206,
         headers: {
           "content-type": "video/mp4",
-          "content-range": "bytes 0-3/4",
+          "content-range": "bytes 0-11/12",
           "accept-ranges": "bytes",
-          "content-length": "4",
+          "content-length": "12",
           ...(u.searchParams.get("download") === "1" ? { "content-disposition": 'attachment; filename="al-qahtani-media"' } : {}),
         },
-        body: Buffer.from([0, 0, 0, 0]),
+        body: Buffer.from([0, 0, 0, 12, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]),
       });
     }
     return json(route, { status: "error", message: "UNEXPECTED_WEBKIT_SMOKE_ROUTE" }, 404);
@@ -123,6 +123,15 @@ async function installAndroidDownloadCapture(page) {
     window.__capturedDownload = "";
     window.Android = { downloadFile(url) { window.__capturedDownload = String(url || ""); } };
   });
+}
+
+async function assertTypedPlayerSource(page, expectedUrl, label) {
+  const source = page.locator("#player video source");
+  await source.waitFor({ state: "attached" });
+  const src = await source.getAttribute("src");
+  const type = await source.getAttribute("type");
+  assert(src === expectedUrl, `${label} opens secured backend media in Player`, { src });
+  assert(type === "video/mp4", `${label} gives Safari an explicit MP4 MIME hint`, { type });
 }
 
 let browser;
@@ -166,9 +175,7 @@ try {
     page.waitForURL(/Player\.html\?/),
     page.locator("#choiceWatchBtn").click(),
   ]);
-  await page.locator("#player video").waitFor({ state: "attached" });
-  let src = await page.locator("#player video").getAttribute("src");
-  assert(src === `${BACKEND}/api/cinema/media?id=webkit-smoke`, "episode opens secured backend media in Player", { src });
+  await assertTypedPlayerSource(page, `${BACKEND}/api/cinema/media?id=webkit-smoke`, "episode");
   await assertNoHorizontalOverflow(page, "series player");
 
   await page.goto(`${BASE}/albasri-cinema.html`, { waitUntil: "domcontentloaded" });
@@ -196,9 +203,7 @@ try {
     page.waitForURL(/Player\.html\?/),
     page.locator("#actions .primary").click(),
   ]);
-  await page.locator("#player video").waitFor({ state: "attached" });
-  src = await page.locator("#player video").getAttribute("src");
-  assert(src === `${BACKEND}/api/cinema/media?id=webkit-movie`, "movie opens secured backend media in Player", { src });
+  await assertTypedPlayerSource(page, `${BACKEND}/api/cinema/media?id=webkit-movie`, "movie");
   await assertNoHorizontalOverflow(page, "movie player");
 
   await page.goto(`${BASE}/albasri-cinema.html`, { waitUntil: "domcontentloaded" });
