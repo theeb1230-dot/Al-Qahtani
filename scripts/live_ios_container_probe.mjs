@@ -34,17 +34,26 @@ async function json(path) {
   return { response, data };
 }
 
+function looksLikeMpegTs(bytes) {
+  if (bytes.length < 188 || bytes[0] !== 0x47) return false;
+  if (bytes.length >= 376 && bytes[188] !== 0x47) return false;
+  return true;
+}
+
 function classify(bytes, contentType) {
   const type = String(contentType || "").toLowerCase();
   const mp4 = bytes.length >= 12 && String.fromCharCode(...bytes.slice(4, 8)) === "ftyp";
   const matroska = bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3;
+  const mpegTs = looksLikeMpegTs(bytes);
   let text = "";
   try { text = new TextDecoder().decode(bytes.slice(0, 64)).trimStart(); } catch {}
   const hls = text.startsWith("#EXTM3U");
   if (mp4) return "mp4";
   if (matroska) return "matroska-webm";
+  if (mpegTs) return "mpeg-ts";
   if (hls) return "hls";
   if (type.includes("video/mp4")) return "mp4-by-mime";
+  if (type.includes("video/mp2t")) return "mpeg-ts-by-mime";
   if (type.includes("matroska") || type.includes("webm")) return "matroska-webm-by-mime";
   if (type.includes("mpegurl")) return "hls-by-mime";
   return "unknown";
@@ -92,6 +101,6 @@ if (!/^bytes 0-4095\//.test(contentRange)) throw new Error(`SAFARI_CONTENT_RANGE
 if (acceptRanges.toLowerCase() !== "bytes") throw new Error(`SAFARI_ACCEPT_RANGES_${acceptRanges}`);
 if (!bytes.length) throw new Error("EMPTY_MEDIA_PROBE");
 
-if (!["mp4", "mp4-by-mime", "hls", "hls-by-mime"].includes(container)) {
+if (!["mp4", "mp4-by-mime", "mpeg-ts", "mpeg-ts-by-mime", "hls", "hls-by-mime"].includes(container)) {
   throw new Error(`IOS_SAFARI_INCOMPATIBLE_CONTAINER_${container}; contentType=${contentType}; magic=${magicHex}`);
 }
