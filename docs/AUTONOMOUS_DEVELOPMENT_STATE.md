@@ -7,84 +7,73 @@ GitHub repository state wins over this handoff if they disagree. The original up
 - `Al-Qahtani` is independent from `theeb1230-dot/akwam-indexer` and Theeb Engine.
 - No `THEEB_SERVICE_TOKEN`, Theeb provider API, or akwam-indexer runtime dependency belongs in this project.
 - The original Basri project behavior is the compatibility baseline.
-- Matches/news continue to use the original Basri workers.
-- Cinema keeps the original Basri content chain. The historical cinema worker currently returns `403 FORBIDDEN_ORIGIN` even for the original Basri origin, so the backend uses a server-side direct compatibility fallback for the same original chain while keeping source/media URLs behind Al-Qahtani.
+- Matches/news use the original Basri workers.
+- Cinema remains on the original Basri content chain. The historical cinema worker currently returns `403 FORBIDDEN_ORIGIN`, so the Al-Qahtani backend uses a server-side compatibility fallback over the same original content source rather than switching to another project/provider.
 
 ## Current state
-- PR #17 `Restore original Basri cinema runtime` was merged after Web smoke and Live provider smoke were green.
-- Current production/main merge commit: `6414d7c6a89da13b542bc10e2979d87f705b5bcf`.
-- Render deployed that exact commit successfully to `al-qahtani-api` in Frankfurt.
-- GitHub Pages deployment for the same commit succeeded.
-- The first post-deploy Remote runtime smoke failed because its assertions still encoded two pre-restoration assumptions, not because the newly deployed Arabic search/details chain was unavailable.
-- Active follow-up branch: `fix/remote-live-parity-18`.
+- PR #17 `Restore original Basri cinema runtime` merged successfully.
+- PR #18 `Fix deployed Basri parity gate` merged successfully.
+- Current validated main/runtime commit: `2a18d199be194df143bd6961a2fc4ccf5764cb53`.
+- Render deployment `dep-dahu3ucs728c73bq3eig` is live on that exact commit in Frankfurt.
+- GitHub Pages deployment is enabled from main.
+- Remote runtime smoke #10 passed against the actual deployed Render service.
+- Web parity gate is now green for the restored Basri runtime. Flutter may proceed in later work, but must preserve this independent Al-Qahtani source boundary.
 
-## Root causes established
-- Matches provider is healthy and returns live match data.
-- News provider is healthy.
-- The legacy cinema worker `https://albas.albesriali03.workers.dev/` returns `403 FORBIDDEN_ORIGIN` for the historical Basri origin.
-- The underlying original cinema source chain remains reachable server-side: category -> search -> series details -> episodes -> watch -> media.
-- Arabic slugs caused raw non-ASCII Referer values that Node rejected; Referers are percent-encoded.
-- The resolved legacy media host has an incomplete TLS certificate chain (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`). Browser-facing media remains behind Al-Qahtani. The proxy first uses normal certificate verification and only retries with broken-chain compatibility for the already allowlisted `.downet.net` media host and only for known certificate-chain errors. All other upstream TLS verification remains strict.
-
-## Completed on PR #17
+## Root causes fixed/contained
 - Removed cross-project Theeb/akwam-indexer runtime integration.
-- Restored the original Basri product boundary and same-source cinema behavior.
-- Added strict source/media host allowlisting.
-- Added server-side fallback for category, search, details, episodes and watch resolution when the historical cinema worker is forbidden/errors/returns empty.
-- Kept worker/session handling server-side.
-- Preserved opaque short-lived `/api/cinema/media?id=...` references so direct media URLs stay out of the browser UI.
-- Preserved CORS and Safari byte-range semantics.
-- Added real-data live probes that reject `200 + []` as success for populated category paths.
-- Added local backend E2E through proxied playback.
-- Added scoped TLS compatibility for the legacy allowlisted media host.
-- Verified local/E2E Safari-style `Range: bytes=0-1023` returns HTTP 206 with `Content-Range` and `Accept-Ranges: bytes`.
+- Restored category/search/details/episodes/watch behavior from the Basri chain.
+- Historical cinema worker origin lock (`403 FORBIDDEN_ORIGIN`) is handled server-side with same-source fallback.
+- Arabic URL Referers are percent-encoded before Node HTTP requests.
+- Legacy `.downet.net` media currently presents an incomplete TLS chain. The media proxy first uses strict TLS and retries with broken-chain compatibility only for the already allowlisted `.downet.net` host and only for known certificate-chain failures. All other TLS remains strict.
+- Direct media URLs remain hidden behind short-lived `/api/cinema/media?id=...` references.
+- CORS and Safari byte-range forwarding are preserved.
 
-## Post-deploy evidence on main `6414d7c6...`
-Remote runtime run #9 reached the actual Render deployment and proved:
-- backend health PASS;
-- matches PASS with 8 entries;
-- Arabic search PASS with 4 real items from `basri-direct`;
-- Arabic search details PASS with title `Tracker الموسم الثالث` and 14 episodes;
-- episode playback resolution PASS and returned `/api/cinema/media?id=...`;
-- anime series category PASS with 24 items.
+## Deployed Web parity evidence
+Remote runtime smoke #10 on main `2a18d199...` passed all required live checks:
+- backend health reports `basri-original`;
+- matches: 8 live entries;
+- Basri news worker: HTTP 200/success;
+- Arabic search: 4 real results from `basri-direct`;
+- Arabic search details: `Tracker الموسم الثالث`, 14 episodes;
+- episode playback resolved to `/api/cinema/media?id=...`;
+- Safari range request returned HTTP 206;
+- `Content-Range: bytes 0-1023/350455536`;
+- `Accept-Ranges: bytes`.
 
-The same run failed two obsolete assertions:
-1. It only accepted old media proxy shapes (`session=` or `provider-media`) and rejected the current intended `/api/cinema/media?id=...` path even though playback resolution itself succeeded.
-2. It required search results for the hard-coded query `The Odyssey`; the restored original source returned zero results at that moment. A single transient/catalog-specific title is not a valid whole-site parity gate.
+All 12 visible cinema categories returned real cards and opened details remotely:
+- series أجنبية: 24, details `Reacher الموسم الرابع`, 7 episodes;
+- series عربية: 24, details `حب ع ورق`, 65 episodes;
+- series تركية: 24, details `شراب التوت الموسم الرابع مدبلج`, 81 episodes;
+- series آسيوية: 24, details `Agent Kim Reactivated`, 2 episodes;
+- series أنمي: 24, details `Alley Cats`, 6 episodes;
+- series رمضان: 24, details `البراني`, 15 episodes;
+- movie أجنبية: 30, details opened;
+- movie عربية: 30, details opened;
+- movie هندية: 30, details opened;
+- movie آسيوية: 30, details opened;
+- movie تركية: 30, details opened;
+- movie أنمي: 30, details opened.
 
-## Active PR #18 scope
-- Update the remote gate to accept the current secured `/api/cinema/media?id=...` contract.
-- Require an actual HTTP 206 byte-range response and validate `Content-Range` plus `Accept-Ranges` remotely.
-- Keep a known working Arabic search -> details -> episode -> playback test.
-- Verify the Basri news worker remotely.
-- Verify all 12 categories visible in `web/core/catalog-config.js`, not just one anime category.
-- Open details from each populated category so `200 + cards` alone cannot hide a broken details path.
-- Remove the unrelated hard-coded `The Odyssey` dependency from parity gating.
+## Render observations
+- The successful parity run produced the expected `CINEMA_SESSION_403` fallback diagnostics because the legacy worker is origin-locked.
+- Render logs during the live parity window showed fallback activity for search/category/details but no fatal application errors in the inspected window.
+- Production service URL: `https://al-qahtani-api.onrender.com`.
 
-## Current CI/deploy state
-- PR #17 head Web smoke: green.
-- PR #17 head Live provider smoke: green.
-- Main GitHub Pages deployment for `6414d7c6...`: green.
-- Render deploy `dep-dahu2bhsrm7s73d9kegg`: live on exact commit `6414d7c6...`.
-- Main Remote runtime smoke #9: failed for the stale assertions described above.
-- Do not claim full deployed Web parity until PR #18 gates are green after merge and a fresh remote run succeeds against the resulting deployed runtime.
-
-## Required gate
-1. CI green on PR #18.
-2. Merge PR #18 only when green.
-3. Confirm GitHub Pages and Render state after merge.
-4. Fresh Remote runtime smoke must pass health, matches, news, Arabic search/details/playback, Safari Range, every visible category, and details opening from each category.
-5. Review Render logs for server-side failures during the remote test.
-6. Flutter remains blocked until this deployed Web parity gate is fully green.
+## CI state
+- PR #17 Web smoke: green.
+- PR #17 Live provider smoke: green.
+- PR #18 Web smoke: green.
+- PR #18 Live provider smoke: green.
+- Main Remote runtime smoke #10: green.
 
 ## Next run goals
-1. Inspect PR #18 Web/Live CI and fix failures on the same branch.
-2. Merge PR #18 only after green checks.
-3. Confirm the post-merge remote runtime run tests all 12 visible categories.
-4. Confirm remote Safari byte-range returns 206 with correct headers.
-5. Inspect Render request/app logs for any 4xx/5xx generated by the parity run.
-6. Verify GitHub Pages uses only the Al-Qahtani backend and contains no Theeb runtime integration.
-7. Spot-check `Player.html` behavior against iPhone Safari assumptions.
-8. Verify category/details poster and episode metadata remain intact.
-9. Record deployed parity evidence in this handoff.
-10. Start Flutter only after deployed Web parity is green.
+1. Re-check main, PRs, CI, Render deploy/logs and this handoff before changes.
+2. Keep Al-Qahtani independent from Theeb/akwam-indexer permanently.
+3. Inspect `Player.html` and iPhone Safari UX now that backend playback parity is proven.
+4. Add browser-level regression coverage for navigation from category/search to details, episode selection and player page.
+5. Verify poster/title/episode-number metadata visually on mobile Safari-sized layouts.
+6. Verify movie playback paths, not only series episode playback, with a deployed media Range probe.
+7. Review download behavior from the original Basri flow and preserve it safely if exposed by the UI.
+8. Continue ad/popup/tracking/deep-link regression checks.
+9. Begin Flutter only as a faithful client over the proven Al-Qahtani backend, with Android Mobile/TV/iOS parity and no cross-project provider dependency.
+10. Update this handoff at the end of every run with actual PR/commit/CI/Render/live-test evidence.
