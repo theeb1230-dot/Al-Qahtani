@@ -1,0 +1,19 @@
+name: CORS boundary
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  cors-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prove rejected origins never receive CORS grants
+        run: NODE_ENV=test node scripts/cors_boundary_test.mjs
