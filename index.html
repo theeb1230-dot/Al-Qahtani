@@ -12,7 +12,7 @@ header{position:sticky;top:0;z-index:5;background:#07111fe8;backdrop-filter:blur
 .wrap{max-width:980px;margin:auto;padding:16px}.brand{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand strong{font-size:1.1rem}.nav{display:flex;gap:8px;flex-wrap:wrap}.nav a{color:var(--text);text-decoration:none;background:var(--panel);padding:8px 11px;border-radius:10px;font-size:.85rem}
 .hero{padding:28px 0 14px}.hero h1{margin:0 0 8px;font-size:clamp(1.6rem,6vw,2.7rem)}.hero p{margin:0;color:var(--muted)}
 .grid{display:grid;gap:12px}.card{background:linear-gradient(145deg,#ffffff08,#ffffff02),var(--panel);border:1px solid #ffffff12;border-radius:18px;padding:14px;display:grid;grid-template-columns:1fr 120px 1fr;align-items:center;gap:8px;cursor:pointer}
-.team{text-align:center}.team-logo-wrap{width:64px;height:64px;margin:0 auto;display:grid;place-items:center;border-radius:50%;background:#ffffff08;border:1px solid #ffffff10;overflow:hidden}.team img{width:58px;height:58px;object-fit:contain;display:block}.team-logo-fallback{font-weight:800;color:var(--muted);font-size:1rem}.team b{display:block;margin-top:6px}.center{text-align:center}.pill{display:inline-block;padding:4px 9px;border-radius:999px;background:#ffffff10;color:var(--muted);font-size:.75rem}.live{color:#ff8b96}.time{font-weight:800;margin-top:8px}
+.team{text-align:center}.team-logo-wrap{width:64px;height:64px;margin:0 auto;display:grid;place-items:center;border-radius:50%;background:#ffffff08;border:1px solid #ffffff10;overflow:hidden}.team img{width:58px;height:58px;object-fit:contain;display:block}.team-logo-missing{width:32px;height:32px;opacity:.5}.team b{display:block;margin-top:6px}.center{text-align:center}.pill{display:inline-block;padding:4px 9px;border-radius:999px;background:#ffffff10;color:var(--muted);font-size:.75rem}.live{color:#ff8b96}.time{font-weight:800;margin-top:8px}
 .state{padding:34px;text-align:center;color:var(--muted);background:var(--panel);border-radius:18px}.retry{margin-top:12px;border:0;background:var(--accent);color:#03141a;padding:10px 14px;border-radius:10px;font-weight:800}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:20;max-width:min(92vw,480px);padding:11px 16px;border:1px solid #ffffff18;background:#101e31;color:#fff;border-radius:12px;box-shadow:0 12px 40px #0008;display:none;text-align:center}
 @media(max-width:620px){.card{grid-template-columns:1fr 92px 1fr}.team-logo-wrap{width:54px;height:54px}.team img{width:48px;height:48px}.team b{font-size:.85rem}}
 </style>
@@ -27,10 +27,13 @@ header{position:sticky;top:0;z-index:5;background:#07111fe8;backdrop-filter:blur
 <script type="module">
 import { getMatches, getMatchServers } from './web/core/api-client.js';
 const list=document.getElementById('list'),toastEl=document.getElementById('toast');
+const BASRI_ORIGIN='https://www.albasritv.abrdns.com/';
 const cleanImg=u=>{
  if(!u)return '';
  try{
-   const url=new URL(String(u).trim(),location.href);
+   const raw=String(u).trim();
+   const absolute=/^https?:\/\//i.test(raw)||raw.startsWith('//');
+   const url=new URL(raw,absolute?location.href:BASRI_ORIGIN);
    if(url.protocol==='http:')url.protocol='https:';
    if(url.protocol!=='https:'&&url.protocol!=='http:')return '';
    return url.href;
@@ -42,22 +45,28 @@ function logoCandidates(match,side){
  const team=match?.[side]||{};
  const prefix=side==='team1'?'home':'away';
  const values=[
-   team.logo,team.logo_url,team.logoUrl,team.image,team.img,team.icon,team.badge,team.crest,
-   match?.[side+'_logo'],match?.[side+'Logo'],match?.[side+'_image'],match?.[side+'Image'],
-   match?.[prefix+'_logo'],match?.[prefix+'Logo'],match?.[prefix+'_image'],match?.[prefix+'Image'],
-   match?.[prefix+'TeamLogo'],match?.[prefix+'_team_logo']
+   team.logo,team.logo_url,team.logoUrl,team.image,team.img,team.icon,team.badge,team.crest,team.photo,team.avatar,
+   match?.[side+'_logo'],match?.[side+'Logo'],match?.[side+'_image'],match?.[side+'Image'],match?.[side+'_img'],match?.[side+'Img'],
+   match?.[prefix+'_logo'],match?.[prefix+'Logo'],match?.[prefix+'_image'],match?.[prefix+'Image'],match?.[prefix+'_img'],match?.[prefix+'Img'],
+   match?.[prefix+'TeamLogo'],match?.[prefix+'_team_logo'],match?.[prefix+'TeamImage'],match?.[prefix+'_team_image']
  ];
  return [...new Set(values.map(cleanImg).filter(Boolean))];
+}
+function makeLogoPlaceholder(){
+ const ns='http://www.w3.org/2000/svg';
+ const svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 64 64');svg.setAttribute('aria-hidden','true');svg.classList.add('team-logo-missing');
+ const shield=document.createElementNS(ns,'path');shield.setAttribute('d','M32 4 52 11v17c0 13-8.4 24.6-20 31C20.4 52.6 12 41 12 28V11L32 4Z');shield.setAttribute('fill','none');shield.setAttribute('stroke','currentColor');shield.setAttribute('stroke-width','4');
+ const ball=document.createElementNS(ns,'circle');ball.setAttribute('cx','32');ball.setAttribute('cy','30');ball.setAttribute('r','9');ball.setAttribute('fill','none');ball.setAttribute('stroke','currentColor');ball.setAttribute('stroke-width','3');
+ svg.append(shield,ball);return svg;
 }
 function renderTeam(match,side){
  const team=match?.[side]||{};
  const box=document.createElement('div');box.className='team';
  const logoWrap=document.createElement('div');logoWrap.className='team-logo-wrap';
- const fallback=document.createElement('span');fallback.className='team-logo-fallback';fallback.textContent=String(team.name||'?').trim().slice(0,2)||'?';
- logoWrap.appendChild(fallback);
+ const fallback=makeLogoPlaceholder();logoWrap.appendChild(fallback);
  const candidates=logoCandidates(match,side);
  if(candidates.length){
-   const img=document.createElement('img');img.alt=team.name?`شعار ${team.name}`:'شعار الفريق';img.loading='lazy';img.decoding='async';img.referrerPolicy='no-referrer';
+   const img=document.createElement('img');img.alt=team.name?`شعار ${team.name}`:'شعار الفريق';img.loading='lazy';img.decoding='async';
    let index=0;
    const tryNext=()=>{
      if(index>=candidates.length){img.remove();fallback.hidden=false;return}
