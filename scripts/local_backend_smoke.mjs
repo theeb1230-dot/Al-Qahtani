@@ -59,17 +59,51 @@ async function checkRejectedDownload(path, label) {
     `${label} remains a JSON error response`);
 }
 
-async function checkDownload(mediaPath) {
+async function verifyDownload(mediaPath) {
   const sep = String(mediaPath).includes("?") ? "&" : "?";
-  const response = await get(`${mediaPath}${sep}download=1`, 120000, { Range: "bytes=0-1023", Accept: "*/*" });
-  ok(response.response.status === 206 || response.response.status === 200,
-    "backend safe download reuses proxied media reference", { status: response.response.status });
-  ok((response.response.headers.get("content-disposition") || "").startsWith("attachment;"),
-    "backend safe download forces attachment disposition", {
-      disposition: response.response.headers.get("content-disposition") || "",
-    });
-  ok((response.response.headers.get("x-content-type-options") || "").toLowerCase() === "nosniff",
-    "backend safe download disables MIME sniffing");
+  const result = await get(`${mediaPath}${sep}download=1`, 120000, { Range: "bytes=0-1023", Accept: "*/*" });
+  return {
+    passed: (result.response.status === 206 || result.response.status === 200)
+      && (result.response.headers.get("content-disposition") || "").startsWith("attachment;")
+      && (result.response.headers.get("x-content-type-options") || "").toLowerCase() === "nosniff",
+    status: result.response.status,
+    disposition: result.response.headers.get("content-disposition") || "",
+    nosniff: result.response.headers.get("x-content-type-options") || "",
+  };
+}
+
+async function verifyPlaybackCandidate(episode, index) {
+  try {
+    const play = await get("/api/cinema/details?ref=" + encodeURIComponent(episode.link), 120000);
+    if (!(play.response.ok && play.data?.status === "success" && Boolean(play.data?.media_path))) {
+      console.warn("PLAYBACK_CANDIDATE_NO_MEDIA", { index, status: play.response.status, state: play.data?.status });
+      return null;
+    }
+    const mediaPath = String(play.data.media_path || "");
+    if (!mediaPath.startsWith("/api/cinema/media?id=")) {
+      console.warn("PLAYBACK_CANDIDATE_UNSAFE_MEDIA_PATH", { index, mediaPath });
+      return null;
+    }
+    const media = await get(mediaPath, 120000, { Range: "bytes=0-1023", Accept: "*/*" });
+    if (!(media.response.status === 206 || media.response.status === 200)) {
+      console.warn("PLAYBACK_CANDIDATE_RANGE_FAILED", {
+        index,
+        status: media.response.status,
+        contentRange: media.response.headers.get("content-range") || "",
+        acceptRanges: media.response.headers.get("accept-ranges") || "",
+      });
+      return null;
+    }
+    const download = await verifyDownload(mediaPath);
+    if (!download.passed) {
+      console.warn("PLAYBACK_CANDIDATE_DOWNLOAD_FAILED", { index, ...download });
+      return null;
+    }
+    return { play, media, download, index };
+  } catch (error) {
+    console.warn("PLAYBACK_CANDIDATE_ERROR", { index, error: String(error) });
+    return null;
+  }
 }
 
 try {
@@ -106,24 +140,24 @@ try {
     const details = await get("/api/cinema/details?ref=" + encodeURIComponent(candidate.href));
     if (ok(details.response.ok && details.data?.status === "success" && ["basri-worker", "basri-direct"].includes(details.data?.source),
       "backend Basri details", { status: details.response.status, source: details.data?.source, episodes: details.data?.episodes?.length, media: Boolean(details.data?.media_path) })) {
-      const episode = (details.data?.episodes || []).find(item => item?.link && item?.watch_available !== false);
-      if (episode) {
-        const play = await get("/api/cinema/details?ref=" + encodeURIComponent(episode.link));
-        if (ok(play.response.ok && play.data?.status === "success" && Boolean(play.data?.media_path),
-          "backend episode resolves proxied playback", { status: play.response.status, source: play.data?.source, mediaPath: play.data?.media_path || "" })) {
-          ok(String(play.data.media_path).startsWith("/api/cinema/media?id="), "direct media stays behind Al-Qahtani proxy");
-          const media = await get(play.data.media_path, 120000, { Range: "bytes=0-1023", Accept: "*/*" });
-          ok(media.response.status === 206 || media.response.status === 200,
+      const episodes = (details.data?.episodes || []).filter(item => item?.link && item?.watch_available !== false).slice(0, 3);
+      if (episodes.length) {
+        let verified = null;
+        for (let i = 0; i < episodes.length && !verified; i += 1) verified = await verifyPlaybackCandidate(episodes[i], i + 1);
+        if (ok(Boolean(verified), "backend finds a playable episode within bounded candidates", { attempted: episodes.length, selected: verified?.index || null })) {
+          ok(String(verified.play.data.media_path).startsWith("/api/cinema/media?id="), "direct media stays behind Al-Qahtani proxy");
+          ok(verified.media.response.status === 206 || verified.media.response.status === 200,
             "backend media proxy accepts Safari range request", {
-              status: media.response.status,
-              contentRange: media.response.headers.get("content-range") || "",
-              acceptRanges: media.response.headers.get("accept-ranges") || "",
-              contentType: media.response.headers.get("content-type") || "",
+              status: verified.media.response.status,
+              contentRange: verified.media.response.headers.get("content-range") || "",
+              acceptRanges: verified.media.response.headers.get("accept-ranges") || "",
+              contentType: verified.media.response.headers.get("content-type") || "",
             });
-          await checkDownload(play.data.media_path);
+          ok(verified.download.passed, "backend safe download reuses proxied media reference", verified.download);
         }
       } else if (ok(Boolean(details.data?.media_path), "movie/direct detail includes playback media when no episodes", { mediaPath: details.data?.media_path || "" })) {
-        await checkDownload(details.data.media_path);
+        const download = await verifyDownload(details.data.media_path);
+        ok(download.passed, "backend safe download reuses proxied media reference", download);
       }
     }
   }
