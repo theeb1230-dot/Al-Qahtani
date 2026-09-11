@@ -7,6 +7,7 @@ const BASRI_ORIGINS = [
   "https://www.albasritv.abrdns.com",
   "https://albasritv.abrdns.com",
 ];
+const SAFARI_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1";
 
 const ALLOWED_ORIGINS = new Set([
   "https://theeb1230-dot.github.io",
@@ -66,6 +67,16 @@ function basriHeaders(origin = BASRI_ORIGINS[0], page = "/2026/09/movies-series.
   };
 }
 
+function cinemaBrowserHeaders(origin = activeCinemaOrigin) {
+  return basriHeaders(origin, "/2026/09/movies-series.html", {
+    "User-Agent": SAFARI_UA,
+    "Accept-Language": "ar-SA,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Sec-Fetch-Site": "cross-site",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
+  });
+}
+
 async function getMatchToken() {
   const origin = BASRI_ORIGINS[0];
   const result = await fetchTextJson(`${MATCHES}session`, { headers: basriHeaders(origin, "/2026/09/matches.html") });
@@ -92,7 +103,7 @@ async function getMatchServers(target) {
 }
 
 async function createCinemaSessionForOrigin(origin) {
-  return fetchTextJson(`${CINEMA}session`, { headers: basriHeaders(origin) }, 20_000);
+  return fetchTextJson(`${CINEMA}session`, { headers: cinemaBrowserHeaders(origin) }, 20_000);
 }
 
 async function ensureCinemaSession(force = false) {
@@ -124,7 +135,7 @@ async function ensureCinemaSession(force = false) {
 async function cinemaRequest(action, params = {}, retry = true) {
   const token = await ensureCinemaSession(false);
   const query = new URLSearchParams({ action, token, ...params });
-  const result = await fetchTextJson(`${CINEMA}?${query}`, { headers: basriHeaders(activeCinemaOrigin) }, 60_000);
+  const result = await fetchTextJson(`${CINEMA}?${query}`, { headers: cinemaBrowserHeaders(activeCinemaOrigin) }, 60_000);
   if (retry && result.response.status === 401) {
     cinemaToken = "";
     cinemaTokenExpiresAt = 0;
@@ -207,7 +218,7 @@ async function proxyMedia(req, res, id) {
   let target;
   try { target = new URL(entry.url); } catch { return sendJson(res, 400, { status: "error", message: "BAD_MEDIA_REFERENCE" }); }
   if (!/^https?:$/.test(target.protocol)) return sendJson(res, 400, { status: "error", message: "BAD_MEDIA_SCHEME" });
-  const headers = { Accept: "*/*", Referer: refererFor(activeCinemaOrigin) };
+  const headers = { Accept: "*/*", Referer: refererFor(activeCinemaOrigin), "User-Agent": SAFARI_UA };
   if (req.headers.range) headers.Range = req.headers.range;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60_000);
