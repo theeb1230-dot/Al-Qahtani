@@ -53,15 +53,32 @@ try {
 
   const url = `${BASE}/Player.html?url=${encodeURIComponent(MEDIA)}&type=stream`;
   await page.goto(url, { waitUntil: "domcontentloaded" });
-  const source = page.locator("#player video source");
-  await source.waitFor({ state: "attached" });
-  const type = await source.getAttribute("type");
-  const src = await source.getAttribute("src");
-  if (type !== "video/mp2t") throw new Error(`EXPECTED_VIDEO_MP2T_GOT_${type}`);
-  if (src !== MEDIA) throw new Error(`UNEXPECTED_MEDIA_SOURCE_${src}`);
+  const video = page.locator("#player video");
+  await video.waitFor({ state: "attached" });
+
+  const src = await video.getAttribute("src");
+  if (!String(src || "").startsWith("blob:")) throw new Error(`EXPECTED_HLS_BLOB_SOURCE_GOT_${src}`);
+
+  const manifest = await page.evaluate(async () => {
+    const video = document.querySelector("#player video");
+    const src = video?.getAttribute("src") || "";
+    if (!src.startsWith("blob:")) return { src, text: "" };
+    const response = await fetch(src);
+    return { src, text: await response.text() };
+  });
+
+  if (!manifest.text.startsWith("#EXTM3U\n")) throw new Error(`MISSING_EXTM3U_${manifest.text.slice(0, 80)}`);
+  if (!manifest.text.includes(MEDIA)) throw new Error("HLS_MANIFEST_MISSING_OPAQUE_MEDIA_URL");
+  if (manifest.text.includes("akwam.ss") || manifest.text.includes("downet.net")) throw new Error("HLS_MANIFEST_LEAKS_UPSTREAM_HOST");
+
   const status = await page.locator("#status").textContent();
   if (!String(status || "").includes("MPEG-TS")) throw new Error(`MISSING_MPEGTS_STATUS_${status}`);
-  console.log("PASS iPhone WebKit types opaque MPEG-TS media as video/mp2t", { type, src });
+  if (!String(status || "").includes("HLS")) throw new Error(`MISSING_HLS_STATUS_${status}`);
+
+  console.log("PASS iPhone WebKit wraps opaque MPEG-TS media in HLS", {
+    videoSrc: manifest.src,
+    manifestHasOpaqueMedia: true,
+  });
   await context.close();
 } finally {
   if (browser) await browser.close();
