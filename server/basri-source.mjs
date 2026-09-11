@@ -20,6 +20,10 @@ function absoluteUrl(value, base = SOURCE_ORIGIN) {
   try { return new URL(decodeEntities(value), base).href; } catch { return ""; }
 }
 
+function safeHeaderUrl(value = "") {
+  try { return new URL(String(value)).href; } catch { return encodeURI(String(value)); }
+}
+
 export function assertSourceUrl(value, { allowMedia = false } = {}) {
   const url = new URL(value);
   const host = url.hostname.toLowerCase();
@@ -43,7 +47,7 @@ export async function fetchSourceHtml(value, { referer = SOURCE_ORIGIN + "/", ti
         Accept: "text/html,application/xhtml+xml",
         "Accept-Language": "ar-SA,ar;q=0.9,en-US;q=0.8,en;q=0.7",
         "User-Agent": UA,
-        Referer: referer,
+        Referer: safeHeaderUrl(referer),
       },
     });
     if (!response.ok) throw new Error(`CINEMA_SOURCE_HTTP_${response.status}`);
