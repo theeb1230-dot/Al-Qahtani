@@ -123,17 +123,58 @@ function pagePoster(html = "") {
   return img ? absoluteUrl(img[1]) : "";
 }
 
+function episodeIdentity(href = "", label = "", fallback = 0) {
+  let decoded = String(href || "");
+  try { decoded = decodeURIComponent(decoded); } catch {}
+  const explicit = [
+    decoded.match(/(?:الحلقة|episode)[\s\-_/:]*(\d{1,4})(?:\D|$)/i),
+    String(label || "").match(/(?:الحلقة|episode)[\s\-_/:]*(\d{1,4})(?:\D|$)/i),
+    String(label || "").trim().match(/^(\d{1,4})$/),
+  ].find(Boolean);
+  const idMatch = decoded.match(/\/episode\/(\d+)(?:\/|$)/i);
+  const number = Number(explicit?.[1] || fallback || 0);
+  return {
+    episode_number: Number.isFinite(number) && number > 0 ? number : null,
+    episode_id: idMatch?.[1] || null,
+  };
+}
+
 export function parseDetails(html = "", pageUrl = "") {
   const episodes = [];
   const seen = new Set();
-  for (const m of html.matchAll(/href=["'](https:\/\/akwam\.ss\/episode\/[^"']+)["']/gi)) {
-    const href = decodeEntities(m[1]);
+  const anchorRe = /<a\b([^>]*?)href=["'](https:\/\/akwam\.ss\/episode\/[^"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = anchorRe.exec(html))) {
+    const href = decodeEntities(m[2]);
     if (seen.has(href)) continue;
     seen.add(href);
-    const numMatch = decodeURIComponent(href).match(/(?:الحلقة-|episode[-_/]?)(\d+)/i) || decodeURIComponent(href).match(/\/(\d+)(?:[^\d]*)$/);
-    episodes.push({ num: Number(numMatch?.[1] || episodes.length + 1), link: href, watch_available: true });
+    const attrs = `${m[1]} ${m[3]}`;
+    const label = stripTags(`${attrs.match(/(?:title|aria-label)=["']([^"']+)["']/i)?.[1] || ""} ${m[4] || ""}`);
+    const identity = episodeIdentity(href, label, episodes.length + 1);
+    episodes.push({
+      num: identity.episode_number || episodes.length + 1,
+      episode_number: identity.episode_number || episodes.length + 1,
+      episode_id: identity.episode_id,
+      link: href,
+      watch_available: true,
+    });
   }
-  episodes.sort((a, b) => Number(a.num) - Number(b.num));
+  if (!episodes.length) {
+    for (const match of html.matchAll(/href=["'](https:\/\/akwam\.ss\/episode\/[^"']+)["']/gi)) {
+      const href = decodeEntities(match[1]);
+      if (seen.has(href)) continue;
+      seen.add(href);
+      const identity = episodeIdentity(href, "", episodes.length + 1);
+      episodes.push({
+        num: identity.episode_number || episodes.length + 1,
+        episode_number: identity.episode_number || episodes.length + 1,
+        episode_id: identity.episode_id,
+        link: href,
+        watch_available: true,
+      });
+    }
+  }
+  episodes.sort((a, b) => Number(a.episode_number || a.num) - Number(b.episode_number || b.num));
   return {
     status: "success",
     source: "basri-direct",
