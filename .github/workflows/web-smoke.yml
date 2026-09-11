@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RniE --exclude='AUTONOMOUS_DEVELOPMENT_STATE.md' 'theeb-arab-api|THEEB_SERVICE_TOKEN|akwam-indexer|server/theeb-fetch|theeb:canonical:|theeb:discover:|theeb:episode:' .; then
+          if grep -RniE --exclude='AUTONOMOUS_DEVELOPMENT_STATE.md' --exclude='web-smoke.yml' 'theeb-arab-api|THEEB_SERVICE_TOKEN|akwam-indexer|server/theeb-fetch|theeb:canonical:|theeb:discover:|theeb:episode:' .; then
             echo "Al-Qahtani must remain independent from Theeb/Akwam project integration"
             exit 1
           fi
