@@ -2,16 +2,35 @@ name: Remote movie playback smoke
 
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  deployed-movie-playback:
+  movie-playback:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Probe deployed real movie playback and Safari range
+      - name: Start candidate backend for pull request
+        if: github.event_name == 'pull_request'
+        run: |
+          PORT=3138 node server/index.mjs > /tmp/al-qahtani-movie-smoke.log 2>&1 &
+          echo $! > /tmp/al-qahtani-movie-smoke.pid
+      - name: Probe candidate real movie playback and Safari range
+        if: github.event_name == 'pull_request'
+        env:
+          AL_QAHTANI_BASE: http://127.0.0.1:3138
         run: node scripts/remote_movie_playback_smoke.mjs
+      - name: Wait for Render auto-deploy
+        if: github.event_name != 'pull_request'
+        run: sleep 45
+      - name: Probe deployed real movie playback and Safari range
+        if: github.event_name != 'pull_request'
+        run: node scripts/remote_movie_playback_smoke.mjs
+      - name: Show candidate backend log on failure
+        if: failure() && github.event_name == 'pull_request'
+        run: cat /tmp/al-qahtani-movie-smoke.log || true
