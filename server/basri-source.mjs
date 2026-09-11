@@ -192,7 +192,12 @@ export async function directDetails(target) {
   const url = assertSourceUrl(target);
   const { html } = await fetchSourceHtml(url.href);
   if (url.pathname.startsWith("/episode/")) return parseEpisode(html, url.href);
-  return parseDetails(html, url.href);
+  const details = parseDetails(html, url.href);
+  if (contentKind(url.href) === "movie") {
+    const direct = parseEpisode(html, url.href);
+    return { ...details, watch: direct.watch, downloads: direct.downloads };
+  }
+  return details;
 }
 
 export async function directWatch(target, referer = SOURCE_ORIGIN + "/") {
