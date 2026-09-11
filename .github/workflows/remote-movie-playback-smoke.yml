@@ -25,12 +25,20 @@ jobs:
         env:
           AL_QAHTANI_BASE: http://127.0.0.1:3138
         run: node scripts/remote_movie_playback_smoke.mjs
+      - name: Verify candidate live movie container is Safari-compatible
+        if: github.event_name == 'pull_request'
+        env:
+          AL_QAHTANI_BASE: http://127.0.0.1:3138
+        run: node scripts/live_ios_container_probe.mjs
       - name: Wait for Render auto-deploy
         if: github.event_name != 'pull_request'
         run: sleep 45
       - name: Probe deployed real movie playback and Safari range
         if: github.event_name != 'pull_request'
         run: node scripts/remote_movie_playback_smoke.mjs
+      - name: Verify deployed live movie container is Safari-compatible
+        if: github.event_name != 'pull_request'
+        run: node scripts/live_ios_container_probe.mjs
       - name: Show candidate backend log on failure
         if: failure() && github.event_name == 'pull_request'
         run: cat /tmp/al-qahtani-movie-smoke.log || true
