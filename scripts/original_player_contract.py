@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Inspect the original Al-Basri archive player contract without inventing behavior.
+"""Gate the original Al-Basri player contract without inventing behavior.
 
-This script is intentionally evidence-only: it reports whether the original Player.html
-or bsr-Player.html exposed download affordances or download-specific parameters. Product
-code should only change after this evidence is reviewed.
+The preserved archive is the behavioral baseline. Both original player files may contain
+technical occurrences of the word "download", but they did not expose a player-level
+download affordance, download query flag, download attribute, download_options contract,
+or Content-Disposition handling. Keep that distinction explicit so future work does not
+mistake a text match for an original product feature.
 """
 from __future__ import annotations
 
@@ -55,10 +57,28 @@ def main() -> None:
 
     print("ORIGINAL_PLAYER_CONTRACT=" + json.dumps(report, ensure_ascii=False, sort_keys=True))
 
+    # The original player receives media context, but download selection belongs to the
+    # cinema/details flow rather than Player.html / bsr-Player.html itself.
+    forbidden_player_download_features = (
+        "has_arabic_download_label",
+        "has_download_attribute",
+        "has_download_query_flag",
+        "has_download_options",
+        "has_content_disposition",
+    )
+    for basename, player in report["players"].items():
+        for feature in forbidden_player_download_features:
+            assert player[feature] is False, f"original {basename} unexpectedly gained {feature}"
+        assert player["has_url_param"] is True, f"original {basename} must accept media URL context"
+        assert player["has_title_param"] is True, f"original {basename} must accept title context"
+        assert player["has_live_param"] is True, f"original {basename} must accept live context"
+
     # Preserve the project-boundary invariant while inspecting the baseline.
     serialized = json.dumps(report, ensure_ascii=False).lower()
     forbidden_project_markers = ("theeb_service_token", "theeb engine", "theeb1230-dot/akwam-indexer")
     assert not any(marker in serialized for marker in forbidden_project_markers)
+
+    print("PASS original Basri players have no player-level download UI/contract")
 
 
 if __name__ == "__main__":
