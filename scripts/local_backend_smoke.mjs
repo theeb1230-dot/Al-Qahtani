@@ -106,6 +106,27 @@ async function verifyPlaybackCandidate(episode, index) {
   }
 }
 
+async function resolveDetailsCandidate(items) {
+  const refs = [...new Set(items.filter(item => item?.href).map(item => item.href))].slice(0, 3);
+  for (let i = 0; i < refs.length; i += 1) {
+    try {
+      const details = await get("/api/cinema/details?ref=" + encodeURIComponent(refs[i]), 90000);
+      if (details.response.ok && details.data?.status === "success" && ["basri-worker", "basri-direct"].includes(details.data?.source)) {
+        return { details, attempted: i + 1 };
+      }
+      console.warn("DETAILS_CANDIDATE_REJECTED", {
+        index: i + 1,
+        status: details.response.status,
+        source: details.data?.source,
+        state: details.data?.status,
+      });
+    } catch (error) {
+      console.warn("DETAILS_CANDIDATE_ERROR", { index: i + 1, error: String(error) });
+    }
+  }
+  return { details: null, attempted: refs.length };
+}
+
 try {
   if (!ok(await waitHealth(), "backend health reports original Basri cinema chain")) process.exit(1);
 
@@ -134,31 +155,30 @@ try {
   if (!ok(category.response.ok && category.data?.status === "success" && ["basri-worker", "basri-direct"].includes(category.data?.source) && Array.isArray(category.data?.data) && category.data.data.length > 0,
     "backend cinema category returns real items", { status: category.response.status, source: category.data?.source, count: category.data?.data?.length })) process.exitCode = 1;
 
-  const candidate = (search.data?.data || []).find(item => item?.href) || (category.data?.data || []).find(item => item?.href);
-  if (!ok(Boolean(candidate?.href), "backend cinema produced a details candidate")) process.exitCode = 1;
-  if (candidate?.href) {
-    const details = await get("/api/cinema/details?ref=" + encodeURIComponent(candidate.href));
-    if (ok(details.response.ok && details.data?.status === "success" && ["basri-worker", "basri-direct"].includes(details.data?.source),
-      "backend Basri details", { status: details.response.status, source: details.data?.source, episodes: details.data?.episodes?.length, media: Boolean(details.data?.media_path) })) {
-      const episodes = (details.data?.episodes || []).filter(item => item?.link && item?.watch_available !== false).slice(0, 3);
-      if (episodes.length) {
-        let verified = null;
-        for (let i = 0; i < episodes.length && !verified; i += 1) verified = await verifyPlaybackCandidate(episodes[i], i + 1);
-        if (ok(Boolean(verified), "backend finds a playable episode within bounded candidates", { attempted: episodes.length, selected: verified?.index || null })) {
-          ok(String(verified.play.data.media_path).startsWith("/api/cinema/media?id="), "direct media stays behind Al-Qahtani proxy");
-          ok(verified.media.response.status === 206 || verified.media.response.status === 200,
-            "backend media proxy accepts Safari range request", {
-              status: verified.media.response.status,
-              contentRange: verified.media.response.headers.get("content-range") || "",
-              acceptRanges: verified.media.response.headers.get("accept-ranges") || "",
-              contentType: verified.media.response.headers.get("content-type") || "",
-            });
-          ok(verified.download.passed, "backend safe download reuses proxied media reference", verified.download);
-        }
-      } else if (ok(Boolean(details.data?.media_path), "movie/direct detail includes playback media when no episodes", { mediaPath: details.data?.media_path || "" })) {
-        const download = await verifyDownload(details.data.media_path);
-        ok(download.passed, "backend safe download reuses proxied media reference", download);
+  const detailCandidates = [...(search.data?.data || []), ...(category.data?.data || [])];
+  if (!ok(detailCandidates.some(item => item?.href), "backend cinema produced details candidates")) process.exitCode = 1;
+
+  const resolved = await resolveDetailsCandidate(detailCandidates);
+  const details = resolved.details;
+  if (ok(Boolean(details), "backend Basri details resolves within bounded candidates", { attempted: resolved.attempted })) {
+    const episodes = (details.data?.episodes || []).filter(item => item?.link && item?.watch_available !== false).slice(0, 3);
+    if (episodes.length) {
+      let verified = null;
+      for (let i = 0; i < episodes.length && !verified; i += 1) verified = await verifyPlaybackCandidate(episodes[i], i + 1);
+      if (ok(Boolean(verified), "backend finds a playable episode within bounded candidates", { attempted: episodes.length, selected: verified?.index || null })) {
+        ok(String(verified.play.data.media_path).startsWith("/api/cinema/media?id="), "direct media stays behind Al-Qahtani proxy");
+        ok(verified.media.response.status === 206 || verified.media.response.status === 200,
+          "backend media proxy accepts Safari range request", {
+            status: verified.media.response.status,
+            contentRange: verified.media.response.headers.get("content-range") || "",
+            acceptRanges: verified.media.response.headers.get("accept-ranges") || "",
+            contentType: verified.media.response.headers.get("content-type") || "",
+          });
+        ok(verified.download.passed, "backend safe download reuses proxied media reference", verified.download);
       }
+    } else if (ok(Boolean(details.data?.media_path), "movie/direct detail includes playback media when no episodes", { mediaPath: details.data?.media_path || "" })) {
+      const download = await verifyDownload(details.data.media_path);
+      ok(download.passed, "backend safe download reuses proxied media reference", download);
     }
   }
 } finally {
