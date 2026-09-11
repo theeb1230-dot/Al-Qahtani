@@ -19,11 +19,38 @@ jobs:
           with zipfile.ZipFile('albasritv.github.io-main.zip') as z:
               name='albasritv.github.io-main/albasri-cinema.html'
               text=z.read(name).decode('utf-8','ignore')
-              for needle in ['const ALLOWED_HOST','async function getApiSession','async function apiFetch','fetch(API_URL + "session"']:
+              for needle in ['const ALLOWED_HOST','async function getApiSession','fetch(API_URL + "session"']:
                   i=text.find(needle)
                   print('\n===',needle,'===')
-                  print(text[max(0,i-350):i+1800] if i>=0 else 'NOT FOUND')
+                  print(text[max(0,i-250):i+1500] if i>=0 else 'NOT FOUND')
           PY
+
+      - name: Inspect original cinema source reachability
+        shell: bash
+        run: |
+          set +e
+          UA='Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'
+          curl -L --max-time 25 -A "$UA" -H 'Accept: text/html,application/xhtml+xml' -o /tmp/basri-source.html -w 'source_http=%{http_code} final=%{url_effective} bytes=%{size_download}\n' 'https://akwam.ss/series?section=30'
+          python - <<'PY'
+          import re, pathlib
+          p=pathlib.Path('/tmp/basri-source.html')
+          if not p.exists():
+              print('source body unavailable')
+              raise SystemExit(0)
+          text=p.read_text('utf-8','ignore')
+          print('title=', (re.search(r'<title[^>]*>(.*?)</title>',text,re.I|re.S).group(1).strip() if re.search(r'<title[^>]*>(.*?)</title>',text,re.I|re.S) else ''))
+          print('html_bytes=',len(text))
+          hrefs=[]
+          for m in re.finditer(r'href=["\']([^"\']+)["\']',text,re.I):
+              h=m.group(1)
+              if '/series/' in h or '/movie/' in h or '/movies/' in h:
+                  hrefs.append(h)
+              if len(hrefs)>=12: break
+          print('sample_content_hrefs=',hrefs)
+          classes=sorted(set(re.findall(r'class=["\']([^"\']+)["\']',text,re.I)))
+          print('sample_classes=',classes[:25])
+          PY
+          exit 0
 
       - name: Reject ad-network runtime references
         shell: bash
