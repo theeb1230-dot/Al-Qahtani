@@ -43,6 +43,19 @@ async function waitHealth() {
   return false;
 }
 
+async function checkDownload(mediaPath) {
+  const sep = String(mediaPath).includes("?") ? "&" : "?";
+  const response = await get(`${mediaPath}${sep}download=1`, 120000, { Range: "bytes=0-1023", Accept: "*/*" });
+  ok(response.response.status === 206 || response.response.status === 200,
+    "backend safe download reuses proxied media reference", { status: response.response.status });
+  ok((response.response.headers.get("content-disposition") || "").startsWith("attachment;"),
+    "backend safe download forces attachment disposition", {
+      disposition: response.response.headers.get("content-disposition") || "",
+    });
+  ok((response.response.headers.get("x-content-type-options") || "").toLowerCase() === "nosniff",
+    "backend safe download disables MIME sniffing");
+}
+
 try {
   if (!ok(await waitHealth(), "backend health reports original Basri cinema chain")) process.exit(1);
 
@@ -78,9 +91,10 @@ try {
               acceptRanges: media.response.headers.get("accept-ranges") || "",
               contentType: media.response.headers.get("content-type") || "",
             });
+          await checkDownload(play.data.media_path);
         }
-      } else {
-        ok(Boolean(details.data?.media_path), "movie/direct detail includes playback media when no episodes", { mediaPath: details.data?.media_path || "" });
+      } else if (ok(Boolean(details.data?.media_path), "movie/direct detail includes playback media when no episodes", { mediaPath: details.data?.media_path || "" })) {
+        await checkDownload(details.data.media_path);
       }
     }
   }
