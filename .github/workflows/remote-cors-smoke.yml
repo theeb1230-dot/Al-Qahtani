@@ -20,6 +20,14 @@ jobs:
         run: |
           PORT=3139 NODE_ENV=test node server/index.mjs > /tmp/al-qahtani-cors-smoke.log 2>&1 &
           echo $! > /tmp/al-qahtani-cors-smoke.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:3139/health >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          cat /tmp/al-qahtani-cors-smoke.log || true
+          exit 1
       - name: Probe candidate CORS boundary
         if: github.event_name == 'pull_request'
         env:
