@@ -148,7 +148,8 @@ function normalizeDetails(data = {}) {
   });
   if (data.media_src && !data.is_iframe) {
     const id = storeMedia(String(data.media_src));
-    normalized.media_src = `/api/cinema/media?id=${encodeURIComponent(id)}`;
+    normalized.media_path = `/api/cinema/media?id=${encodeURIComponent(id)}`;
+    delete normalized.media_src;
     normalized.media_type = data.media_type || (/\.m3u8(?:$|\?)/i.test(String(data.media_src)) ? "m3u8" : "stream");
   }
   return normalized;
