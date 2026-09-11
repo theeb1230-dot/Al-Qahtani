@@ -31,20 +31,6 @@ jobs:
           set +e
           UA='Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'
           curl -L --max-time 25 -A "$UA" -H 'Accept: text/html,application/xhtml+xml' -o /tmp/basri-source.html -w 'source_http=%{http_code} final=%{url_effective} bytes=%{size_download}\n' 'https://akwam.ss/series?section=30'
-          python - <<'PY'
-          import re, pathlib
-          p=pathlib.Path('/tmp/basri-source.html')
-          if not p.exists():
-              print('source body unavailable'); raise SystemExit(0)
-          text=p.read_text('utf-8','ignore')
-          title=re.search(r'<title[^>]*>(.*?)</title>',text,re.I|re.S)
-          print('title=',title.group(1).strip() if title else '')
-          first=re.search(r'https://akwam\.ss/series/[^"\']+',text,re.I)
-          if first:
-              i=first.start(); print('CARD_CONTEXT_START'); print(text[max(0,i-1400):i+2600]); print('CARD_CONTEXT_END')
-          for pat in [r'<form[^>]+action=["\']([^"\']+)["\'][^>]*>',r'<input[^>]+name=["\']([^"\']+)["\'][^>]*placeholder=["\']([^"\']*)["\']']:
-              print('FORM_MATCHES=',re.findall(pat,text,re.I)[:10])
-          PY
           FIRST=$(python - <<'PY'
           import re,pathlib
           t=pathlib.Path('/tmp/basri-source.html').read_text('utf-8','ignore')
@@ -52,24 +38,58 @@ jobs:
           print(m.group(0) if m else '')
           PY
           )
+          python - <<'PY'
+          import re, pathlib
+          text=pathlib.Path('/tmp/basri-source.html').read_text('utf-8','ignore')
+          title=re.search(r'<title[^>]*>(.*?)</title>',text,re.I|re.S)
+          print('title=',title.group(1).strip() if title else '')
+          first=re.search(r'https://akwam\.ss/series/[^"\']+',text,re.I)
+          if first:
+              i=first.start(); print('CARD_CONTEXT_START'); print(text[max(0,i-1200):i+2300]); print('CARD_CONTEXT_END')
+          print('SEARCH_FORMS=',re.findall(r'<form[^>]+action=["\']([^"\']+)["\'][^>]*>',text,re.I)[:5])
+          PY
           if [ -n "$FIRST" ]; then
             curl -L --max-time 25 -A "$UA" -H 'Accept: text/html,application/xhtml+xml' -o /tmp/basri-detail.html -w 'detail_http=%{http_code} final=%{url_effective} bytes=%{size_download}\n' "$FIRST"
+            EP=$(python - <<'PY'
+          import re,pathlib
+          t=pathlib.Path('/tmp/basri-detail.html').read_text('utf-8','ignore')
+          eps=re.findall(r'https://akwam\.ss/episode/[^"\']+',t,re.I)
+          print(eps[-1] if eps else '')
+          PY
+            )
             python - <<'PY'
           import re,pathlib
-          p=pathlib.Path('/tmp/basri-detail.html')
-          if not p.exists(): raise SystemExit(0)
-          t=p.read_text('utf-8','ignore')
-          for needle in ['episode','watch','download','btn-watch','btn-download','watch-btn','download-btn']:
-              hits=[m.start() for m in re.finditer(needle,t,re.I)]
-              if hits:
-                  i=hits[0]; print('\nDETAIL_CONTEXT',needle); print(t[max(0,i-900):i+2200])
-          hrefs=[]
-          for m in re.finditer(r'href=["\']([^"\']+)["\']',t,re.I):
-              h=m.group(1)
-              if any(x in h.lower() for x in ['episode','watch','download']): hrefs.append(h)
-              if len(hrefs)>=20: break
-          print('DETAIL_ACTION_HREFS=',hrefs)
+          t=pathlib.Path('/tmp/basri-detail.html').read_text('utf-8','ignore')
+          eps=[]
+          for h in re.findall(r'href=["\']([^"\']+)["\']',t,re.I):
+              if '/episode/' in h and h not in eps: eps.append(h)
+          print('EPISODES=',eps[:12])
           PY
+            if [ -n "$EP" ]; then
+              curl -L --max-time 25 -A "$UA" -H 'Accept: text/html,application/xhtml+xml' -o /tmp/basri-episode.html -w 'episode_http=%{http_code} final=%{url_effective} bytes=%{size_download}\n' "$EP"
+              python - <<'PY'
+          import re,pathlib
+          t=pathlib.Path('/tmp/basri-episode.html').read_text('utf-8','ignore')
+          title=re.search(r'<title[^>]*>(.*?)</title>',t,re.I|re.S)
+          print('EP_TITLE=', title.group(1).strip() if title else '')
+          for needle in ['watch','download','btn-watch','btn-download','iframe','video','source','m3u8','mp4']:
+              m=re.search(needle,t,re.I)
+              if m:
+                  i=m.start(); print('\nEP_CONTEXT',needle); print(t[max(0,i-900):i+2500])
+          urls=[]
+          for u in re.findall(r'https?://[^"\'<> ]+',t,re.I):
+              if any(x in u.lower() for x in ['download','watch','m3u8','.mp4','episode']):
+                  if u not in urls: urls.append(u)
+              if len(urls)>=25: break
+          print('EP_ACTION_URLS=',urls)
+          attrs=[]
+          for m in re.finditer(r'(?:data-[\w-]+|href)=["\']([^"\']+)["\']',t,re.I):
+              v=m.group(1)
+              if any(x in v.lower() for x in ['watch','download','link','episode']): attrs.append(v)
+              if len(attrs)>=25: break
+          print('EP_ACTION_ATTRS=',attrs)
+          PY
+            fi
           fi
           exit 0
 
