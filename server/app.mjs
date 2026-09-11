@@ -14,6 +14,7 @@ const MATCHES = "https://api.albasritv1.workers.dev/";
 const CINEMA = "https://albas.albesriali03.workers.dev/";
 const BASRI_ORIGIN = "https://www.albasritv.abrdns.com";
 const BASRI_REFERER = `${BASRI_ORIGIN}/2026/09/movies-series.html`;
+const DEFAULT_MEDIA_REF_TTL_MS = 15 * 60_000;
 
 const ALLOWED_ORIGINS = new Set([
   "https://theeb1230-dot.github.io",
@@ -22,9 +23,27 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 
 const mediaRefs = new Map();
+let mediaRefTtlMs = DEFAULT_MEDIA_REF_TTL_MS;
 let cinemaToken = "";
 let cinemaTokenExpiresAt = 0;
 let cinemaSessionPromise = null;
+
+function requireTestMode() {
+  if (process.env.NODE_ENV !== "test") throw new Error("TEST_ONLY_MEDIA_REFERENCE_HOOK");
+}
+
+export function __setMediaReferenceTtlForTest(ttlMs) {
+  requireTestMode();
+  const value = Number(ttlMs);
+  if (!Number.isFinite(value) || value < 1 || value > DEFAULT_MEDIA_REF_TTL_MS) throw new Error("INVALID_TEST_MEDIA_REFERENCE_TTL");
+  mediaRefTtlMs = value;
+}
+
+export function __resetMediaReferenceTtlForTest() {
+  requireTestMode();
+  mediaRefTtlMs = DEFAULT_MEDIA_REF_TTL_MS;
+  mediaRefs.clear();
+}
 
 function applyCors(req, res) {
   const origin = String(req.headers.origin || "");
@@ -159,12 +178,17 @@ function normalizeCatalog(items = []) {
 function storeMedia(url, referer = BasriSource.origin + "/") {
   const parsed = assertSourceUrl(url, { allowMedia: true });
   const id = crypto.randomBytes(18).toString("base64url");
-  mediaRefs.set(id, { url: parsed.href, referer, expiresAt: Date.now() + 15 * 60_000 });
+  mediaRefs.set(id, { url: parsed.href, referer, expiresAt: Date.now() + mediaRefTtlMs });
   if (mediaRefs.size > 256) {
     const now = Date.now();
     for (const [key, value] of mediaRefs) if (value.expiresAt <= now) mediaRefs.delete(key);
   }
   return id;
+}
+
+export function __createMediaReferenceForTest(url, referer = BasriSource.origin + "/") {
+  requireTestMode();
+  return `/api/cinema/media?id=${encodeURIComponent(storeMedia(url, referer))}`;
 }
 
 function wrapEpisodes(episodes = []) {
