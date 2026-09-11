@@ -18,6 +18,7 @@
 </main>
 <script>
 const params=new URLSearchParams(location.search);
+const TRUSTED_BACKEND_ORIGIN='https://al-qahtani-api.onrender.com';
 const player=document.getElementById('player');
 const statusEl=document.getElementById('status');
 const serversEl=document.getElementById('servers');
@@ -69,7 +70,7 @@ function safeDownloadUrl(source){
   if(!source?.url)return'';
   try{
     const u=new URL(source.url,location.href);
-    if(u.pathname!=='/api/cinema/media'||!u.searchParams.get('id'))return'';
+    if(u.origin!==TRUSTED_BACKEND_ORIGIN||u.pathname!=='/api/cinema/media'||!u.searchParams.get('id'))return'';
     u.searchParams.set('download','1');
     return u.href;
   }catch{return''}
