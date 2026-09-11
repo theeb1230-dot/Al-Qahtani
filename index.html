@@ -25,7 +25,7 @@ header{position:sticky;top:0;z-index:5;background:#07111fe8;backdrop-filter:blur
 </main>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script type="module">
-import { getMatches, getMatchServers } from './web/core/api-client.js';
+import { getMatches, getMatchServers, ProviderEndpoints } from './web/core/api-client.js';
 const list=document.getElementById('list'),toastEl=document.getElementById('toast');
 const BASRI_ORIGIN='https://www.albasritv.abrdns.com/';
 const cleanImg=u=>{
@@ -36,6 +36,9 @@ const cleanImg=u=>{
    const url=new URL(raw,absolute?location.href:BASRI_ORIGIN);
    if(url.protocol==='http:')url.protocol='https:';
    if(url.protocol!=='https:'&&url.protocol!=='http:')return '';
+   if(['kooorracity.com','www.kooorracity.com'].includes(url.hostname.toLowerCase())&&url.pathname.startsWith('/wp-content/uploads/')){
+     return ProviderEndpoints.backend+'/api/matches/logo?url='+encodeURIComponent(url.href);
+   }
    return url.href;
  }catch{return ''}
 };
