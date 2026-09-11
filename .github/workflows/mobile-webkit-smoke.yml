@@ -20,3 +20,5 @@ jobs:
           npx playwright install --with-deps webkit
       - name: Exercise cinema navigation in iPhone WebKit
         run: node scripts/mobile_webkit_smoke.mjs
+      - name: Guard trusted player download origin
+        run: node scripts/player_download_guard.mjs
