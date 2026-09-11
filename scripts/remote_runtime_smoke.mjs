@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { buildDownloadContentDisposition } from "../server/download-filename.mjs";
 
 const BASE = "https://al-qahtani-api.onrender.com";
 const ORIGIN = "https://theeb1230-dot.github.io";
@@ -149,6 +150,31 @@ async function resolvePlayback(details) {
   return last;
 }
 
+async function probeTrustedDownload(mediaUrl, trustedTitle) {
+  const separator = mediaUrl.includes("?") ? "&" : "?";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60_000);
+  try {
+    const response = await fetch(BASE + mediaUrl + separator + "download=1", {
+      headers: { Origin: ORIGIN, Range: "bytes=0-1023" },
+      redirect: "follow",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const disposition = response.headers.get("content-disposition") || "";
+    const expected = buildDownloadContentDisposition(trustedTitle || "al-qahtani-media");
+    const nosniff = response.headers.get("x-content-type-options") || "";
+    assert([200, 206].includes(response.status), "deployed episode download returns bounded media", { status: response.status });
+    assert(disposition === expected, "deployed episode download Content-Disposition uses trusted Basri title", { trustedTitle, disposition, expected });
+    assert(!/[\r\n]/.test(disposition), "deployed episode download Content-Disposition is CR/LF-safe");
+    assert(disposition.length <= 512, "deployed episode download Content-Disposition is bounded", { length: disposition.length });
+    assert(nosniff.toLowerCase() === "nosniff", "deployed episode download remains nosniff");
+    try { await response.body?.cancel(); } catch {}
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function requirePlayback(details) {
   if (!details?.data) {
     assert(false, "remote playback has details payload");
@@ -195,6 +221,8 @@ async function requirePlayback(details) {
   } finally {
     clearTimeout(timer);
   }
+
+  await probeTrustedDownload(mediaUrl, play.data?.movie_title || details.data?.movie_title || "al-qahtani-media");
 }
 
 async function category(type, name, url) {

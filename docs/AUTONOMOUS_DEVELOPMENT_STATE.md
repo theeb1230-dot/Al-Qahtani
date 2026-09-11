@@ -11,84 +11,64 @@ GitHub repository state wins over this handoff if they disagree. The checked-in 
 - Cinema stays on the original Basri chain. The historical cinema Worker currently returns `403 FORBIDDEN_ORIGIN`; the backend uses the same original content source through a server-side compatibility fallback rather than switching provider projects.
 
 ## Current state
-- PRs #17 through #33 are merged.
-- Current product `main`: `238f510ba3e16eabfc69b6013842bec7ba231233` (`Bind safe download names to trusted media metadata`).
+- PRs #17 through #38 are merged.
+- Product `main`: `ac9aab5dc911f6f4c78e56f9a33fc754588ec360` (`Verify deployed trusted download titles`).
+- Active PR: #39 `Record deployed trusted title evidence` on `docs/postmerge-evidence-39`.
 - No cross-project Theeb/akwam-indexer runtime dependency is present.
-- Live Web parity, including playback and the recovered Basri-style download flow, remains proven through the deployed Al-Qahtani backend.
+- Live Web parity remains proven through the deployed Al-Qahtani backend.
 
-## Engineering state carried forward
-- Search/category/details/episodes/playback use the original Basri chain with server-side fallback to the historical `akwam.ss` source when the origin-locked cinema Worker fails.
-- Direct upstream media URLs remain hidden behind short-lived opaque `/api/cinema/media?id=...` references.
-- Production opaque media references expire after 15 minutes and fail closed after expiry.
-- Browser-controlled arbitrary external URLs are forbidden for playback/download.
-- Safari Range handling is mandatory: proxied media preserves HTTP 206, `Content-Range`, and `Accept-Ranges: bytes`.
-- `.downet.net` legacy TLS compatibility is narrowly scoped; other TLS remains strict.
-- Worker/session tokens stay server-side.
-- Invalid/expired references remain JSON errors and never receive download decoration.
-- Original Basri movie/episode Download UX uses the same resolved media as playback, through the Al-Qahtani proxy only.
+## Engineering state
+- Search/category/details/episodes/playback use the original Basri chain with server-side fallback to historical `akwam.ss` pages when the origin-locked cinema Worker fails.
+- Direct upstream media URLs stay hidden behind short-lived opaque `/api/cinema/media?id=...` references.
+- Opaque media references expire after 15 minutes and fail closed.
+- Source/media host allowlists and SSRF protections remain in force.
+- Safari Range proxying preserves HTTP 206, `Content-Range`, and `Accept-Ranges: bytes`.
+- `.downet.net` legacy TLS compatibility is narrowly scoped; all unrelated TLS remains strict.
+- Invalid/expired references remain JSON errors and never gain download decoration.
+- Trusted download filenames come only from sanitized Basri title metadata stored with the server-side media reference.
 - iPhone WebKit gates cover viewport, category/search/details/episodes/movie/player navigation.
 - Ads/popups/tracking and legacy Android Intent/deep-link regressions remain prohibited.
 
 ## Recent merged work
-### PR #25 — bounded series playback recovery
-Merged as `7af710d0c07507e55014b150e61278f3c49a7cdf`. Deployed series playback tries at most three playable episode candidates with bounded requests while still requiring a real proxied source and Safari Range success.
+### PR #36 — original player contract proven
+Merged as `32f7dfb1b57727a829bc2deb4732816818a8914d`.
+- `scripts/original_player_contract.py` reads `Player.html` and `bsr-Player.html` directly from the preserved original ZIP.
+- CI proved both original players accept `url`, `title`, and `live` context but have no player-level Download UI/contract: no Arabic Download label, HTML `download` attribute, `download=1` behavior, `download_options`, or `Content-Disposition` handling.
+- Current `Player.html` therefore must not invent a Download control; Download belongs to the cinema details/episode flow already restored through the opaque media reference.
+- The cleaned product must not reintroduce legacy application Intent/deep-link behavior from the old Basri player.
 
-### PR #26 — original Basri download contract recovered
-Merged as `9196676cafbf22ef8e1f655db3e134989b3e3d5a`. CI reads the checked-in original archive and protects the historical Watch/Download behavior. The original UI downloads the same resolved `media_src` used for playback.
+### PR #37 — backend CORS boundary
+Merged as `aa3042477b67cbf3d4e77234687962fa828bd131`.
+- Added deterministic exact-origin CORS tests.
+- Only `https://theeb1230-dot.github.io` receives an ACAO grant; credentialed CORS remains disabled.
+- Arbitrary, lookalike, and `Origin: null` requests receive no ACAO on health success, preflight, media/download errors, or generic 404s.
+- Rejected media/download references remain JSON without `Content-Disposition` or download-only MIME headers.
 
-### PR #27 — original download UX restored safely
-Merged as `16d122d2471ff6dcebbcb42ef1afbc9ed1881cff`. Movie and episode download actions use only short-lived Al-Qahtani media references; upstream URLs remain hidden.
+### PR #38 — deployed trusted download titles
+Merged as `ac9aab5dc911f6f4c78e56f9a33fc754588ec360`.
+- `scripts/remote_movie_playback_smoke.mjs` requires a real movie download `Content-Disposition` to exactly equal the server contract derived from the trusted Basri movie title, remain CR/LF-safe and bounded, preserve `nosniff`, and keep Range behavior.
+- `scripts/remote_runtime_smoke.mjs` applies the same trusted-title assertion to a real series episode after Render auto-deploy.
+- Final PR head initially had one Live provider smoke failure caused by the media upstream returning HTTP 500 during the local proxy Range/download step. The direct Basri chain and every unrelated gate passed; rerunning only the failed workflow without changing code succeeded completely, confirming a transient upstream/media failure rather than a regression.
+- PR #38 was merged only after the rerun and all final-head gates were green.
 
-### PR #29 — rejected download references hardened
-Merged as `03b57f54cdb692f5d2094770e4b2afdbd0cb5652`. Download headers are added only to successful validated media responses. Invalid, expired, URL-shaped fake IDs and arbitrary `url=` attempts remain JSON errors.
+## Post-merge deployed evidence for PR #38
+Main push `ac9aab5dc911f6f4c78e56f9a33fc754588ec360` proved the change against the deployed backend at `https://al-qahtani-api.onrender.com`.
 
-### PR #31 — deterministic media-reference expiry gate
-Merged as `8e27b10c7baf25a61c43aab55a5656a64b5539ea`. Test-only hooks prove opaque references expire fail-closed without exposing the private registry or changing the 15-minute production TTL.
+### Remote movie playback
+- Run `34632926827` completed successfully after the Render auto-deploy wait.
+- Real deployed movie playback, Safari Range, and trusted-title download header assertions passed.
 
-### PR #32 — expiry evidence recorded
-Merged as `edcf54f98ab34a0e66f6c1992840ff89605ddf50`. Records final-head and post-merge expiry evidence.
-
-### PR #33 — trusted download filenames
-Merged as `238f510ba3e16eabfc69b6013842bec7ba231233`.
-
-Implementation:
-- added `server/download-filename.mjs`;
-- download names now come only from trusted Basri title metadata stored server-side inside the opaque media reference;
-- upstream media URL/path structure is never used as a filename source;
-- browser-supplied filename data is not accepted;
-- Arabic/Unicode titles are preserved through RFC 5987 `filename*=UTF-8''...`;
-- ASCII fallback remains available in `filename="..."`;
-- path separators, quotes, reserved filename characters, control characters and CR/LF are removed;
-- empty/dot-only names fall back to `al-qahtani-media`;
-- names are capped at 120 characters;
-- successful `download=1` responses get the trusted `Content-Disposition` plus `X-Content-Type-Options: nosniff` only after upstream media validation;
-- `Access-Control-Expose-Headers` now includes `Content-Disposition` for allowed origins;
-- `server/index.mjs` preserves the trusted filename produced by the validated media proxy rather than overwriting it with the previous fixed name.
-
-Deterministic regression:
-- `scripts/download_filename_test.mjs` covers Arabic titles, ASCII titles, path traversal-like separators, quotes, control characters, CR/LF, empty/dot-only values and oversized names;
-- `.github/workflows/download-filename.yml` gates these cases on PRs and `main` pushes.
-
-## PR #33 final-head evidence
-Final PR head: `598ed562d1e6e769f2499d0bd6d8543c49dbd8a9`.
-
-Seven PR workflows were observed for the final head with no failures and no remaining in-progress run before merge. PR #33 was mergeable and was squash-merged only after those gates cleared.
-
-Relevant protected behavior includes:
-- Original Basri download contract;
-- Web smoke;
-- Live provider smoke;
-- Mobile WebKit smoke;
-- Remote movie playback smoke;
-- Media reference expiry;
-- Trusted download filename sanitization.
-
-## Post-merge evidence for PR #33
-Push/main commit: `238f510ba3e16eabfc69b6013842bec7ba231233`.
-
-- Remote runtime smoke run `34626277190` completed successfully against the deployed Render backend after the auto-deploy wait.
-- The deployed probe step passed, so the filename hardening did not regress backend health, matches/news, search/categories/details/episodes, playback, media proxy, or Safari flows.
-- Post-merge GitHub Pages and other push workflows were started for the same commit; GitHub remains the source of truth for their final status.
+### Remote runtime / real episode title
+- Run `34632926737` completed successfully after the Render auto-deploy wait.
+- Search `الذئب الوحيد` returned real items through `basri-direct`.
+- Series details opened `Tracker الموسم الثالث` with 14 episodes.
+- A real episode resolved to an opaque `/api/cinema/media?id=...` reference.
+- Safari Range returned HTTP `206`, `Content-Range: bytes 0-1023/350455536`, and `Accept-Ranges: bytes`.
+- A bounded deployed episode download returned HTTP `206` and `nosniff`.
+- Trusted episode title: `1 - Tracker الموسم الثالث`.
+- Actual `Content-Disposition` exactly matched the trusted-title contract: `attachment; filename="1 - Tracker"; filename*=UTF-8''1%20-%20Tracker%20%D8%A7%D9%84%D9%85%D9%88%D8%B3%D9%85%20%D8%A7%D9%84%D8%AB%D8%A7%D9%84%D8%AB`.
+- The deployed header was CR/LF-safe and bounded to 146 characters.
+- All six series and six movie categories returned real items and opened details successfully in the same deployed run.
 
 ## Proven live Web parity
 The deployed path has proven:
@@ -101,31 +81,35 @@ The deployed path has proven:
 - series and movie playback through the Al-Qahtani media proxy;
 - Safari HTTP byte-range handling;
 - iPhone WebKit series/movie navigation and viewport gates;
-- original Basri-style movie/episode Download UX through an opaque Al-Qahtani proxy reference;
-- bounded deployed download bytes with attachment and nosniff headers.
+- original Basri-style movie/episode Download UX through opaque Al-Qahtani media references;
+- trusted Arabic/Unicode `Content-Disposition` derived from Basri metadata on real deployed movie/episode downloads;
+- CR/LF-safe bounded download headers with `nosniff`.
 
 ## Security and regression boundaries
-- Source/media host allowlists and SSRF protections remain in force.
 - Direct media URLs stay hidden.
+- Browser-controlled arbitrary external media URLs remain forbidden.
 - Opaque references expire and fail closed.
 - Trusted download filenames are metadata-bound and sanitized server-side.
 - Rejected media/download requests must not gain download headers.
-- CORS must stay restricted to explicitly allowed origins.
+- CORS grants are exact-origin only; lookalike, `null`, and arbitrary origins remain browser-inaccessible.
+- Credentialed CORS remains disabled.
 - Safari Range forwarding remains active.
+- Player-level Download controls must not be invented absent original baseline evidence.
+- Legacy Android Intent/deep-link behavior must not be reintroduced.
 - No Theeb/akwam-indexer provider dependency may be introduced.
 
 ## Render evidence and limitation
-- External deployed-runtime tests target `https://al-qahtani-api.onrender.com` and prove live behavior after the workflow's Render auto-deploy wait.
-- Direct Render workspace inspection is intentionally not claimed: the connector exposes two workspaces (`My Workspace` and `بيانات`) and autonomous execution must not guess which workspace owns Al-Qahtani.
+- External deployed-runtime tests target `https://al-qahtani-api.onrender.com` and prove live behavior after workflow auto-deploy waits.
+- Direct Render workspace inspection is intentionally not claimed. The connector exposes `My Workspace` and `بيانات` with no selected workspace; autonomous execution must not guess which owns Al-Qahtani.
 
 ## Next run goals
-1. Compare current `Player.html` and `bsr-Player.html` behavior with the checked-in original archive and determine whether a player-level Download control belongs in the restored Web UX.
-2. If the baseline contains a player-level download action, route it only through the same opaque `/api/cinema/media?id=...&download=1` path; never expose upstream URLs.
-3. Add negative CORS tests for rejected origins on health/API/media/download paths, including preflight and error responses.
-4. Verify `Content-Disposition` on a real deployed movie/episode download includes the trusted Basri title while remaining CR/LF-safe and bounded.
-5. Preserve all search/category/details/series/movie/playback/download/Safari Range/iPhone WebKit gates during hardening.
-6. Inspect parser drift and provider health for current Basri HTML without changing provider projects.
-7. Begin Flutter only as a faithful client over the proven Al-Qahtani backend; do not introduce Theeb/akwam-indexer dependencies.
-8. Migrate Flutter flows incrementally with parity gates rather than rewriting the product wholesale.
-9. Preserve Android Mobile, Android TV D-Pad/remote, and iOS constraints.
-10. Continue security/performance/maintenance work after stable releases; GitHub and deployed tests remain source of truth over this handoff.
+1. Finish PR #39 and merge only after its gates are green.
+2. Inspect current Basri HTML/parser drift with bounded live samples; strengthen parsing only if concrete drift is demonstrated.
+3. Preserve all search/category/details/series/movie/playback/download/Safari Range/iPhone WebKit/CORS gates during parser hardening.
+4. Add low-traffic deployed negative-CORS evidence only if it contributes beyond deterministic local tests without touching providers unnecessarily.
+5. Keep `Player.html` web-native and free of legacy Intent/deep-link behavior; do not add a player Download control absent baseline evidence.
+6. Begin Flutter only as a faithful client over the proven Al-Qahtani backend; do not introduce Theeb/akwam-indexer dependencies.
+7. Migrate Flutter flows incrementally with parity gates rather than rewriting the product wholesale.
+8. Preserve Android Mobile, Android TV D-Pad/remote, and iOS constraints.
+9. Continue security/performance/provider-health maintenance after stable releases.
+10. Treat GitHub state, the preserved Basri archive, and deployed runtime tests as authoritative over this handoff.

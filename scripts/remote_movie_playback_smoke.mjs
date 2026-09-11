@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { buildDownloadContentDisposition } from "../server/download-filename.mjs";
 
 const BASE = process.env.AL_QAHTANI_BASE || "https://al-qahtani-api.onrender.com";
 const ORIGIN = "https://theeb1230-dot.github.io";
@@ -70,7 +71,7 @@ async function probeRange(mediaPath) {
   }
 }
 
-async function probeDownload(mediaPath) {
+async function probeDownload(mediaPath, trustedTitle) {
   const sep = mediaPath.includes("?") ? "&" : "?";
   const path = `${mediaPath}${sep}download=1`;
   const ctl = new AbortController();
@@ -85,12 +86,17 @@ async function probeDownload(mediaPath) {
     const disposition = response.headers.get("content-disposition") || "";
     const nosniff = response.headers.get("x-content-type-options") || "";
     const contentRange = response.headers.get("content-range") || "";
+    const expectedDisposition = buildDownloadContentDisposition(trustedTitle || "al-qahtani-media");
     if (![200, 206].includes(response.status)) throw new Error(`DOWNLOAD_STATUS_${response.status}`);
     if (!disposition.toLowerCase().startsWith("attachment;")) throw new Error(`BAD_DOWNLOAD_DISPOSITION_${disposition}`);
+    if (disposition !== expectedDisposition) throw new Error(`UNTRUSTED_DOWNLOAD_FILENAME expected=${expectedDisposition} actual=${disposition}`);
+    if (/\r|\n/.test(disposition)) throw new Error("DOWNLOAD_DISPOSITION_CRLF");
+    if (disposition.length > 512) throw new Error(`DOWNLOAD_DISPOSITION_TOO_LONG_${disposition.length}`);
     if (nosniff.toLowerCase() !== "nosniff") throw new Error(`BAD_DOWNLOAD_NOSNIFF_${nosniff}`);
     if (response.status === 206 && !/^bytes 0-1023\//.test(contentRange)) throw new Error(`BAD_DOWNLOAD_RANGE_${contentRange}`);
-    pass(`${LABEL} movie bounded download stays behind proxy`, {
+    pass(`${LABEL} movie bounded download uses trusted Basri title`, {
       status: response.status,
+      title: trustedTitle,
       disposition,
       nosniff,
       contentRange,
@@ -145,4 +151,4 @@ if (playable.episodes !== 0) {
 }
 pass(`${LABEL} movie resolves real proxied playback`, playable);
 await probeRange(playable.mediaPath);
-await probeDownload(playable.mediaPath);
+await probeDownload(playable.mediaPath, playable.title);
