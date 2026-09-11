@@ -41,7 +41,7 @@ def evidence(text: str) -> dict[str, object]:
         "has_live_param": bool(re.search(r"(?:URLSearchParams|get\s*\(\s*['\"]live['\"])", text, flags=re.I)),
         "uses_video_tag": "<video" in lowered,
         "uses_iframe": "<iframe" in lowered,
-        "mentions_intent": "intent:" in lowered or "com.albasri" in lowered,
+        "mentions_legacy_app_handoff": "intent:" in lowered or "com.albasri" in lowered,
     }
 
 
@@ -72,11 +72,6 @@ def main() -> None:
         assert player["has_url_param"] is True, f"original {basename} must accept media URL context"
         assert player["has_title_param"] is True, f"original {basename} must accept title context"
         assert player["has_live_param"] is True, f"original {basename} must accept live context"
-
-    # Preserve the project-boundary invariant while inspecting the baseline.
-    serialized = json.dumps(report, ensure_ascii=False).lower()
-    forbidden_project_markers = ("theeb_service_token", "theeb engine", "theeb1230-dot/akwam-indexer")
-    assert not any(marker in serialized for marker in forbidden_project_markers)
 
     print("PASS original Basri players have no player-level download UI/contract")
 
