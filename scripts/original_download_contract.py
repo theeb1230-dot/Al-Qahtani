@@ -20,6 +20,37 @@ def context(text: str, start: int, radius: int = 900) -> str:
     return text[max(0, start - radius): min(len(text), start + radius)]
 
 
+def extract_function(text: str, name: str) -> str:
+    match = re.search(rf"(?:async\s+)?function\s+{re.escape(name)}\s*\([^)]*\)\s*\{{", text)
+    if not match:
+        return ""
+    brace = text.find("{", match.start())
+    depth = 0
+    quote = ""
+    escaped = False
+    i = brace
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = ""
+        else:
+            if ch in ("'", '"', "`"):
+                quote = ch
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[match.start(): i + 1]
+        i += 1
+    return ""
+
+
 if not ARCHIVE.is_file():
     fail(f"missing baseline archive: {ARCHIVE}")
 
@@ -29,14 +60,9 @@ with zipfile.ZipFile(ARCHIVE) as zf:
     except KeyError:
         fail(f"missing archive member: {MEMBER}")
 
-# The original Basri UI exposes a watch/download choice after selecting an
-# episode. This guard deliberately validates semantic markers instead of exact
-# minified formatting so a harmless baseline whitespace change does not break
-# the check.
 if "fa-download" not in source or "تحميل" not in source:
     fail("original cinema page no longer exposes the download choice")
 
-# Capture every function name whose body or nearby markup discusses download.
 function_names: list[str] = []
 for match in re.finditer(r"(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{", source):
     name = match.group(1)
@@ -44,7 +70,6 @@ for match in re.finditer(r"(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\([^)]*\
     if re.search(r"download|تحميل", snippet, re.I):
         function_names.append(name)
 
-# Capture onclick handlers attached to visible download controls.
 handlers: list[str] = []
 for match in re.finditer(r"<button\b[^>]*>[^<]*(?:<[^>]+>[^<]*</[^>]+>\s*)*[^<]*تحميل[^<]*</button>", source, re.I | re.S):
     tag = match.group(0)
@@ -52,7 +77,6 @@ for match in re.finditer(r"<button\b[^>]*>[^<]*(?:<[^>]+>[^<]*</[^>]+>\s*)*[^<]*
     if onclick:
         handlers.append(html.unescape(onclick.group(1)).strip())
 
-# Extract original-source download URL shapes referenced by the page itself.
 download_shapes = sorted(set(re.findall(r"https://akwam\.ss/download/[^\"'<>\s]+", source, re.I)))
 
 print("ORIGINAL_DOWNLOAD_CONTRACT")
@@ -61,9 +85,11 @@ print("download_handlers=", handlers)
 print("download_functions=", sorted(set(function_names)))
 print("download_url_samples=", download_shapes[:5])
 
-# Print bounded contexts for auditability in Actions logs. No tokens or secrets
-# exist in this historical static page beyond the already-known Basri session
-# flow; nevertheless keep output bounded.
+for name in ["prepareEpisodeChoice", "downloadChosenEpisode", "startDownload", "setupPlayer", "getDetails"]:
+    body = extract_function(source, name)
+    print(f"\n=== ORIGINAL FUNCTION {name} ===")
+    print(body if body else "NOT FOUND")
+
 needles = ["fa-download", "تحميل", "download"]
 printed: set[int] = set()
 for needle in needles:
@@ -75,11 +101,11 @@ for needle in needles:
         print(f"\n=== ORIGINAL DOWNLOAD CONTEXT {needle}@{match.start()} ===")
         print(context(source, match.start()))
 
-if not handlers:
-    # The original button may use an id/listener rather than inline onclick.
-    # In that case demand at least a callable download-related function so the
-    # contract still remains recoverable rather than silently drifting away.
-    if not function_names:
-        fail("could not identify the original download action handler")
+if not handlers and not function_names:
+    fail("could not identify the original download action handler")
+
+for required in ("prepareEpisodeChoice", "downloadChosenEpisode", "startDownload"):
+    if not extract_function(source, required):
+        fail(f"missing original download function: {required}")
 
 print("PASS original Basri download UI/action contract is recoverable")
