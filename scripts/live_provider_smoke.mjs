@@ -60,34 +60,54 @@ async function matchesSmoke() {
   assert(list.ok && list.data?.success === true && Array.isArray(list.data?.data), "matches list", { status: list.status, ms: list.ms, count: list.data?.data?.length, body: list.text });
 }
 
+async function probePublicCinema(origin) {
+  const search = await json(CINEMA + "?action=search&q=" + encodeURIComponent("الذئب الوحيد"), { headers: cinemaHeaders(origin) });
+  console.log("INFO cinema public search probe", { origin, status: search.status, state: search.data?.status || "", message: search.data?.message || "", count: search.data?.data?.length, ms: search.ms });
+  const genreUrl = encodeURIComponent("https://akwam.ss/series?section=30");
+  const genre = await json(CINEMA + "?action=genre&genre=" + genreUrl + "&p=1", { headers: cinemaHeaders(origin) });
+  console.log("INFO cinema public category probe", { origin, status: genre.status, state: genre.data?.status || "", message: genre.data?.message || "", count: genre.data?.data?.length, ms: genre.ms });
+  if (search.ok && search.data?.status === "success" && Array.isArray(search.data?.data)) return { origin, search, genre };
+  return null;
+}
+
 async function findCinemaSession() {
   let last = null;
   for (const origin of LEGACY_ORIGINS) {
+    const publicProbe = await probePublicCinema(origin);
+    if (publicProbe) return { origin, publicProbe, public: true };
     const session = await json(CINEMA + "session", { headers: cinemaHeaders(origin) });
     console.log("INFO cinema origin probe", { origin, status: session.status, message: session.data?.message || "", ms: session.ms });
-    if (session.ok && session.data?.status === "success" && session.data?.token) return { origin, session };
+    if (session.ok && session.data?.status === "success" && session.data?.token) return { origin, session, public: false };
     last = session;
     if (!(session.status === 403 && session.data?.message === "FORBIDDEN_ORIGIN")) break;
   }
-  assert(false, "cinema session", { status: last?.status, body: last?.text });
+  assert(false, "cinema access", { status: last?.status, body: last?.text });
   return null;
 }
 
 async function cinemaSmoke() {
   const selected = await findCinemaSession();
   if (!selected) return;
-  const { origin, session } = selected;
-  const token = encodeURIComponent(String(session.data.token));
-  const genreUrl = encodeURIComponent("https://akwam.ss/series?section=30");
-  const genre = await json(CINEMA + "?action=genre&genre=" + genreUrl + "&p=1&token=" + token, { headers: cinemaHeaders(origin) });
+  const { origin } = selected;
+  let search;
+  let genre;
+  let suffix = "";
+  if (selected.public) {
+    search = selected.publicProbe.search;
+    genre = selected.publicProbe.genre;
+  } else {
+    const token = encodeURIComponent(String(selected.session.data.token));
+    suffix = "&token=" + token;
+    const genreUrl = encodeURIComponent("https://akwam.ss/series?section=30");
+    genre = await json(CINEMA + "?action=genre&genre=" + genreUrl + "&p=1" + suffix, { headers: cinemaHeaders(origin) });
+    search = await json(CINEMA + "?action=search&q=" + encodeURIComponent("الذئب الوحيد") + suffix, { headers: cinemaHeaders(origin) });
+  }
   assert(genre.ok && genre.data?.status === "success" && Array.isArray(genre.data?.data), "cinema category", { status: genre.status, ms: genre.ms, count: genre.data?.data?.length, body: genre.text });
-
-  const search = await json(CINEMA + "?action=search&q=" + encodeURIComponent("الذئب الوحيد") + "&token=" + token, { headers: cinemaHeaders(origin) });
   assert(search.ok && search.data?.status === "success" && Array.isArray(search.data?.data), "cinema search contract", { status: search.status, ms: search.ms, count: search.data?.data?.length, body: search.text });
 
   const sample = (search.data?.data || []).find(x => x?.href) || (genre.data?.data || []).find(x => x?.href);
   if (sample?.href) {
-    const details = await json(CINEMA + "?action=series&series=" + encodeURIComponent(sample.href) + "&token=" + token, { headers: cinemaHeaders(origin) });
+    const details = await json(CINEMA + "?action=series&series=" + encodeURIComponent(sample.href) + suffix, { headers: cinemaHeaders(origin) });
     assert(details.ok && details.data?.status === "success", "cinema details", { status: details.status, ms: details.ms, episodes: details.data?.episodes?.length, media: Boolean(details.data?.media_src), iframe: Boolean(details.data?.is_iframe), body: details.text });
   } else {
     assert(false, "cinema sample has href", { searchCount: search.data?.data?.length, genreCount: genre.data?.data?.length });
