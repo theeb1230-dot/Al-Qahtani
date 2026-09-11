@@ -17,8 +17,8 @@ test("retries a 200-empty discovery response and returns the recovered result", 
   let calls = 0;
   const fetcher = createTheebFetch({
     nativeFetch: async () => responses[calls++],
-    retries: 2,
-    retryDelaysMs: [0, 0],
+    discoveryRetries: 2,
+    discoveryRetryDelaysMs: [0, 0],
     wait: async () => {},
     log: () => {},
   });
@@ -27,14 +27,40 @@ test("retries a 200-empty discovery response and returns the recovered result", 
   assert.deepEqual((await response.json()).data.items, hit.data.items);
 });
 
+test("keeps retrying discovery across a short 502 wave before recovering", async () => {
+  const responses = [
+    jsonResponse({ error: "temporary" }, 502),
+    jsonResponse({ error: "temporary" }, 502),
+    jsonResponse({ error: "temporary" }, 502),
+    jsonResponse(hit),
+  ];
+  let calls = 0;
+  const delays = [];
+  const events = [];
+  const fetcher = createTheebFetch({
+    nativeFetch: async () => responses[calls++],
+    retries: 0,
+    discoveryRetries: 4,
+    discoveryRetryDelaysMs: [750, 1500, 3000, 6000],
+    wait: async (ms) => delays.push(ms),
+    log: (event) => events.push(event),
+  });
+  const response = await fetcher("https://theeb-arab-api.onrender.com/v1/discover?q=wolf");
+  assert.equal(response.status, 200);
+  assert.equal(calls, 4);
+  assert.deepEqual(delays, [750, 1500, 3000]);
+  assert.equal((await response.json()).data.items.length, 1);
+  assert.ok(events.includes("theeb_discovery_recovered"));
+});
+
 test("serves a successful discovery from cache during a later empty outage", async () => {
   let clock = 1000;
   let calls = 0;
   const responses = [jsonResponse(hit), jsonResponse(empty), jsonResponse(empty), jsonResponse(empty)];
   const fetcher = createTheebFetch({
     nativeFetch: async () => responses[calls++],
-    retries: 2,
-    retryDelaysMs: [0, 0],
+    discoveryRetries: 2,
+    discoveryRetryDelaysMs: [0, 0],
     freshTtlMs: 10,
     staleTtlMs: 10_000,
     now: () => clock,
