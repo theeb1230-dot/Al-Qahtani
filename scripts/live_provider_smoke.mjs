@@ -6,6 +6,7 @@ const LEGACY_ORIGINS = [
   "https://www.albasritv.abrdns.com",
   "https://albasritv.abrdns.com",
 ];
+const SAFARI_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1";
 
 async function json(url, init = {}) {
   const started = Date.now();
@@ -40,6 +41,15 @@ const headersFor = (origin, page, extra = {}) => ({
   ...extra,
 });
 
+const cinemaHeaders = (origin, extra = {}) => headersFor(origin, "/2026/09/movies-series.html", {
+  "User-Agent": SAFARI_UA,
+  "Accept-Language": "ar-SA,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+  "Sec-Fetch-Site": "cross-site",
+  "Sec-Fetch-Mode": "cors",
+  "Sec-Fetch-Dest": "empty",
+  ...extra,
+});
+
 async function matchesSmoke() {
   const origin = LEGACY_ORIGINS[0];
   const page = "/2026/09/matches.html";
@@ -51,10 +61,9 @@ async function matchesSmoke() {
 }
 
 async function findCinemaSession() {
-  const page = "/2026/09/movies-series.html";
   let last = null;
   for (const origin of LEGACY_ORIGINS) {
-    const session = await json(CINEMA + "session", { headers: headersFor(origin, page) });
+    const session = await json(CINEMA + "session", { headers: cinemaHeaders(origin) });
     console.log("INFO cinema origin probe", { origin, status: session.status, message: session.data?.message || "", ms: session.ms });
     if (session.ok && session.data?.status === "success" && session.data?.token) return { origin, session };
     last = session;
@@ -68,18 +77,17 @@ async function cinemaSmoke() {
   const selected = await findCinemaSession();
   if (!selected) return;
   const { origin, session } = selected;
-  const page = "/2026/09/movies-series.html";
   const token = encodeURIComponent(String(session.data.token));
   const genreUrl = encodeURIComponent("https://akwam.ss/series?section=30");
-  const genre = await json(CINEMA + "?action=genre&genre=" + genreUrl + "&p=1&token=" + token, { headers: headersFor(origin, page) });
+  const genre = await json(CINEMA + "?action=genre&genre=" + genreUrl + "&p=1&token=" + token, { headers: cinemaHeaders(origin) });
   assert(genre.ok && genre.data?.status === "success" && Array.isArray(genre.data?.data), "cinema category", { status: genre.status, ms: genre.ms, count: genre.data?.data?.length, body: genre.text });
 
-  const search = await json(CINEMA + "?action=search&q=" + encodeURIComponent("الذئب الوحيد") + "&token=" + token, { headers: headersFor(origin, page) });
+  const search = await json(CINEMA + "?action=search&q=" + encodeURIComponent("الذئب الوحيد") + "&token=" + token, { headers: cinemaHeaders(origin) });
   assert(search.ok && search.data?.status === "success" && Array.isArray(search.data?.data), "cinema search contract", { status: search.status, ms: search.ms, count: search.data?.data?.length, body: search.text });
 
   const sample = (search.data?.data || []).find(x => x?.href) || (genre.data?.data || []).find(x => x?.href);
   if (sample?.href) {
-    const details = await json(CINEMA + "?action=series&series=" + encodeURIComponent(sample.href) + "&token=" + token, { headers: headersFor(origin, page) });
+    const details = await json(CINEMA + "?action=series&series=" + encodeURIComponent(sample.href) + "&token=" + token, { headers: cinemaHeaders(origin) });
     assert(details.ok && details.data?.status === "success", "cinema details", { status: details.status, ms: details.ms, episodes: details.data?.episodes?.length, media: Boolean(details.data?.media_src), iframe: Boolean(details.data?.is_iframe), body: details.text });
   } else {
     assert(false, "cinema sample has href", { searchCount: search.data?.data?.length, genreCount: genre.data?.data?.length });
