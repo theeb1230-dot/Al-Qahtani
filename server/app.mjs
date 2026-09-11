@@ -1,4 +1,5 @@
 import http from "node:http";
+import https from "node:https";
 import crypto from "node:crypto";
 import {
   assertSourceUrl,
@@ -41,6 +42,17 @@ function sendJson(res, status, data) {
 
 function log(event, data = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...data }));
+}
+
+function safeHeaderUrl(value) {
+  const raw = String(value || "");
+  try {
+    const url = new URL(raw);
+    url.pathname = url.pathname.split("/").map(segment => encodeURIComponent(decodeURIComponent(segment))).join("/");
+    return url.href;
+  } catch {
+    return encodeURI(raw);
+  }
 }
 
 async function fetchTextJson(url, init = {}, timeoutMs = 45_000) {
@@ -236,6 +248,45 @@ async function cinemaDetails(ref) {
   }
 }
 
+function requestMedia(target, headers, { allowBrokenChain = false, redirects = 0 } = {}) {
+  return new Promise((resolve, reject) => {
+    const request = https.request(target, {
+      method: "GET",
+      headers,
+      rejectUnauthorized: !allowBrokenChain,
+    }, (response) => {
+      const status = Number(response.statusCode || 0);
+      const location = response.headers.location;
+      if ([301, 302, 303, 307, 308].includes(status) && location && redirects < 4) {
+        response.resume();
+        try {
+          const next = assertSourceUrl(new URL(location, target).href, { allowMedia: true });
+          resolve(requestMedia(next, headers, { allowBrokenChain, redirects: redirects + 1 }));
+        } catch (error) {
+          reject(error);
+        }
+        return;
+      }
+      resolve(response);
+    });
+    request.setTimeout(60_000, () => request.destroy(new Error("MEDIA_UPSTREAM_TIMEOUT")));
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+async function openMedia(target, headers) {
+  try {
+    return await requestMedia(target, headers);
+  } catch (error) {
+    const tlsCodes = new Set(["UNABLE_TO_VERIFY_LEAF_SIGNATURE", "SELF_SIGNED_CERT_IN_CHAIN", "DEPTH_ZERO_SELF_SIGNED_CERT"]);
+    const host = target.hostname.toLowerCase();
+    if (!tlsCodes.has(String(error?.code || "")) || !host.endsWith(".downet.net")) throw error;
+    log("media_tls_compat", { host, code: String(error.code) });
+    return requestMedia(target, headers, { allowBrokenChain: true });
+  }
+}
+
 async function proxyMedia(req, res, id) {
   const entry = mediaRefs.get(id);
   if (!entry || entry.expiresAt <= Date.now()) {
@@ -243,29 +294,33 @@ async function proxyMedia(req, res, id) {
     return sendJson(res, 404, { status: "error", message: "MEDIA_REFERENCE_EXPIRED" });
   }
   const target = assertSourceUrl(entry.url, { allowMedia: true });
-  const headers = { Accept: "*/*", Referer: entry.referer || BasriSource.origin + "/", "User-Agent": BasriSource.userAgent };
+  const headers = {
+    Accept: "*/*",
+    Referer: safeHeaderUrl(entry.referer || BasriSource.origin + "/"),
+    "User-Agent": BasriSource.userAgent,
+  };
   if (req.headers.range) headers.Range = req.headers.range;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60_000);
   try {
-    const upstream = await fetch(target, { headers, signal: controller.signal, redirect: "follow", cache: "no-store" });
-    if (!upstream.ok && upstream.status !== 206) return sendJson(res, upstream.status, { status: "error", message: `MEDIA_UPSTREAM_${upstream.status}` });
+    const upstream = await openMedia(target, headers);
+    const status = Number(upstream.statusCode || 502);
+    if (status < 200 || status >= 300) {
+      upstream.resume();
+      return sendJson(res, status, { status: "error", message: `MEDIA_UPSTREAM_${status}` });
+    }
     applyCors(req, res);
     for (const name of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
-      const value = upstream.headers.get(name);
+      const value = upstream.headers[name];
       if (value) res.setHeader(name, value);
     }
-    if (!upstream.headers.get("content-type")) res.setHeader("Content-Type", "video/mp4");
+    if (!upstream.headers["content-type"]) res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Cache-Control", "no-store");
-    res.statusCode = upstream.status;
-    if (!upstream.body) return res.end();
-    for await (const chunk of upstream.body) res.write(chunk);
+    res.statusCode = status;
+    for await (const chunk of upstream) res.write(chunk);
     res.end();
   } catch (error) {
+    log("media_proxy_failed", { host: target.hostname, code: String(error?.code || ""), error: String(error?.message || error) });
     if (!res.headersSent) return sendJson(res, 502, { status: "error", message: "MEDIA_PROXY_FAILED" });
     res.destroy(error);
-  } finally {
-    clearTimeout(timer);
   }
 }
 
