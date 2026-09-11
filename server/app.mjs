@@ -9,6 +9,7 @@ import {
   directWatch,
   BasriSource,
 } from "./basri-source.mjs";
+import { buildDownloadContentDisposition, sanitizeDownloadFilename } from "./download-filename.mjs";
 
 const MATCHES = "https://api.albasritv1.workers.dev/";
 const CINEMA = "https://albas.albesriali03.workers.dev/";
@@ -51,7 +52,7 @@ function applyCors(req, res) {
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Range");
-  res.setHeader("Access-Control-Expose-Headers", "Content-Type,Content-Length,Content-Range,Accept-Ranges");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Type,Content-Length,Content-Range,Accept-Ranges,Content-Disposition");
 }
 
 function sendJson(res, status, data) {
@@ -175,10 +176,11 @@ function normalizeCatalog(items = []) {
   }).filter((item) => item.href);
 }
 
-function storeMedia(url, referer = BasriSource.origin + "/") {
+function storeMedia(url, referer = BasriSource.origin + "/", metadata = {}) {
   const parsed = assertSourceUrl(url, { allowMedia: true });
   const id = crypto.randomBytes(18).toString("base64url");
-  mediaRefs.set(id, { url: parsed.href, referer, expiresAt: Date.now() + mediaRefTtlMs });
+  const downloadName = sanitizeDownloadFilename(metadata.title || metadata.filename || "al-qahtani-media");
+  mediaRefs.set(id, { url: parsed.href, referer, downloadName, expiresAt: Date.now() + mediaRefTtlMs });
   if (mediaRefs.size > 256) {
     const now = Date.now();
     for (const [key, value] of mediaRefs) if (value.expiresAt <= now) mediaRefs.delete(key);
@@ -186,9 +188,9 @@ function storeMedia(url, referer = BasriSource.origin + "/") {
   return id;
 }
 
-export function __createMediaReferenceForTest(url, referer = BasriSource.origin + "/") {
+export function __createMediaReferenceForTest(url, referer = BasriSource.origin + "/", metadata = {}) {
   requireTestMode();
-  return `/api/cinema/media?id=${encodeURIComponent(storeMedia(url, referer))}`;
+  return `/api/cinema/media?id=${encodeURIComponent(storeMedia(url, referer, metadata))}`;
 }
 
 function wrapEpisodes(episodes = []) {
@@ -206,7 +208,8 @@ function wrapEpisodes(episodes = []) {
 function normalizeWorkerDetails(data = {}) {
   const normalized = { ...data, status: "success", source: "basri-worker", episodes: wrapEpisodes(data.episodes || []) };
   if (data.media_src && !data.is_iframe) {
-    const id = storeMedia(String(data.media_src), BASRI_REFERER);
+    const title = data.movie_title || data.title || "al-qahtani-media";
+    const id = storeMedia(String(data.media_src), BASRI_REFERER, { title });
     normalized.media_path = `/api/cinema/media?id=${encodeURIComponent(id)}`;
     delete normalized.media_src;
     normalized.media_type = data.media_type || "stream";
@@ -244,11 +247,12 @@ async function directDetailsResolved(target) {
   if (Array.isArray(details.watch) && details.watch.length) {
     const watch = await directWatch(details.watch[0], target);
     if (watch.status !== "success" || !watch.media_src) throw new Error("DIRECT_WATCH_NO_MEDIA");
-    const id = storeMedia(watch.media_src, details.watch[0]);
+    const title = details.movie_title || watch.movie_title || "al-qahtani-media";
+    const id = storeMedia(watch.media_src, details.watch[0], { title });
     return {
       status: "success",
       source: "basri-direct",
-      movie_title: details.movie_title || watch.movie_title || "",
+      movie_title: title,
       episodes: [],
       media_path: `/api/cinema/media?id=${encodeURIComponent(id)}`,
       media_type: "stream",
@@ -337,6 +341,11 @@ async function proxyMedia(req, res, id) {
       if (value) res.setHeader(name, value);
     }
     if (!upstream.headers["content-type"]) res.setHeader("Content-Type", "video/mp4");
+    const requestUrl = new URL(req.url || "/", "http://localhost");
+    if (requestUrl.searchParams.get("download") === "1") {
+      res.setHeader("Content-Disposition", buildDownloadContentDisposition(entry.downloadName));
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    }
     res.setHeader("Cache-Control", "no-store");
     res.statusCode = status;
     for await (const chunk of upstream) res.write(chunk);
