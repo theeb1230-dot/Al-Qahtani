@@ -7,59 +7,44 @@ GitHub repository state wins over this handoff if they disagree. The preserved `
 - `Al-Qahtani` is independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, and every Theeb provider/API.
 - `THEEB_SERVICE_TOKEN` and other cross-project credentials do not belong here.
 - Historical `https://akwam.ss/...` URLs are part of the original Basri cinema contract only; their presence is not integration with the separate akwam-indexer repository.
-- Matches/news remain on original Basri workers. Cinema remains on the original Basri chain with server-side fallback to the historical Basri source when the origin-locked cinema Worker returns `403 FORBIDDEN_ORIGIN` or unusable empty data.
+- Matches/news remain on original Basri workers. Cinema stays on the original Basri chain with server-side direct fallback to the historical Basri source when the origin-locked cinema Worker fails or returns unusable empty data.
 
 ## Current repository state
-- Product `main`: `2a02d33e989ab6056366ab8642df5a1d68500580` (`Fix iPhone movie playback MIME handling`), merged from PR #42.
-- Active PR: #43 `Gate live iPhone movie container compatibility` on `test/live-ios-container-43`.
-- PR #43 is the only active PR and must be completed before opening another PR.
-- Latest code head before this documentation update: `b3fcab140299b2135276e15a21b8a5fa67f6c43d`.
-- This documentation update creates a newer final head, so merge is allowed only after all required gates are green on that exact newest head.
+- Product `main` at start of this run: `39e3ccfc9241ab88ab2f093dad67fb5cea5aebeb` (`Fix iPhone MPEG-TS movie playback`).
+- Active PR: #44 `Fix Basri episode numbering at the source` on `fix/content-normalization-44`.
+- Code/test head before this documentation update: `9e892f022ccef1a48aa7e158fd602af97a7b3fab`.
+- This documentation update creates a newer head, so merge is allowed only after required checks are green on the exact final head.
 
-## iPhone Safari movie playback incident
-User evidence showed movie categories/details and Download work, but Watch begins loading and stops with Safari's unsupported-source icon. Range/download success alone therefore does not prove Safari playback compatibility.
+## Proven iPhone Safari playback state
+The user tested the deployed site on a real iPhone Safari after PR #43. Playback now works broadly for movies/series/anime, including iOS native controls, fullscreen, seeking/time display on multiple sources. Keep the MPEG-TS/HLS wrapper and its regressions intact. Do not reopen the old incident as if all playback is still broken.
 
-## Proven live byte-level root cause
-A real Basri movie (`The Beloved`, category `أجنبية`) resolves through `basri-direct` to an opaque `/api/cinema/media?id=...` reference. Live bounded probing proved:
-- HTTP `206`
-- `Accept-Ranges: bytes`
-- generic upstream/proxy MIME `application/octet-stream`
-- file size `1147681720` bytes from `Content-Range`
-- working bounded Download with trusted filename
-- first bytes `47 40 00 10 00 00 b0 0d 00 01 c1 00 00 00 01 ef ...`
+## User-reported remaining regressions
+1. Episode buttons show upstream content IDs such as `89517`, `101847`, `48829` instead of human episode numbers.
+2. Some cinema/search entries behave like download-only or preview material rather than ordinary watchable content; the reported example was `Grand Theft Auto VI: An Extended Look`. This must be handled by general validity checks, not title-specific blocking.
+3. Some anime/MPEG-TS sources have unstable inline duration/timeline behavior; frames can advance while embedded duration is absent or misleading, with duration appearing only after fullscreen.
 
-Those bytes are MPEG-2 Transport Stream data beginning with sync byte `0x47`, not MP4. The old player treated the movie as a generic direct stream, matching the reported Safari unsupported-source symptom.
+## PR #44 root cause and fix
+`server/basri-source.mjs` previously extracted episode numbers from the URL and could fall back to a trailing numeric path component. On source variants where the canonical episode slug is absent from the href, that numeric component is the upstream episode ID, not the display number.
 
-## PR #43 playback strategy
-- The existing 4 KiB preflight identifies MP4, HLS, Matroska/WebM, and MPEG-TS from bytes/MIME rather than trusting `stream` or `video/mp4` labels.
-- Verified MPEG-TS is not handed to the video element as a generic octet-stream URL.
-- `Player.html` builds an in-memory HLS manifest Blob whose only segment URL is the opaque Al-Qahtani `/api/cinema/media?id=...` reference, then reuses the existing native-HLS/Hls.js playback path.
-- The temporary Blob URL is revoked when playback stops or changes.
-- The generated manifest never exposes `akwam.ss`, `downet.net`, or another upstream media host.
-- Download remains unchanged in the original Basri cinema details/episode flow. No player-level Download UI is introduced.
+PR #44 now:
+- parses canonical `الحلقة-N` / `episode-N` when present;
+- parses visible anchor text plus `title` / `aria-label` when the href omits the canonical slug;
+- keeps `episode_id` separate from `episode_number`;
+- never intentionally promotes the `/episode/<id>/` identifier to the UI number;
+- uses only a bounded positional fallback when no explicit display number exists;
+- sorts parsed episodes by normalized display number.
 
-## WebKit and live-container regression evidence
-- The first live-container gate intentionally failed while Range/download passed, exposing the actual MPEG-TS container behind `application/octet-stream`.
-- Later Remote movie playback runs classify the same live movie as `mpeg-ts` and continue to require 206/Content-Range/Accept-Ranges.
-- The MPEG-TS-specific WebKit regression instruments `URL.createObjectURL`, inspects the actual generated manifest Blob, requires MIME `application/vnd.apple.mpegurl`, `#EXTM3U`, the exact opaque Al-Qahtani media URL, and rejects upstream-host leakage.
-- Mobile WebKit on code head `223547b3ea2c9358ef7dc4566359b418c95a2e4e` passed before the later smoke-hardening commit.
-
-## Latest CI failure and root fix
-On head `223547b3ea2c9358ef7dc4566359b418c95a2e4e`, nine required gates passed and only Live provider smoke run `34653224238` failed.
-
-Exact failure evidence from job `103439884629`:
-- the external provider probe passed matches, cinema category HTML, search, direct details, episode, watch-page media resolution, legacy-TLS detection, and news;
-- local backend search/category also passed;
-- the single details candidate chosen by `scripts/local_backend_smoke.mjs` hit the backend's bounded upstream timeout after about 30 seconds and returned 502 with `This operation was aborted`.
-
-This was a transient upstream details timeout in the smoke's first chosen candidate, not a regression in the iPhone movie fix. Commit `b3fcab140299b2135276e15a21b8a5fa67f6c43d` hardens the smoke without weakening the product contract:
-- details candidates are deduplicated from the already-proven search and category results;
-- at most three candidates are tried sequentially;
-- each attempt remains bounded;
-- success still requires `basri-worker` or `basri-direct` status success;
-- no arbitrary host, retry storm, or cross-project fallback is introduced.
-
-Fresh CI on `b3fcab140299b2135276e15a21b8a5fa67f6c43d` then passed all ten required gates, including Live provider smoke run `34653448584`, Remote movie playback run `34653448595`, Mobile WebKit run `34653448569`, and Web smoke run `34653448689`.
+## Regression evidence on code head `9e892f0...`
+- Web smoke run `34656165726`: success. Its deterministic `scripts/episode_number_test.mjs` proves IDs `89517`, `89542`, `89760` remain separate while displayed numbers are `1,2,3`.
+- Live provider smoke run `34656165687`: success. Its live step `Verify live episode numbering uses display numbers, not source IDs` passed against the preserved Basri source using `scripts/live_episode_number_probe.mjs` and a real series search.
+- Remote movie playback run `34656165722`: success, preserving the movie playback/Range regression.
+- Remote CORS `34656165717`: success.
+- CORS boundary `34656165639`: success.
+- Original Basri player contract `34656165840`: success.
+- Original Basri download contract `34656165714`: success.
+- Media reference expiry `34656165700`: success.
+- Trusted download filename `34656165576`: success.
+- Mobile WebKit `34656165667` was still running when this documentation update was prepared; final merge requires it and all checks to succeed on the newer documentation head too.
 
 ## Security/runtime invariants
 - Search/Category → Details → Episodes → Watch/Download → Media remains the Basri flow.
@@ -68,44 +53,23 @@ Fresh CI on `b3fcab140299b2135276e15a21b8a5fa67f6c43d` then passed all ten requi
 - `.downet.net` TLS compatibility stays narrowly scoped; unrelated TLS stays strict.
 - Range proxying must preserve HTTP 206, `Content-Range`, and `Accept-Ranges: bytes`.
 - Worker/session data stays server-side.
-- Referer values must remain URL-safe/ASCII-safe to avoid the prior ByteString failure with Arabic paths.
+- Referer values remain URL-safe/ASCII-safe to avoid the prior ByteString failure with Arabic paths.
 - Ads/popups/unneeded tracking and Basri-app Intent/deep-link handoff remain prohibited.
 
-## Required final-head gates
-- Web smoke
-- Live provider smoke
-- Mobile WebKit smoke, including MPEG-TS HLS-wrapper regression
-- Remote movie playback smoke, including live container probe
-- Remote CORS smoke
-- CORS boundary
-- Original Basri player contract
-- Original Basri download contract
-- Media reference expiry
-- Trusted download filename
-
 ## Render evidence / blocker
-The Render connector exposes two workspaces owned by the account:
-- `My Workspace` (`tea-da2kb22jnfac73dpui5g`)
-- `بيانات` (`tea-dae92bgn74is73cs92ug`)
-
-No trustworthy repository evidence identifies which workspace owns Al-Qahtani. Do not guess and do not claim direct Render log inspection. External deployed tests against `https://al-qahtani-api.onrender.com` remain valid runtime evidence.
+The account exposes multiple Render workspaces, but repository evidence still does not identify which workspace owns Al-Qahtani. Do not guess and do not claim direct Render log inspection. External deployed tests against `https://al-qahtani-api.onrender.com` remain valid runtime evidence.
 
 ## Web parity / Flutter status
-Web parity is not yet declared complete. Flutter remains blocked until:
-1. PR #43 newest head is green on every required gate;
-2. PR #43 is merged;
-3. GitHub Pages and the deployed backend are verified for the exact resulting main commit;
-4. the live real-movie path still proves MPEG-TS/HLS handling and Safari Range after deployment;
-5. actual iPhone Safari behavior no longer shows the unsupported-source failure. CI/WebKit evidence must not be presented as 100% proof of the user's physical iPhone until the live user-device test succeeds.
+Flutter remains blocked. Real iPhone playback is broadly proven, but Web parity is not complete until episode numbering is deployed and retested, invalid/download-only entries are handled generically, and Safari timeline/duration/seek behavior is acceptable or accurately represented for sources without reliable duration metadata.
 
 ## Next-run goals
-1. Inspect the newest PR #43 head created by this documentation update and require all ten gates green on that exact head.
-2. Fetch exact logs for any failure and fix only on `test/live-ios-container-43`.
-3. Merge #43 only after the final head is fully green.
-4. After merge, capture the exact resulting `main` SHA and verify GitHub Pages deployment for that commit.
-5. Verify the deployed Al-Qahtani backend after its auto-deploy wait with real movie container/Range/download probes.
-6. Keep matches/news/search/categories/details/episodes/watch/download/CORS/security regressions green.
-7. Re-test `The Beloved` or another real Basri movie through the deployed path and confirm MPEG-TS is wrapped through the HLS path.
-8. Do not treat Download or Range success alone as playback proof.
-9. If actual Safari still fails, inspect transport-stream program/codec metadata and original Basri alternate media before considering any remux/transmux; avoid paid/heavy transcoding unless evidence proves it necessary.
-10. Do not begin Flutter until live Web/iPhone movie playback is genuinely proven.
+1. Require all PR #44 checks green on the exact newest head, fetch exact logs for any failure, and fix only on `fix/content-normalization-44`.
+2. Merge PR #44 only after final-head green status.
+3. After merge, wait for GitHub Pages/backend deployment and retest several real series so episode buttons show human numbers rather than upstream IDs.
+4. Add a live/deployed episode-number gate after merge so IDs cannot regress into the UI.
+5. Investigate the reported download-only/preview anomaly generically by tracing Category/Search → Details → Watch/Download for affected entries; do not blacklist titles by name.
+6. Define content validity using the original Basri contract and media-path evidence, preserving legitimate short films/documentaries.
+7. Inspect MPEG-TS/HLS duration behavior: `loadedmetadata`, `durationchange`, `seekable`, native Safari fullscreen versus embedded behavior.
+8. Remove the current synthetic `#EXTINF:43200` duration if evidence shows it misleads Safari; prefer real duration metadata or an honest unknown-duration strategy without breaking playback.
+9. Keep existing movie playback, Safari Range, CORS, download, expiry, filename, no-ad/no-intent and no-Theeb-integration gates green.
+10. Do not begin Flutter until the live Web parity conditions above are satisfied.
