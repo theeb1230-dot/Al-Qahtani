@@ -13,8 +13,23 @@ GitHub repository state wins over this handoff if they disagree. The checked-in 
 - PRs #17 through #40 are merged, including PR #35 after it was reconciled with the newer #36-#40 work.
 - Product `main`: `99148e2a06c7cf228f8097d9f0086030ddc4088d` (`Harden Basri live smoke reliability`).
 - Active PR: #41 `Record deployed CORS and parser evidence` on `docs/deployed-cors-evidence-41`.
+- Previous #41 final-head commit `c69e275d38516901ac149aa0ce0df43614359988` was mergeable and all required gates were green.
+- A squash merge attempt using that exact expected head was blocked by the connector safety layer before GitHub mutation; this is an execution-permission/tooling blocker, not a CI or repository mergeability failure.
 - No cross-project Theeb/akwam-indexer runtime dependency is present.
 - Live Web parity is proven through the deployed Al-Qahtani backend and the exact `main` commit above.
+
+## PR #41 final-head CI evidence before the documented handoff update
+All checks on `c69e275d38516901ac149aa0ce0df43614359988` completed successfully:
+- Web smoke run `34635308068` — success.
+- Live provider smoke run `34635308171` — success.
+- Mobile WebKit smoke run `34635308087` — success.
+- Remote movie playback smoke run `34635308122` — success.
+- Remote CORS smoke run `34635308081` — success.
+- CORS boundary run `34635308126` — success.
+- Original Basri player contract run `34635308117` — success.
+- Original Basri download contract run `34635308089` — success.
+- Media reference expiry run `34635308105` — success.
+- Trusted download filename run `34635308127` — success.
 
 ## Proven engineering boundaries
 - Search/category/details/episodes/playback use the original Basri chain.
@@ -32,7 +47,7 @@ GitHub repository state wins over this handoff if they disagree. The checked-in 
 ## Recent merged work
 ### PR #35 — Basri smoke reliability hardening
 Merged as `99148e2a06c7cf228f8097d9f0086030ddc4088d`.
-- `scripts/local_backend_smoke.mjs` now tries at most three playable episode candidates sequentially so one transient upstream media failure does not falsely fail the whole Basri chain.
+- `scripts/local_backend_smoke.mjs` tries at most three playable episode candidates sequentially so one transient upstream media failure does not falsely fail the whole Basri chain.
 - A successful candidate still must resolve through `/api/cinema/media?id=...`, pass Safari Range, and pass safe download attachment/nosniff checks.
 - `.github/workflows/remote-cors-smoke.yml` waits for candidate backend `/health` before probing, eliminating the observed localhost startup race.
 - An attempted player-level Download control was removed after PR #36 proved that behavior did not exist in the original Basri player contract.
@@ -77,22 +92,26 @@ The deployed path has proven backend health, matches, Basri news, Arabic search,
 
 ## Render evidence and limitation
 - External deployed tests target `https://al-qahtani-api.onrender.com` after workflow auto-deploy waits and prove live behavior.
-- Direct Render workspace inspection is not claimed. `Render.list_services` returned `no workspace selected`; the connector requires a user-confirmed workspace and autonomous execution must not guess one.
+- Direct Render workspace inspection is not claimed. The connector currently exposes two workspaces owned by the same account: `My Workspace` (`tea-da2kb22jnfac73dpui5g`) and `بيانات` (`tea-dae92bgn74is73cs92ug`). Autonomous execution must not guess which workspace owns Al-Qahtani, so direct deployment/log inspection remains blocked until the workspace is confirmed by trustworthy context.
 
 ## Flutter readiness
-- Web parity is sufficiently proven to begin Flutter incrementally.
+- Web parity is sufficiently proven to begin Flutter incrementally once PR #41 is actually merged and its post-merge state is verified.
 - Do not duplicate provider scraping inside Flutter; Flutter must consume only the proven Al-Qahtani backend contract.
 - Before creating Flutter files, inspect the repository tree and preserved baseline for any historical mobile scaffold/assets.
 - Preserve Arabic/RTL, Android Mobile, Android TV D-Pad/remote, and iOS media constraints from the first Flutter foundation.
 
+## Blockers
+1. PR #41 is mergeable and its previous final head passed every required gate, but the available merge action was blocked by the connector safety layer before GitHub mutation.
+2. Direct Render log/deployment inspection cannot be attributed safely because two workspaces are visible and neither is confirmed as the Al-Qahtani workspace.
+
 ## Next run goals
-1. Finish PR #41 and merge only after all final-head gates are green.
-2. After #41, inspect repository tree and baseline archive for any historical Flutter scaffold/mobile assets before creating new Flutter files.
-3. If no scaffold exists, introduce the smallest Flutter foundation using only the Al-Qahtani backend.
-4. Start with shared API/domain models and navigation, not provider scraping.
-5. Preserve matches, news, cinema search/categories/details/episodes/playback/download.
-6. Keep Android TV D-Pad/focus semantics first-class.
-7. Keep iOS playback/download aligned with the proven Range/media proxy contract.
-8. Add Flutter analyze/test/build gates before claiming mobile parity.
-9. Continue parser/provider-health maintenance only from demonstrated evidence.
-10. Treat GitHub state, preserved Basri archive, and deployed runtime tests as authoritative over this handoff.
+1. Re-check the new #41 head created by this documentation update and require all final-head gates to be green again.
+2. Retry merging #41 only if the merge action is permitted; never bypass the PR gate or push the branch directly into `main` as a substitute.
+3. After a real merge, verify the exact resulting `main` commit and post-merge GitHub Pages/runtime gates.
+4. Keep external deployed runtime tests as the Render evidence unless a workspace becomes reliably identified.
+5. After #41 is merged and post-merge Web parity remains green, inspect repository tree and baseline archive for historical Flutter scaffold/mobile assets.
+6. If no scaffold exists, introduce the smallest Flutter foundation using only the Al-Qahtani backend.
+7. Start with shared API/domain models and navigation, not provider scraping.
+8. Preserve matches, news, cinema search/categories/details/episodes/playback/download.
+9. Keep Android TV D-Pad/focus and iOS Range/media constraints first-class.
+10. Continue parser/provider-health maintenance only from demonstrated evidence; GitHub, the preserved Basri archive, and deployed runtime tests remain authoritative.
