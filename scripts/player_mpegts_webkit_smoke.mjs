@@ -83,6 +83,8 @@ try {
     await route.fulfill({
       status: 206,
       headers: {
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "Content-Type,Content-Length,Content-Range,Accept-Ranges",
         "content-type": "application/octet-stream",
         "accept-ranges": "bytes",
         "content-range": `bytes ${start}-${end}/${TOTAL_BYTES}`,
