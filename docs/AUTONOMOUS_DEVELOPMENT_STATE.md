@@ -11,67 +11,55 @@ GitHub repository state wins over this handoff if they disagree. The preserved `
 
 ## Current repository state
 - Product `main`: `2a02d33e989ab6056366ab8642df5a1d68500580` (`Fix iPhone movie playback MIME handling`), merged from PR #42.
-- GitHub Pages build/deploy for exact `2a02d33e...` completed successfully.
 - Active PR: #43 `Gate live iPhone movie container compatibility` on `test/live-ios-container-43`.
-- PR #43 is the only active development branch/PR and must be completed before opening another PR.
-- Code/test head before this documentation update: `a76937106583bcf0f74fc22d7e02c891a2971721`.
-- This documentation update creates a newer head. All required CI must therefore be evaluated on that newest head before merge.
+- PR #43 is the only active PR and must be completed before opening another PR.
+- Latest code head before this documentation update: `b3fcab140299b2135276e15a21b8a5fa67f6c43d`.
+- This documentation update creates a newer final head, so merge is allowed only after all required gates are green on that exact newest head.
 
 ## iPhone Safari movie playback incident
-User evidence showed movie categories/details and Download work, but Watch begins loading and stops with Safari's unsupported-source icon. This invalidated the earlier assumption that HTTP Range success alone proved playback compatibility.
+User evidence showed movie categories/details and Download work, but Watch begins loading and stops with Safari's unsupported-source icon. Range/download success alone therefore does not prove Safari playback compatibility.
 
-## Live byte-level evidence and root cause
-The normal Al-Qahtani/Basri path resolved a real movie:
-- category: `أجنبية`
-- title: `The Beloved`
-- source: `basri-direct`
-- opaque media path: `/api/cinema/media?id=...`
-- media size: `1147681720` bytes from `Content-Range`
-- Range: HTTP `206`
+## Proven live byte-level root cause
+A real Basri movie (`The Beloved`, category `أجنبية`) resolves through `basri-direct` to an opaque `/api/cinema/media?id=...` reference. Live bounded probing proved:
+- HTTP `206`
 - `Accept-Ranges: bytes`
-- upstream/proxy MIME: `application/octet-stream`
-- bounded Download: success with trusted `The Beloved` filename and `X-Content-Type-Options: nosniff`
+- generic upstream/proxy MIME `application/octet-stream`
+- file size `1147681720` bytes from `Content-Range`
+- working bounded Download with trusted filename
+- first bytes `47 40 00 10 00 00 b0 0d 00 01 c1 00 00 00 01 ef ...`
 
-The first bytes from `Range: bytes=0-4095` were:
-`47 40 00 10 00 00 b0 0d 00 01 c1 00 00 00 01 ef ...`
-
-That is MPEG-2 Transport Stream packet data beginning with sync byte `0x47`, not MP4. The previous smoke therefore proved fetch/download transport, not Safari playback.
+Those bytes are MPEG-2 Transport Stream data beginning with sync byte `0x47`, not MP4. The old player treated the movie as a generic direct stream, matching the reported Safari unsupported-source symptom.
 
 ## PR #43 playback strategy
-1. PR #42 already added byte/MIME inspection for MP4/HLS/Matroska, but the real source was MPEG-TS served as generic octet-stream.
-2. PR #43 added MPEG-TS detection and a live container gate. The first diagnostic run failed with `IOS_SAFARI_INCOMPATIBLE_CONTAINER_unknown`, while Range/download still passed, which exposed the real root cause.
-3. A later head recognized MPEG-TS and initially tried a bare `video/mp2t` source. Container classification passed, but MIME identity alone is not sufficient proof that Safari will play a standalone TS URL.
-4. Current code does not hand the raw opaque TS URL directly to the video element. `Player.html` builds a short-lived in-memory HLS `.m3u8` Blob playlist whose only media segment is the same opaque Al-Qahtani `/api/cinema/media?id=...` URL, then reuses the existing native-HLS/Hls.js path.
+- The existing 4 KiB preflight identifies MP4, HLS, Matroska/WebM, and MPEG-TS from bytes/MIME rather than trusting `stream` or `video/mp4` labels.
+- Verified MPEG-TS is not handed to the video element as a generic octet-stream URL.
+- `Player.html` builds an in-memory HLS manifest Blob whose only segment URL is the opaque Al-Qahtani `/api/cinema/media?id=...` reference, then reuses the existing native-HLS/Hls.js playback path.
+- The temporary Blob URL is revoked when playback stops or changes.
+- The generated manifest never exposes `akwam.ss`, `downet.net`, or another upstream media host.
+- Download remains unchanged in the original Basri cinema details/episode flow. No player-level Download UI is introduced.
 
-Current safeguards:
-- bounded 4 KiB preflight detects MP4, HLS, Matroska/WebM, and MPEG-TS from real bytes/MIME;
-- generated HLS manifest contains only the opaque Al-Qahtani media URL, never `akwam.ss` or `downet.net`;
-- temporary HLS Blob URL is revoked when playback stops or switches;
-- `scripts/live_ios_container_probe.mjs` prevents Range/download success from masquerading as container compatibility;
-- `scripts/player_mpegts_webkit_smoke.mjs` requires an HLS Blob source, `#EXTM3U`, the exact opaque media URL, and no upstream-host leakage;
-- Download remains unchanged in the original Basri cinema details/episode flow;
-- no player-level Download UI is introduced.
+## WebKit and live-container regression evidence
+- The first live-container gate intentionally failed while Range/download passed, exposing the actual MPEG-TS container behind `application/octet-stream`.
+- Later Remote movie playback runs classify the same live movie as `mpeg-ts` and continue to require 206/Content-Range/Accept-Ranges.
+- The MPEG-TS-specific WebKit regression instruments `URL.createObjectURL`, inspects the actual generated manifest Blob, requires MIME `application/vnd.apple.mpegurl`, `#EXTM3U`, the exact opaque Al-Qahtani media URL, and rejects upstream-host leakage.
+- Mobile WebKit on code head `223547b3ea2c9358ef7dc4566359b418c95a2e4e` passed before the later smoke-hardening commit.
 
-## Latest WebKit failure and fix
-Final-head Mobile WebKit run `34653018235` on `a03d13dc813441211c68ad82b764ed0170500ace` failed only in the new MPEG-TS wrapper regression after the ordinary cinema/navigation WebKit coverage passed.
+## Latest CI failure and root fix
+On head `223547b3ea2c9358ef7dc4566359b418c95a2e4e`, nine required gates passed and only Live provider smoke run `34653224238` failed.
 
-Exact failure:
-- job `103439243161`
-- step `Verify MPEG-TS media typing in iPhone WebKit`
-- error: `page.evaluate: TypeError: Load failed`
-- failing test behavior: the test attempted `fetch(blob:)` against the HLS object URL inside Playwright WebKit.
+Exact failure evidence from job `103439884629`:
+- the external provider probe passed matches, cinema category HTML, search, direct details, episode, watch-page media resolution, legacy-TLS detection, and news;
+- local backend search/category also passed;
+- the single details candidate chosen by `scripts/local_backend_smoke.mjs` hit the backend's bounded upstream timeout after about 30 seconds and returned 502 with `This operation was aborted`.
 
-This was a test-observation problem, not evidence that the HLS manifest itself was absent. The same test already observed the `<video>` source as a `blob:` URL before the failing fetch.
+This was a transient upstream details timeout in the smoke's first chosen candidate, not a regression in the iPhone movie fix. Commit `b3fcab140299b2135276e15a21b8a5fa67f6c43d` hardens the smoke without weakening the product contract:
+- details candidates are deduplicated from the already-proven search and category results;
+- at most three candidates are tried sequentially;
+- each attempt remains bounded;
+- success still requires `basri-worker` or `basri-direct` status success;
+- no arbitrary host, retry storm, or cross-project fallback is introduced.
 
-Fix committed on the same PR as `a76937106583bcf0f74fc22d7e02c891a2971721`:
-- instrument `URL.createObjectURL` before page load;
-- retain the actual Blob object created by `Player.html`;
-- inspect `Blob.text()` directly rather than fetching its `blob:` URL;
-- require MIME `application/vnd.apple.mpegurl`;
-- require `#EXTM3U` plus the exact opaque Al-Qahtani media URL;
-- reject any `akwam.ss` or `downet.net` leakage.
-
-A fresh ten-gate CI cycle started on `a769371...`; it was queued/running at this handoff. This documentation commit creates another newer head, so its CI must be used instead of any older result.
+Fresh CI on `b3fcab140299b2135276e15a21b8a5fa67f6c43d` then passed all ten required gates, including Live provider smoke run `34653448584`, Remote movie playback run `34653448595`, Mobile WebKit run `34653448569`, and Web smoke run `34653448689`.
 
 ## Security/runtime invariants
 - Search/Category → Details → Episodes → Watch/Download → Media remains the Basri flow.
@@ -83,15 +71,7 @@ A fresh ten-gate CI cycle started on `a769371...`; it was queued/running at this
 - Referer values must remain URL-safe/ASCII-safe to avoid the prior ByteString failure with Arabic paths.
 - Ads/popups/unneeded tracking and Basri-app Intent/deep-link handoff remain prohibited.
 
-## CI evidence
-- PR #42 final head passed all ten required gates before merge.
-- First PR #43 diagnostic live-container gate failed while existing Range/download passed, with exact evidence: `IOS_SAFARI_INCOMPATIBLE_CONTAINER_unknown; contentType=application/octet-stream; magic=474000100000b00d0001c100000001ef`.
-- Code head `bc127697933e12a0261f477cc5c649978c8d1433` later passed Remote movie playback run `34652743598`; its live probe classified `The Beloved` as `mpeg-ts` with HTTP 206 and correct byte-range headers.
-- Code head `7b5f69b9cdcfa88c38ea6770fda35c32d94125e2` changed playback to the HLS-wrapper path and updated the MPEG-TS-specific WebKit regression.
-- Head `a03d13dc813441211c68ad82b764ed0170500ace` passed the normal iPhone cinema/navigation WebKit step but failed the wrapper-inspection test only because Playwright WebKit rejected `fetch(blob:)`.
-- Head `a76937106583bcf0f74fc22d7e02c891a2971721` fixes that test by inspecting the captured Blob object directly. Results from earlier heads are diagnostic only.
-
-Required final-head gates:
+## Required final-head gates
 - Web smoke
 - Live provider smoke
 - Mobile WebKit smoke, including MPEG-TS HLS-wrapper regression
@@ -111,21 +91,21 @@ The Render connector exposes two workspaces owned by the account:
 No trustworthy repository evidence identifies which workspace owns Al-Qahtani. Do not guess and do not claim direct Render log inspection. External deployed tests against `https://al-qahtani-api.onrender.com` remain valid runtime evidence.
 
 ## Web parity / Flutter status
-Web parity is **not yet declared complete**. Flutter remains blocked until:
+Web parity is not yet declared complete. Flutter remains blocked until:
 1. PR #43 newest head is green on every required gate;
 2. PR #43 is merged;
-3. GitHub Pages and deployed backend are verified for the exact resulting main commit;
-4. the live real-movie path still proves MPEG-TS/HLS handling and Range after deployment;
-5. actual iPhone Safari behavior no longer shows the unsupported-source failure. CI/container classification alone must not be presented as 100% proof of user-device playback.
+3. GitHub Pages and the deployed backend are verified for the exact resulting main commit;
+4. the live real-movie path still proves MPEG-TS/HLS handling and Safari Range after deployment;
+5. actual iPhone Safari behavior no longer shows the unsupported-source failure. CI/WebKit evidence must not be presented as 100% proof of the user's physical iPhone until the live user-device test succeeds.
 
 ## Next-run goals
-1. Inspect the newest PR #43 head created by this documentation update and all final-head CI gates.
-2. Fetch exact job logs for any failure and fix only on `test/live-ios-container-43`.
-3. Require Mobile WebKit to prove MPEG-TS is wrapped as HLS through a Blob manifest containing only the opaque Al-Qahtani media URL.
-4. Require the live container probe to continue classifying the real movie as MPEG-TS/MP4/HLS rather than generic unknown.
-5. Keep matches/news/search/all categories/details/episodes/download/Range/CORS/security regressions green.
-6. Merge #43 only after every final-head required gate is green.
-7. After merge, verify GitHub Pages and deployed runtime on the exact resulting `main` commit.
-8. Re-run real movie Watch through the deployed backend and inspect first bytes/MIME/Range/container; do not treat Download success alone as playback proof.
-9. If actual Safari still fails after HLS wrapping, inspect MPEG-TS program/codec metadata and seek an original Basri alternate playable media option before considering remux/transmux. Avoid paid or heavy transcoding unless evidence proves it is necessary.
-10. Do not begin Flutter until the live Web/iPhone movie playback gate is genuinely proven.
+1. Inspect the newest PR #43 head created by this documentation update and require all ten gates green on that exact head.
+2. Fetch exact logs for any failure and fix only on `test/live-ios-container-43`.
+3. Merge #43 only after the final head is fully green.
+4. After merge, capture the exact resulting `main` SHA and verify GitHub Pages deployment for that commit.
+5. Verify the deployed Al-Qahtani backend after its auto-deploy wait with real movie container/Range/download probes.
+6. Keep matches/news/search/categories/details/episodes/watch/download/CORS/security regressions green.
+7. Re-test `The Beloved` or another real Basri movie through the deployed path and confirm MPEG-TS is wrapped through the HLS path.
+8. Do not treat Download or Range success alone as playback proof.
+9. If actual Safari still fails, inspect transport-stream program/codec metadata and original Basri alternate media before considering any remux/transmux; avoid paid/heavy transcoding unless evidence proves it necessary.
+10. Do not begin Flutter until live Web/iPhone movie playback is genuinely proven.
