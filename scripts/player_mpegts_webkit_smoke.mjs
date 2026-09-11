@@ -35,6 +35,15 @@ try {
   const page = await context.newPage();
   const ts = makeTsProbe();
 
+  await page.addInitScript(() => {
+    const original = URL.createObjectURL.bind(URL);
+    window.__createdObjectUrlBlobs = [];
+    URL.createObjectURL = blob => {
+      window.__createdObjectUrlBlobs.push(blob);
+      return original(blob);
+    };
+  });
+
   await page.route("https://al-qahtani-api.onrender.com/api/cinema/media**", async route => {
     const range = route.request().headers().range || "";
     const isProbe = range.includes("0-4095");
@@ -60,13 +69,16 @@ try {
   if (!String(src || "").startsWith("blob:")) throw new Error(`EXPECTED_HLS_BLOB_SOURCE_GOT_${src}`);
 
   const manifest = await page.evaluate(async () => {
-    const video = document.querySelector("#player video");
-    const src = video?.getAttribute("src") || "";
-    if (!src.startsWith("blob:")) return { src, text: "" };
-    const response = await fetch(src);
-    return { src, text: await response.text() };
+    const blobs = window.__createdObjectUrlBlobs || [];
+    const blob = blobs.find(item => item?.type === "application/vnd.apple.mpegurl") || blobs[0];
+    return {
+      src: document.querySelector("#player video")?.getAttribute("src") || "",
+      text: blob ? await blob.text() : "",
+      blobType: blob?.type || "",
+    };
   });
 
+  if (manifest.blobType !== "application/vnd.apple.mpegurl") throw new Error(`WRONG_HLS_BLOB_TYPE_${manifest.blobType}`);
   if (!manifest.text.startsWith("#EXTM3U\n")) throw new Error(`MISSING_EXTM3U_${manifest.text.slice(0, 80)}`);
   if (!manifest.text.includes(MEDIA)) throw new Error("HLS_MANIFEST_MISSING_OPAQUE_MEDIA_URL");
   if (manifest.text.includes("akwam.ss") || manifest.text.includes("downet.net")) throw new Error("HLS_MANIFEST_LEAKS_UPSTREAM_HOST");
