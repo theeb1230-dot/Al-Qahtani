@@ -25,7 +25,7 @@ jobs:
                   print(text[max(0,i-250):i+1500] if i>=0 else 'NOT FOUND')
           PY
 
-      - name: Inspect original cinema source reachability
+      - name: Inspect original cinema source structure
         shell: bash
         run: |
           set +e
@@ -35,21 +35,42 @@ jobs:
           import re, pathlib
           p=pathlib.Path('/tmp/basri-source.html')
           if not p.exists():
-              print('source body unavailable')
-              raise SystemExit(0)
+              print('source body unavailable'); raise SystemExit(0)
           text=p.read_text('utf-8','ignore')
-          print('title=', (re.search(r'<title[^>]*>(.*?)</title>',text,re.I|re.S).group(1).strip() if re.search(r'<title[^>]*>(.*?)</title>',text,re.I|re.S) else ''))
-          print('html_bytes=',len(text))
-          hrefs=[]
-          for m in re.finditer(r'href=["\']([^"\']+)["\']',text,re.I):
-              h=m.group(1)
-              if '/series/' in h or '/movie/' in h or '/movies/' in h:
-                  hrefs.append(h)
-              if len(hrefs)>=12: break
-          print('sample_content_hrefs=',hrefs)
-          classes=sorted(set(re.findall(r'class=["\']([^"\']+)["\']',text,re.I)))
-          print('sample_classes=',classes[:25])
+          title=re.search(r'<title[^>]*>(.*?)</title>',text,re.I|re.S)
+          print('title=',title.group(1).strip() if title else '')
+          first=re.search(r'https://akwam\.ss/series/[^"\']+',text,re.I)
+          if first:
+              i=first.start(); print('CARD_CONTEXT_START'); print(text[max(0,i-1400):i+2600]); print('CARD_CONTEXT_END')
+          for pat in [r'<form[^>]+action=["\']([^"\']+)["\'][^>]*>',r'<input[^>]+name=["\']([^"\']+)["\'][^>]*placeholder=["\']([^"\']*)["\']']:
+              print('FORM_MATCHES=',re.findall(pat,text,re.I)[:10])
           PY
+          FIRST=$(python - <<'PY'
+          import re,pathlib
+          t=pathlib.Path('/tmp/basri-source.html').read_text('utf-8','ignore')
+          m=re.search(r'https://akwam\.ss/series/[^"\']+',t,re.I)
+          print(m.group(0) if m else '')
+          PY
+          )
+          if [ -n "$FIRST" ]; then
+            curl -L --max-time 25 -A "$UA" -H 'Accept: text/html,application/xhtml+xml' -o /tmp/basri-detail.html -w 'detail_http=%{http_code} final=%{url_effective} bytes=%{size_download}\n' "$FIRST"
+            python - <<'PY'
+          import re,pathlib
+          p=pathlib.Path('/tmp/basri-detail.html')
+          if not p.exists(): raise SystemExit(0)
+          t=p.read_text('utf-8','ignore')
+          for needle in ['episode','watch','download','btn-watch','btn-download','watch-btn','download-btn']:
+              hits=[m.start() for m in re.finditer(needle,t,re.I)]
+              if hits:
+                  i=hits[0]; print('\nDETAIL_CONTEXT',needle); print(t[max(0,i-900):i+2200])
+          hrefs=[]
+          for m in re.finditer(r'href=["\']([^"\']+)["\']',t,re.I):
+              h=m.group(1)
+              if any(x in h.lower() for x in ['episode','watch','download']): hrefs.append(h)
+              if len(hrefs)>=20: break
+          print('DETAIL_ACTION_HREFS=',hrefs)
+          PY
+          fi
           exit 0
 
       - name: Reject ad-network runtime references
