@@ -22,6 +22,7 @@ const player=document.getElementById('player');
 const statusEl=document.getElementById('status');
 const serversEl=document.getElementById('servers');
 let hls=null;
+let playGeneration=0;
 
 function b64uDecode(s){
   s=s.replace(/-/g,'+').replace(/_/g,'/');
@@ -64,23 +65,109 @@ function collectSources(){
 }
 
 function stop(){
+  playGeneration++;
   if(hls){hls.destroy();hls=null}
   player.innerHTML='';
 }
 
+function createVideo(){
+  const v=document.createElement('video');
+  v.controls=true;
+  v.playsInline=true;
+  v.autoplay=true;
+  v.preload='metadata';
+  v.setAttribute('webkit-playsinline','');
+  return v;
+}
+
+function bindVideoStatus(v,source){
+  v.addEventListener('playing',()=>{statusEl.textContent='يعمل الآن: '+source.name;},{once:true});
+  v.addEventListener('error',()=>{
+    const code=v.error?.code||0;
+    const labels={1:'تم إيقاف التحميل',2:'خطأ في الشبكة',3:'تعذر فك ترميز الفيديو',4:'صيغة الفيديو غير مدعومة'};
+    statusEl.textContent=(labels[code]||'تعذر تشغيل الفيديو')+' — '+source.name;
+  });
+}
+
+function bytesLookLikeMp4(bytes){
+  return bytes.length>=12&&String.fromCharCode(...bytes.slice(4,8))==='ftyp';
+}
+
+function bytesLookLikeMatroska(bytes){
+  return bytes.length>=4&&bytes[0]===0x1a&&bytes[1]===0x45&&bytes[2]===0xdf&&bytes[3]===0xa3;
+}
+
+function bytesLookLikeHls(bytes){
+  try{return new TextDecoder().decode(bytes.slice(0,64)).trimStart().startsWith('#EXTM3U')}catch{return false}
+}
+
+async function inspectStream(url){
+  const response=await fetch(url,{headers:{Range:'bytes=0-4095'},cache:'no-store'});
+  if(!response.ok&&response.status!==206)throw new Error('STREAM_PROBE_'+response.status);
+  const contentType=String(response.headers.get('content-type')||'').toLowerCase();
+  const bytes=new Uint8Array(await response.arrayBuffer());
+  const mp4=bytesLookLikeMp4(bytes)||contentType.includes('video/mp4');
+  const matroska=bytesLookLikeMatroska(bytes)||contentType.includes('matroska')||contentType.includes('webm');
+  const hls=bytesLookLikeHls(bytes)||contentType.includes('mpegurl');
+  return {contentType,mp4,matroska,hls};
+}
+
+function playHls(source){
+  const v=createVideo();
+  bindVideoStatus(v,source);
+  player.appendChild(v);
+  if(v.canPlayType('application/vnd.apple.mpegurl')){
+    v.src=source.url;
+  }else if(window.Hls&&Hls.isSupported()){
+    hls=new Hls({enableWorker:true});
+    hls.loadSource(source.url);
+    hls.attachMedia(v);
+    hls.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal)statusEl.textContent='تعذر تشغيل البث';});
+  }else{
+    v.src=source.url;
+  }
+  v.play().catch(()=>{});
+}
+
+async function playDirectStream(source,generation){
+  let inspection=null;
+  try{
+    inspection=await inspectStream(source.url);
+  }catch(e){
+    console.warn('Stream preflight failed',e);
+  }
+  if(generation!==playGeneration)return;
+  if(inspection?.hls){
+    playHls({...source,type:'m3u8'});
+    return;
+  }
+  const v=createVideo();
+  bindVideoStatus(v,source);
+  player.appendChild(v);
+  const src=document.createElement('source');
+  src.src=source.url;
+  if(inspection?.mp4)src.type='video/mp4';
+  v.appendChild(src);
+  v.load();
+  if(inspection?.matroska){
+    statusEl.textContent='المصدر بصيغة Matroska/WebM وغير مدعوم مباشرة في Safari؛ جارٍ تجربة التشغيل المتاح';
+  }else if(inspection?.mp4){
+    statusEl.textContent='تم التحقق من MP4 — جارٍ التشغيل';
+  }else if(inspection?.contentType){
+    statusEl.textContent='جارٍ التشغيل ('+inspection.contentType+')';
+  }
+  v.play().catch(()=>{});
+}
+
 function play(source){
   stop();
+  const generation=playGeneration;
   statusEl.textContent='جارٍ تشغيل '+source.name;
   document.querySelectorAll('.servers button').forEach(b=>b.classList.toggle('active',b.dataset.url===source.url));
   if(source.type==='m3u8'){
-    const v=document.createElement('video');v.controls=true;v.playsInline=true;v.autoplay=true;player.appendChild(v);
-    if(window.Hls&&Hls.isSupported()){
-      hls=new Hls({enableWorker:true});hls.loadSource(source.url);hls.attachMedia(v);
-      hls.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal)statusEl.textContent='تعذر تشغيل البث';});
-    }else{v.src=source.url}
-    v.play().catch(()=>{});
+    playHls(source);
   }else if(source.type==='mp4'||source.type==='stream'){
-    const v=document.createElement('video');v.controls=true;v.playsInline=true;v.autoplay=true;v.src=source.url;player.appendChild(v);v.play().catch(()=>{});
+    playDirectStream(source,generation);
   }else{
     const f=document.createElement('iframe');f.src=source.url;f.allow='autoplay; fullscreen; picture-in-picture';f.allowFullscreen=true;f.referrerPolicy='no-referrer';player.appendChild(f);
   }
