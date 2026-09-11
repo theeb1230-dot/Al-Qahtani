@@ -7,6 +7,9 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const BACKEND = "https://al-qahtani-api.onrender.com";
 const sampleRef = `legacy:${encodeURIComponent("https://akwam.ss/series/sample-show")}`;
 const episodeRef = `legacy:${encodeURIComponent("https://akwam.ss/episode/sample-show-1")}`;
+const movieRef = `legacy:${encodeURIComponent("https://akwam.ss/movie/sample-movie")}`;
+const seriesPoster = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='300'%3E%3C/svg%3E";
+const moviePoster = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='300'%3E%3C/svg%3E";
 
 const server = spawn("python3", ["-m", "http.server", String(PORT), "--bind", "127.0.0.1"], {
   stdio: ["ignore", "pipe", "pipe"],
@@ -32,15 +35,37 @@ function json(route, data, status = 200) {
 async function installBackendMocks(page) {
   await page.route(`${BACKEND}/**`, async route => {
     const u = new URL(route.request().url());
-    if (u.pathname === "/api/cinema/category" || u.pathname === "/api/cinema/search") {
+    if (u.pathname === "/api/cinema/category") {
+      const isMovie = u.searchParams.get("type") === "movie";
       return json(route, {
         status: "success",
         source: "basri-direct",
-        data: [{ title: "مسلسل اختبار", img: "", is_series: true, href: sampleRef }],
+        data: isMovie
+          ? [{ title: "فيلم اختبار 2026", img: moviePoster, is_series: false, href: movieRef }]
+          : [{ title: "مسلسل اختبار", img: seriesPoster, is_series: true, href: sampleRef }],
+      });
+    }
+    if (u.pathname === "/api/cinema/search") {
+      return json(route, {
+        status: "success",
+        source: "basri-direct",
+        data: [{ title: "مسلسل اختبار", img: seriesPoster, is_series: true, href: sampleRef }],
       });
     }
     if (u.pathname === "/api/cinema/details") {
       const ref = u.searchParams.get("ref") || "";
+      if (ref === movieRef) {
+        return json(route, {
+          status: "success",
+          source: "basri-direct",
+          movie_title: "فيلم اختبار 2026",
+          poster: moviePoster,
+          episodes: [],
+          media_path: "/api/cinema/media?id=webkit-movie",
+          media_type: "stream",
+          is_iframe: false,
+        });
+      }
       if (ref === episodeRef) {
         return json(route, {
           status: "success",
@@ -56,7 +81,7 @@ async function installBackendMocks(page) {
         status: "success",
         source: "basri-direct",
         movie_title: "مسلسل اختبار",
-        poster: "",
+        poster: seriesPoster,
         episodes: [
           { num: 1, link: episodeRef, watch_available: true },
           { num: 2, link: episodeRef, watch_available: true },
@@ -107,23 +132,48 @@ try {
 
   await page.locator("#seriesCats .cat").first().click();
   await page.locator("#mediaGrid .item").waitFor({ state: "visible" });
-  assert(await page.locator("#mediaGrid .item").count() === 1, "category renders a result");
-  await assertNoHorizontalOverflow(page, "category grid");
+  assert(await page.locator("#mediaGrid .item").count() === 1, "series category renders a result");
+  await assertNoHorizontalOverflow(page, "series category grid");
 
   await page.locator("#mediaGrid .item").first().click();
   await page.locator("#episodesWrap").waitFor({ state: "visible" });
-  assert((await page.locator("#title").textContent()) === "مسلسل اختبار", "details title renders");
+  assert((await page.locator("#title").textContent()) === "مسلسل اختبار", "series details title renders");
+  assert((await page.locator("#kind").textContent()) === "مسلسل", "series kind renders");
+  assert((await page.locator("#poster").getAttribute("src")) === seriesPoster, "series poster metadata survives navigation");
   assert(await page.locator("#episodes .ep").count() === 2, "episode buttons render");
-  await assertNoHorizontalOverflow(page, "details view");
+  assert((await page.locator("#episodes .ep").first().textContent()) === "الحلقة 1", "episode number metadata renders");
+  await assertNoHorizontalOverflow(page, "series details view");
 
   await Promise.all([
     page.waitForURL(/Player\.html\?/),
     page.locator("#episodes .ep").first().click(),
   ]);
   await page.locator("#player video").waitFor({ state: "attached" });
-  const src = await page.locator("#player video").getAttribute("src");
+  let src = await page.locator("#player video").getAttribute("src");
   assert(src === `${BACKEND}/api/cinema/media?id=webkit-smoke`, "episode opens secured backend media in Player", { src });
-  await assertNoHorizontalOverflow(page, "player");
+  await assertNoHorizontalOverflow(page, "series player");
+
+  await page.goto(`${BASE}/albasri-cinema.html`, { waitUntil: "domcontentloaded" });
+  await page.locator("#movieCats .cat").first().click();
+  await page.locator("#mediaGrid .item").waitFor({ state: "visible" });
+  assert(await page.locator("#mediaGrid .item").count() === 1, "movie category renders a result");
+  assert((await page.locator("#mediaGrid .badge").first().textContent()) === "فيلم", "movie card keeps movie kind");
+  await page.locator("#mediaGrid .item").first().click();
+  await page.locator("#actions .primary").waitFor({ state: "visible" });
+  assert((await page.locator("#title").textContent()) === "فيلم اختبار 2026", "movie details title renders");
+  assert((await page.locator("#kind").textContent()) === "فيلم", "movie details kind renders");
+  assert((await page.locator("#poster").getAttribute("src")) === moviePoster, "movie poster metadata survives navigation");
+  assert(await page.locator("#episodesWrap").isHidden(), "movie direct-watch path does not fabricate episodes");
+  assert((await page.locator("#actions .primary").textContent()) === "مشاهدة", "movie direct-watch action renders");
+  await assertNoHorizontalOverflow(page, "movie details view");
+  await Promise.all([
+    page.waitForURL(/Player\.html\?/),
+    page.locator("#actions .primary").click(),
+  ]);
+  await page.locator("#player video").waitFor({ state: "attached" });
+  src = await page.locator("#player video").getAttribute("src");
+  assert(src === `${BACKEND}/api/cinema/media?id=webkit-movie`, "movie opens secured backend media in Player", { src });
+  await assertNoHorizontalOverflow(page, "movie player");
 
   await page.goto(`${BASE}/albasri-cinema.html`, { waitUntil: "domcontentloaded" });
   await page.locator("#q").fill("الذئب الوحيد");
