@@ -1,0 +1,19 @@
+name: Media reference expiry
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  media-reference-expiry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prove expired opaque references fail closed
+        run: node scripts/media_reference_expiry_test.mjs
