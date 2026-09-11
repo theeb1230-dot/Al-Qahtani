@@ -17,5 +17,7 @@ jobs:
         run: node scripts/live_provider_smoke.mjs
       - name: Verify live episode numbering uses display numbers, not source IDs
         run: node scripts/live_episode_number_probe.mjs
+      - name: Verify problematic movie has a playable watch source
+        run: node scripts/live_movie_watchability_probe.mjs
       - name: Run Al-Qahtani backend locally end to end
         run: node scripts/local_backend_smoke.mjs
