@@ -1,0 +1,17 @@
+name: Remote movie playback smoke
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  deployed-movie-playback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Probe deployed real movie playback and Safari range
+        run: node scripts/remote_movie_playback_smoke.mjs
