@@ -64,7 +64,16 @@ async function matchesSmoke() {
   const session = await request(MATCHES + "session", { headers: jsonHeaders(page) });
   if (!assert(session.ok && session.data?.success === true && session.data?.token, "matches session", { status: session.status, ms: session.ms })) return;
   const list = await request(MATCHES, { headers: jsonHeaders(page, { "X-BSR-Token": String(session.data.token) }) });
-  assert(list.ok && list.data?.success === true && Array.isArray(list.data?.data) && list.data.data.length > 0, "matches list", { status: list.status, count: list.data?.data?.length, ms: list.ms });
+  if (assert(list.ok && list.data?.success === true && Array.isArray(list.data?.data) && list.data.data.length > 0, "matches list", { status: list.status, count: list.data?.data?.length, ms: list.ms })) {
+    const sample = list.data.data.slice(0, 4).map(match => ({
+      keys: Object.keys(match || {}),
+      team1: match?.team1,
+      team2: match?.team2,
+      homeLogoFields: Object.fromEntries(Object.entries(match || {}).filter(([key]) => /(?:team1|home).*(?:logo|image|img|badge|crest|icon|photo|avatar)/i.test(key))),
+      awayLogoFields: Object.fromEntries(Object.entries(match || {}).filter(([key]) => /(?:team2|away).*(?:logo|image|img|badge|crest|icon|photo|avatar)/i.test(key))),
+    }));
+    console.log("INFO match logo payload sample", JSON.stringify(sample, null, 2));
+  }
 }
 
 async function workerProbe() {
