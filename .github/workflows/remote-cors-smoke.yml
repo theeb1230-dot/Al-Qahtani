@@ -1,0 +1,44 @@
+name: Remote CORS smoke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  remote-cors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Start candidate backend for pull request
+        if: github.event_name == 'pull_request'
+        run: |
+          PORT=3139 NODE_ENV=test node server/index.mjs > /tmp/al-qahtani-cors-smoke.log 2>&1 &
+          echo $! > /tmp/al-qahtani-cors-smoke.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:3139/health >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          cat /tmp/al-qahtani-cors-smoke.log || true
+          exit 1
+      - name: Probe candidate CORS boundary
+        if: github.event_name == 'pull_request'
+        env:
+          AL_QAHTANI_BASE: http://127.0.0.1:3139
+        run: node scripts/remote_cors_smoke.mjs
+      - name: Wait for Render auto-deploy
+        if: github.event_name != 'pull_request'
+        run: sleep 35
+      - name: Probe deployed CORS boundary
+        if: github.event_name != 'pull_request'
+        run: node scripts/remote_cors_smoke.mjs
+      - name: Show candidate backend log on failure
+        if: failure() && github.event_name == 'pull_request'
+        run: cat /tmp/al-qahtani-cors-smoke.log || true
