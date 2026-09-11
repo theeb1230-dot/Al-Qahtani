@@ -15,6 +15,8 @@ jobs:
           node-version: 22
       - name: Probe matches, cinema, search, details and news
         run: node scripts/live_provider_smoke.mjs
+      - name: Verify real match team logos through backend proxy
+        run: node scripts/match_logo_proxy_smoke.mjs
       - name: Verify live episode numbering uses display numbers, not source IDs
         run: node scripts/live_episode_number_probe.mjs
       - name: Verify watch parser excludes page assets
