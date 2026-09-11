@@ -5,18 +5,42 @@ const server = createServer();
 const [appHandler] = server.listeners("request");
 
 // The original Basri page downloads the same resolved media used for playback.
-// Preserve that behavior without exposing the upstream media URL: the browser
-// receives only the existing short-lived Al-Qahtani media reference, and this
-// entrypoint turns that exact proxied response into an attachment when asked.
+// Keep attachment semantics behind the validated Al-Qahtani media-reference path:
+// invalid/expired references remain ordinary JSON errors and never receive
+// download headers, while a successful proxied media response becomes an
+// attachment without exposing the upstream URL.
 server.removeAllListeners("request");
 server.on("request", (req, res) => {
+  let wantsDownload = false;
   try {
     const url = new URL(req.url || "/", "http://localhost");
-    if (url.pathname === "/api/cinema/media" && url.searchParams.get("download") === "1") {
+    wantsDownload = url.pathname === "/api/cinema/media" && url.searchParams.get("download") === "1";
+  } catch {}
+
+  if (wantsDownload) {
+    const originalWrite = res.write.bind(res);
+    const originalEnd = res.end.bind(res);
+    let decorated = false;
+
+    const decorateValidatedMedia = () => {
+      if (decorated || res.statusCode < 200 || res.statusCode >= 300) return;
+      const contentType = String(res.getHeader("Content-Type") || "").toLowerCase();
+      if (contentType.includes("application/json")) return;
       res.setHeader("Content-Disposition", 'attachment; filename="al-qahtani-media"');
       res.setHeader("X-Content-Type-Options", "nosniff");
-    }
-  } catch {}
+      decorated = true;
+    };
+
+    res.write = (...args) => {
+      decorateValidatedMedia();
+      return originalWrite(...args);
+    };
+    res.end = (...args) => {
+      decorateValidatedMedia();
+      return originalEnd(...args);
+    };
+  }
+
   return appHandler(req, res);
 });
 

@@ -43,6 +43,22 @@ async function waitHealth() {
   return false;
 }
 
+async function checkRejectedDownload(path, label) {
+  const result = await get(path, 10000, { Range: "bytes=0-1023", Accept: "*/*" });
+  ok(result.response.status === 404, `${label} is rejected before any upstream fetch`, {
+    status: result.response.status,
+    body: result.text.slice(0, 160),
+  });
+  ok(result.data?.status === "error" && result.data?.message === "MEDIA_REFERENCE_EXPIRED",
+    `${label} returns the opaque media-reference error contract`);
+  ok(!(result.response.headers.get("content-disposition") || ""),
+    `${label} does not receive attachment headers`);
+  ok(!(result.response.headers.get("x-content-type-options") || ""),
+    `${label} does not receive download MIME headers`);
+  ok((result.response.headers.get("content-type") || "").toLowerCase().includes("application/json"),
+    `${label} remains a JSON error response`);
+}
+
 async function checkDownload(mediaPath) {
   const sep = String(mediaPath).includes("?") ? "&" : "?";
   const response = await get(`${mediaPath}${sep}download=1`, 120000, { Range: "bytes=0-1023", Accept: "*/*" });
@@ -58,6 +74,19 @@ async function checkDownload(mediaPath) {
 
 try {
   if (!ok(await waitHealth(), "backend health reports original Basri cinema chain")) process.exit(1);
+
+  await checkRejectedDownload(
+    "/api/cinema/media?id=definitely-not-a-real-reference&download=1",
+    "invalid download reference",
+  );
+  await checkRejectedDownload(
+    "/api/cinema/media?id=" + encodeURIComponent("https://evil.example/video.mp4") + "&download=1",
+    "URL-shaped fake media id",
+  );
+  await checkRejectedDownload(
+    "/api/cinema/media?url=" + encodeURIComponent("https://evil.example/video.mp4") + "&download=1",
+    "arbitrary url query",
+  );
 
   const matches = await get("/api/matches", 60000);
   ok(matches.response.ok && matches.data?.success === true && Array.isArray(matches.data?.data) && matches.data.data.length > 0,
