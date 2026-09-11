@@ -10,66 +10,83 @@ GitHub repository state wins over this handoff if they disagree. The preserved `
 - Matches/news remain on original Basri workers. Cinema stays on the original Basri chain with server-side direct fallback to the historical Basri source when the origin-locked cinema Worker fails or returns unusable empty data.
 
 ## Current repository state
-- Product `main` at start of this run: `39e3ccfc9241ab88ab2f093dad67fb5cea5aebeb` (`Fix iPhone MPEG-TS movie playback`).
-- Active PR: #44 `Fix Basri episode numbering at the source` on `fix/content-normalization-44`.
-- Code/test head before this documentation update: `9e892f022ccef1a48aa7e158fd602af97a7b3fab`.
-- This documentation update creates a newer head, so merge is allowed only after required checks are green on the exact final head.
+- Product `main` at start of this run: `01163cbfa6ff447cba1d28ef8c62f05600283654`, merged from PR #44 `Fix Basri episode numbering at the source`.
+- Active PR: #45 `Validate problematic movie watchability before filtering` on `fix/cinema-watchability-45`.
+- Code/test head before this documentation update: `9b3f0cba0930285e53e245f25e17194cfaf8e873`.
+- This documentation update creates a newer final head. Merge is allowed only after every required gate is green on that exact final head.
 
 ## Proven iPhone Safari playback state
-The user tested the deployed site on a real iPhone Safari after PR #43. Playback now works broadly for movies/series/anime, including iOS native controls, fullscreen, seeking/time display on multiple sources. Keep the MPEG-TS/HLS wrapper and its regressions intact. Do not reopen the old incident as if all playback is still broken.
+The user tested the deployed site on a real iPhone Safari after the MPEG-TS/HLS fix. Playback now works broadly for movies/series/anime, including iOS native controls, fullscreen, seeking/time display on multiple sources. Keep the MPEG-TS/HLS wrapper and its regressions intact. Do not reopen the old incident as if all playback is broken.
 
-## User-reported remaining regressions
-1. Episode buttons show upstream content IDs such as `89517`, `101847`, `48829` instead of human episode numbers.
-2. Some cinema/search entries behave like download-only or preview material rather than ordinary watchable content; the reported example was `Grand Theft Auto VI: An Extended Look`. This must be handled by general validity checks, not title-specific blocking.
-3. Some anime/MPEG-TS sources have unstable inline duration/timeline behavior; frames can advance while embedded duration is absent or misleading, with duration appearing only after fullscreen.
+## Episode numbering: fixed and merged
+PR #44 fixed the upstream-ID display regression at the parser boundary:
+- canonical `الحلقة-N` / `episode-N`, visible labels, `title`, and `aria-label` are used for display number when available;
+- `/episode/<id>/` stays `episode_id`, never the UI episode number;
+- bounded positional fallback is used only when explicit numbering is absent;
+- episodes are sorted by normalized display number.
 
-## PR #44 root cause and fix
-`server/basri-source.mjs` previously extracted episode numbers from the URL and could fall back to a trailing numeric path component. On source variants where the canonical episode slug is absent from the href, that numeric component is the upstream episode ID, not the display number.
+Live CI evidence on the preserved Basri source used `حلم أشرف الموسم الثاني مدبلج`: 112 episodes normalized to `1,2,3,...` while source IDs remained `89517`, `89542`, `89560`, etc. This proves the IDs and displayed episode numbers are now independent.
 
-PR #44 now:
-- parses canonical `الحلقة-N` / `episode-N` when present;
-- parses visible anchor text plus `title` / `aria-label` when the href omits the canonical slug;
-- keeps `episode_id` separate from `episode_number`;
-- never intentionally promotes the `/episode/<id>/` identifier to the UI number;
-- uses only a bounded positional fallback when no explicit display number exists;
-- sorts parsed episodes by normalized display number.
+## PR #45: reported GTA download-popup anomaly
+The reported `Grand Theft Auto VI: An Extended Look` item is a legitimate entry in the preserved Basri source, not an ad record that should be title-blacklisted. Root tracing found:
+- the movie details page has two normal `/watch/...` links and two `/download/...` links;
+- the old generic watch-page regex also captured page assets (`jpg`, `svg`, JavaScript) as media candidates;
+- the real watch candidates are `.mkv`-named `.downet.net` URLs;
+- `.downet.net` still requires the existing narrowly scoped legacy-TLS compatibility path;
+- bounded server-side magic-byte probing shows at least one `.mkv`-named candidate is actually MPEG-TS despite its filename extension;
+- therefore URL extension or upstream attachment semantics must not decide browser playback by themselves.
 
-## Regression evidence on code head `9e892f0...`
-- Web smoke run `34656165726`: success. Its deterministic `scripts/episode_number_test.mjs` proves IDs `89517`, `89542`, `89760` remain separate while displayed numbers are `1,2,3`.
-- Live provider smoke run `34656165687`: success. Its live step `Verify live episode numbering uses display numbers, not source IDs` passed against the preserved Basri source using `scripts/live_episode_number_probe.mjs` and a real series search.
-- Remote movie playback run `34656165722`: success, preserving the movie playback/Range regression.
-- Remote CORS `34656165717`: success.
-- CORS boundary `34656165639`: success.
-- Original Basri player contract `34656165840`: success.
-- Original Basri download contract `34656165714`: success.
-- Media reference expiry `34656165700`: success.
-- Trusted download filename `34656165576`: success.
-- Mobile WebKit `34656165667` was still running when this documentation update was prepared; final merge requires it and all checks to succeed on the newer documentation head too.
+## PR #45 fix
+- `server/basri-source.mjs` filters watch-page candidates to actual media-shaped URLs and excludes page images/scripts/assets.
+- HLS and MP4 are preferred when explicitly available, while Matroska-labelled candidates remain available for server-side byte inspection instead of being blindly handed to Safari.
+- `server/app.mjs` probes at most a bounded set of watch/media candidates with a 4 KiB range using the existing source allowlist, SSRF protection, referer handling, and `.downet.net` TLS compatibility.
+- Container selection is based on MIME + magic bytes for HLS/MP4/MPEG-TS/Matroska-WebM.
+- If a misleading `.mkv` URL actually contains MPEG-TS, it remains playable through the existing opaque Al-Qahtani media proxy and Safari HLS wrapper.
+- Normal playback does not forward upstream `Content-Disposition`; only explicit `download=1` receives a trusted attachment filename. This prevents Safari from opening the ordinary Watch action as a download solely because the upstream host labels the media as an attachment.
+- Raw watch/download/media upstream URLs remain absent from the cinema details response. Posters may remain external assets as before.
+
+## PR #45 regression evidence
+On code head `9b3f0cba0930285e53e245f25e17194cfaf8e873`:
+- Live provider smoke run `34657133862` passed the real GTA watchability regression and the already-merged episode-number regression.
+- `scripts/watch_parser_test.mjs` passed deterministic filtering: HLS → MP4 → Matroska preference, no image/script assets.
+- Remote movie playback run `34657133935`: success, preserving live container classification and Safari Range behavior.
+- Web smoke run `34657133840`: success.
+- Remote CORS run `34657133955`: success.
+- CORS boundary run `34657133901`: success.
+- Original Basri player contract run `34657133780`: success.
+- Original Basri download contract run `34657133838`: success.
+- Media reference expiry run `34657133826`: success.
+- Trusted download filename run `34657133872`: success.
+- Mobile WebKit run `34657133769` was still running while this handoff was written; the final documentation head must rerun and pass all required gates before merge.
 
 ## Security/runtime invariants
 - Search/Category → Details → Episodes → Watch/Download → Media remains the Basri flow.
-- Upstream URLs remain hidden behind short-lived opaque `/api/cinema/media?id=...` references.
+- Upstream media URLs remain hidden behind short-lived opaque `/api/cinema/media?id=...` references.
 - Source/media host allowlists and SSRF protections remain mandatory.
 - `.downet.net` TLS compatibility stays narrowly scoped; unrelated TLS stays strict.
-- Range proxying must preserve HTTP 206, `Content-Range`, and `Accept-Ranges: bytes`.
+- Range proxying must preserve HTTP 206, `Content-Range`, and `Accept-Ranges: bytes` where upstream supports them.
+- Normal playback must never inherit an upstream attachment disposition. Explicit `download=1` must retain trusted download behavior.
 - Worker/session data stays server-side.
 - Referer values remain URL-safe/ASCII-safe to avoid the prior ByteString failure with Arabic paths.
 - Ads/popups/unneeded tracking and Basri-app Intent/deep-link handoff remain prohibited.
+
+## Remaining user-reported regression: Safari duration/timeline
+`Player.html` still creates the MPEG-TS compatibility HLS manifest with synthetic `#EXT-X-TARGETDURATION:43200` and `#EXTINF:43200.000`. That fixed playback compatibility but gives Safari fabricated 12-hour VOD metadata. The user's real-device evidence of missing/odd inline duration and a different duration after fullscreen makes this the next root-level priority. Do not replace one fake duration with another. Prefer bounded real duration/seekability evidence when available, otherwise represent duration honestly without breaking playback.
 
 ## Render evidence / blocker
 The account exposes multiple Render workspaces, but repository evidence still does not identify which workspace owns Al-Qahtani. Do not guess and do not claim direct Render log inspection. External deployed tests against `https://al-qahtani-api.onrender.com` remain valid runtime evidence.
 
 ## Web parity / Flutter status
-Flutter remains blocked. Real iPhone playback is broadly proven, but Web parity is not complete until episode numbering is deployed and retested, invalid/download-only entries are handled generically, and Safari timeline/duration/seek behavior is acceptable or accurately represented for sources without reliable duration metadata.
+Flutter remains blocked. Real iPhone playback is broadly proven and episode numbering is fixed, but Web parity is not complete until PR #45 is merged/deployed/retested and Safari timeline/duration/seek behavior is corrected or honestly represented for sources without reliable duration metadata.
 
 ## Next-run goals
-1. Require all PR #44 checks green on the exact newest head, fetch exact logs for any failure, and fix only on `fix/content-normalization-44`.
-2. Merge PR #44 only after final-head green status.
-3. After merge, wait for GitHub Pages/backend deployment and retest several real series so episode buttons show human numbers rather than upstream IDs.
-4. Add a live/deployed episode-number gate after merge so IDs cannot regress into the UI.
-5. Investigate the reported download-only/preview anomaly generically by tracing Category/Search → Details → Watch/Download for affected entries; do not blacklist titles by name.
-6. Define content validity using the original Basri contract and media-path evidence, preserving legitimate short films/documentaries.
-7. Inspect MPEG-TS/HLS duration behavior: `loadedmetadata`, `durationchange`, `seekable`, native Safari fullscreen versus embedded behavior.
-8. Remove the current synthetic `#EXTINF:43200` duration if evidence shows it misleads Safari; prefer real duration metadata or an honest unknown-duration strategy without breaking playback.
-9. Keep existing movie playback, Safari Range, CORS, download, expiry, filename, no-ad/no-intent and no-Theeb-integration gates green.
-10. Do not begin Flutter until the live Web parity conditions above are satisfied.
+1. Require all PR #45 checks green on the exact documentation head; fetch exact logs for failures and fix only on `fix/cinema-watchability-45`.
+2. Merge PR #45 only after the exact final head is fully green.
+3. Wait for GitHub Pages and backend deployment of the resulting main commit; verify the live GTA details → Watch → media path has no browser attachment header and still preserves explicit download attachment behavior.
+4. Retest live episode numbering so IDs cannot regress into the UI.
+5. Preserve matches, news, all categories/search/details/episodes, Range/CORS/security/download regressions.
+6. Start the next single PR from the post-merge main for Safari duration/timeline only.
+7. Replace the synthetic 43200-second HLS metadata using bounded real duration/seekability evidence if obtainable without heavy transcoding.
+8. Add WebKit regressions for `loadedmetadata`, `durationchange`, finite/unknown duration semantics, and seekable ranges in embedded playback.
+9. Confirm fullscreen and inline behavior remain consistent enough on Safari and do not regress MPEG-TS playback.
+10. Do not begin Flutter until live Web parity conditions above are satisfied.
