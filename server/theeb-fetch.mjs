@@ -47,6 +47,25 @@ function responseFromCache(entry) {
   return new Response(entry.body, { status: 200, headers });
 }
 
+function liveSearchItems(data, query) {
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return results
+    .map((item) => ({
+      provider: String(item.provider || item.search_provider || ""),
+      provider_series_id: String(item.provider_series_id || ""),
+      title: String(item.title || ""),
+      display_title: String(item.title || ""),
+      source_url: item.source_url || null,
+      image: item.image || item.poster || null,
+      year: item.year ? String(item.year) : null,
+      content_type: item.type === "movie" ? "movie" : "series",
+      match_score: Number(item.match_score || 0),
+      match_level: String(item.match_level || "weak"),
+      query,
+    }))
+    .filter((item) => item.provider && item.provider_series_id && item.title);
+}
+
 export function createTheebFetch({
   nativeFetch = globalThis.fetch.bind(globalThis),
   origin = DEFAULT_ORIGIN,
@@ -72,9 +91,106 @@ export function createTheebFetch({
     while (cache.size > maxEntries) cache.delete(cache.keys().next().value);
   }
 
+  function cacheResponse(key, response) {
+    return response.clone().text().then((body) => {
+      cache.set(key, {
+        storedAt: now(),
+        body,
+        headers: Array.from(response.headers.entries()),
+      });
+      trimCache();
+      return response;
+    });
+  }
+
   async function waitForRetry(attempt, delays = retryDelaysMs) {
     const delay = delays[Math.min(attempt, delays.length - 1)] ?? 500;
     await wait(Math.max(0, delay));
+  }
+
+  async function protectedGet(input, init, url) {
+    const headers = inheritedHeaders(input, init);
+    if (serviceToken && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${serviceToken}`);
+    }
+    const requestInit = { ...init, headers };
+    const attempts = Math.max(1, retries + 1);
+    let lastResponse = null;
+    let lastError = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const response = await nativeFetch(input, requestInit);
+        lastResponse = response;
+        if (!retryableStatus(response.status)) {
+          if (attempt > 0) {
+            log("theeb_protected_recovered", { path: url.pathname, attempt: attempt + 1, status: response.status });
+          }
+          return response;
+        }
+        log("theeb_protected_http_error", { path: url.pathname, attempt: attempt + 1, status: response.status });
+      } catch (error) {
+        lastError = error;
+        log("theeb_protected_transport_error", { path: url.pathname, attempt: attempt + 1, error: String(error?.message || error) });
+      }
+      if (attempt + 1 < attempts) await waitForRetry(attempt);
+    }
+    if (lastResponse) return lastResponse;
+    throw lastError || new Error("THEEB_PROTECTED_ROUTE_UNAVAILABLE");
+  }
+
+  async function liveSearchFallback(query) {
+    if (!serviceToken || !query) {
+      log("theeb_live_search_skipped", { query, reason: serviceToken ? "empty_query" : "missing_service_token" });
+      return null;
+    }
+    const url = new URL("/api/search", origin);
+    url.searchParams.set("q", query);
+    const headers = new Headers({ Accept: "application/json" });
+    headers.set("Authorization", `Bearer ${serviceToken}`);
+    try {
+      const response = await nativeFetch(url, { headers, cache: "no-store" });
+      if (!response.ok) {
+        log("theeb_live_search_http_error", { query, status: response.status });
+        return null;
+      }
+      let data = null;
+      try {
+        data = await response.json();
+      } catch {
+        log("theeb_live_search_invalid_json", { query });
+        return null;
+      }
+      const items = liveSearchItems(data, query);
+      if (!items.length) {
+        log("theeb_live_search_empty", {
+          query,
+          searched: Number(data?.searched_providers || 0),
+          successful: Number(data?.successful_providers || 0),
+          failed: Number(data?.failed_providers || 0),
+        });
+        return null;
+      }
+      log("theeb_live_search_recovered", { query, count: items.length });
+      return new Response(JSON.stringify({
+        data: {
+          query,
+          count: items.length,
+          searched_providers: Number(data?.searched_providers || 0),
+          successful_providers: Number(data?.successful_providers || 0),
+          failed_providers: Number(data?.failed_providers || 0),
+          items,
+        },
+      }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Al-Qahtani-Discovery-Fallback": "live-search",
+        },
+      });
+    } catch (error) {
+      log("theeb_live_search_transport_error", { query, error: String(error?.message || error) });
+      return null;
+    }
   }
 
   return async function theebFetch(input, init = {}) {
@@ -82,36 +198,14 @@ export function createTheebFetch({
     if (!url || url.origin !== origin) return nativeFetch(input, init);
 
     const method = methodOf(input, init);
-    if (url.pathname.startsWith("/api/providers/")) {
-      const headers = inheritedHeaders(input, init);
-      if (serviceToken && !headers.has("Authorization")) {
-        headers.set("Authorization", `Bearer ${serviceToken}`);
+    const protectedRoute = url.pathname.startsWith("/api/providers/") || url.pathname === "/api/search" || url.pathname.startsWith("/api/resolve");
+    if (protectedRoute) {
+      if (method !== "GET") {
+        const headers = inheritedHeaders(input, init);
+        if (serviceToken && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${serviceToken}`);
+        return nativeFetch(input, { ...init, headers });
       }
-      const requestInit = { ...init, headers };
-      if (method !== "GET") return nativeFetch(input, requestInit);
-
-      let lastResponse = null;
-      let lastError = null;
-      const attempts = Math.max(1, retries + 1);
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        try {
-          const response = await nativeFetch(input, requestInit);
-          lastResponse = response;
-          if (!retryableStatus(response.status)) {
-            if (attempt > 0) {
-              log("theeb_provider_recovered", { path: url.pathname, attempt: attempt + 1, status: response.status });
-            }
-            return response;
-          }
-          log("theeb_provider_http_error", { path: url.pathname, attempt: attempt + 1, status: response.status });
-        } catch (error) {
-          lastError = error;
-          log("theeb_provider_transport_error", { path: url.pathname, attempt: attempt + 1, error: String(error?.message || error) });
-        }
-        if (attempt + 1 < attempts) await waitForRetry(attempt);
-      }
-      if (lastResponse) return lastResponse;
-      throw lastError || new Error("THEEB_PROVIDER_UNAVAILABLE");
+      return protectedGet(input, init, url);
     }
 
     if (method !== "GET" || url.pathname !== "/v1/discover") {
@@ -137,17 +231,10 @@ export function createTheebFetch({
         if (response.ok) {
           const inspected = await inspectDiscovery(response);
           if (inspected.items.length > 0) {
-            const body = await response.clone().text();
-            cache.set(key, {
-              storedAt: now(),
-              body,
-              headers: Array.from(response.headers.entries()),
-            });
-            trimCache();
             if (attempt > 0) {
               log("theeb_discovery_recovered", { query: url.searchParams.get("q") || "", attempt: attempt + 1, count: inspected.items.length });
             }
-            return response;
+            return cacheResponse(key, response);
           }
           log("theeb_discovery_empty", {
             query: url.searchParams.get("q") || "",
@@ -167,12 +254,16 @@ export function createTheebFetch({
       if (attempt + 1 < attempts) await waitForRetry(attempt, discoveryRetryDelaysMs);
     }
 
+    const query = url.searchParams.get("q") || "";
+    const liveFallback = await liveSearchFallback(query);
+    if (liveFallback) return cacheResponse(key, liveFallback);
+
     if (cached && timestamp - cached.storedAt <= staleTtlMs) {
-      log("theeb_discovery_stale_hit", { query: url.searchParams.get("q") || "", age_ms: timestamp - cached.storedAt });
+      log("theeb_discovery_stale_hit", { query, age_ms: timestamp - cached.storedAt });
       return responseFromCache(cached);
     }
     log("theeb_discovery_exhausted", {
-      query: url.searchParams.get("q") || "",
+      query,
       attempts,
       status: lastResponse?.status || null,
       cached: Boolean(cached),

@@ -4,23 +4,23 @@
 GitHub repository state wins over this handoff if they disagree. The original uploaded archive `albasritv.github.io-main` remains the behavioral baseline.
 
 ## Current state
-- `main` is at `fe4616ad4915e5e1c28d488e98c9ddf768d404c5`, the squash merge of PR #13 `Require real deployed playback before Web parity`.
-- Active development branch: `fix/alternate-provider-playback-14`.
-- Al-Qahtani Render service `https://al-qahtani-api.onrender.com` auto-deployed `fe4616ad4915e5e1c28d488e98c9ddf768d404c5` as deploy `dep-dah8v4navr4c73e7k4r0` and reached `live` before the deployed runtime probe started.
+- `main` is at `a89dff5f55a9eb9b124344e850be46cdb425a55c`, the merge of PR #14 `Widen bounded recovery for Theeb discovery outages`.
+- Active development branch: `fix/live-search-fallback-15`.
+- PR #14 had both PR gates green before merge: Web smoke `34470270994` and Live provider smoke `34470271038`.
+- Main Web smoke run `34587393684` passed after the merge, but deployed Remote runtime smoke run `34587393709` failed fail-closed.
 - Theeb Engine remains `https://theeb-arab-api.onrender.com` on GitHub main `38720273d43acbe7fcf072a3cdaf8c6b1659b1b1`.
-- Protected `/api/providers/*` calls use server-only `THEEB_SERVICE_TOKEN`; browser code never receives the credential.
+- Protected Theeb control/provider calls use server-only `THEEB_SERVICE_TOKEN`; browser code never receives the credential.
 
 ## Completed / diagnosed in this run
-- Re-audited main, open PRs, recent commits, Actions runs/logs, Render service/deploy state, runtime logs, server code and this handoff.
-- PR #13 had both PR gates green: Web smoke and Live provider smoke. It was squash-merged to main as `fe4616ad4915e5e1c28d488e98c9ddf768d404c5`.
-- PR #13 intentionally tightened `scripts/remote_runtime_smoke.mjs`: deployed Web parity now requires a real playable source and a Safari byte-range media probe instead of accepting an error-shaped playback response.
-- Post-merge Remote runtime smoke run `34469683484` failed, which is the expected fail-closed behavior while production playback/search is unhealthy.
-- The failure was not a stale Render deployment. Deploy `dep-dah8v4navr4c73e7k4r0` was live at 11:08:28Z and the runtime probe began at 11:08:46Z.
-- The deployed Al-Qahtani logs isolated the immediate outage: Theeb Engine returned HTTP 502 for `/v1/discover` on all three attempts for `الذئب الوحيد`, `The Odyssey`, and all anime category query variants. Health and matches remained healthy; matches returned 12 items.
-- Because the Al-Qahtani process had just restarted for deployment, its in-memory discovery cache was cold and could not provide a stale result. This exposed that the old retry burst (250ms then 750ms) was too narrow for a multi-second upstream 502 wave.
-- Created `fix/alternate-provider-playback-14` from the exact main commit.
-- On that branch, `server/theeb-fetch.mjs` now separates provider-route retry timing from discovery retry timing. Protected provider GETs keep the short bounded policy, while `/v1/discover` gets up to five attempts with bounded delays of 750ms, 1.5s, 3s and 6s. A final `theeb_discovery_exhausted` diagnostic records status/cache/transport state without secrets.
-- Added deterministic coverage proving discovery can survive three consecutive HTTP 502 responses and recover on the fourth attempt, without lengthening the protected-provider retry policy.
+- Re-audited main, open PR state, PR #14 checks, current server code, workflow definitions, deployed runtime gate, Theeb discovery implementation and Theeb security/auth contract.
+- Merged PR #14 only after its Web smoke and Live provider smoke were both successful.
+- GitHub Pages and main Web smoke succeeded on the merge commit.
+- The deployed runtime probe then reproduced the user's iPhone Safari symptom exactly enough to localize it: backend health passed, matches returned 8 items, while `الذئب الوحيد`, `The Odyssey`, and the anime category all returned `source: empty`, `count: 0`. Each discovery path took about 11.8 seconds, matching exhaustion of the widened 750ms/1.5s/3s/6s discovery retry window rather than a browser rendering bug.
+- Inspected `akwam-indexer` v1 discovery: `/v1/discover` delegates to the same live multi-provider `searchAll()` orchestrator used by the protected `/api/search` control route. The v1 route intentionally collapses orchestrator failures to `DISCOVERY_UNAVAILABLE`, while `/api/search` exposes structured provider success/failure counts and live results to authorized server-to-server callers.
+- Created `fix/live-search-fallback-15` from the exact main merge commit.
+- Updated `server/theeb-fetch.mjs` so exhausted `/v1/discover` requests get one bounded, server-authenticated fallback through protected `/api/search`. The Bearer token is injected only server-side. Successful live-search results are normalized back to the existing discovery contract, cached, and tagged with `X-Al-Qahtani-Discovery-Fallback: live-search`; empty/5xx/transport/auth outcomes are logged separately without secrets.
+- Generalized protected GET retry logging so `/api/search`, `/api/resolve*`, and `/api/providers/*` keep bounded retry/fail-closed behavior. Non-retryable 4xx validation/auth errors remain fail-closed.
+- Added deterministic tests proving an exhausted HTTP-200-empty discovery request can recover through the protected live-search route and proving Authorization is not sent to public `/v1/search`.
 
 ## Preserved original behavior
 - Matches: session acquisition, server discovery, HLS/MP4/embed playback and periodic refresh.
@@ -28,24 +28,25 @@ GitHub repository state wins over this handoff if they disagree. The original up
 - Cinema: categories, search, details, episodes, watch/download entry points, canonical/discovery/legacy/provider fallbacks.
 - `Player.html` remains web-native and does not launch `com.bsr.player.pro`.
 - Safari media paths remain behind Al-Qahtani Range-aware proxies.
-- Provider authentication remains server-only and provider-target validation remains fail-closed; HTTP 400 validation failures are not retried.
+- Provider authentication remains server-only and provider-target validation remains fail-closed.
 
 ## Known limitations / gates not yet passed
-- Branch `fix/alternate-provider-playback-14` still needs PR Web smoke and Live provider smoke before merge.
-- The discovery widening is resilience, not a substitute for fixing Theeb Engine if repeated 502s persist beyond the bounded window.
-- The selected Akwam episode previously returned `PROVIDER_EPISODE_UNAVAILABLE` even after short provider retries. Once discovery is stable, the next playback fix must preserve content/episode context and try alternate provider candidates for the same episode before final failure.
-- Safari byte-range probing remains a hard production gate and must pass with 200/206 plus appropriate range headers on a real media source.
+- `fix/live-search-fallback-15` still needs PR Web smoke and Live provider smoke before merge.
+- The protected `/api/search` fallback uses the same provider orchestrator as `/v1/discover`; it provides a second contract path and better diagnostics but cannot manufacture results if every live provider is genuinely failing. If the new gate still returns empty, the next root fix belongs in provider health/search behavior or a verified legacy/category source, not another unbounded retry loop.
+- The current deployed runtime smoke covers Arabic search, The Odyssey and anime, but not yet every category visible on iPhone Safari. Expand it after the immediate discovery recovery path is green.
+- Provider episode references still lack enough series-title/episode-number context for cross-provider episode fallback. The selected Akwam episode can still fail with `PROVIDER_EPISODE_UNAVAILABLE` after discovery recovers.
+- Safari byte-range probing remains a hard production gate and must pass with 200/206 plus useful `Content-Range`/`Accept-Ranges` headers on a real media source.
 - Download-option UX remains incomplete.
 - Flutter migration remains blocked until live Web Search/Category → Details → Episodes → Playback → Safari media is proven.
 
 ## Next run goals
-1. Open PR #14 from `fix/alternate-provider-playback-14` and run Web smoke plus Live provider smoke; repair any failure on that same branch.
-2. Merge only when both PR gates are green.
-3. Verify Render auto-deploys the exact merge commit and rerun the post-main Remote runtime smoke.
-4. If Theeb discovery still returns sustained 502 beyond the wider bounded window, diagnose/fix the upstream `akwam-indexer` discovery path rather than adding unbounded retries.
-5. Once search/details are stable, preserve series title/query, provider series id and episode number in provider episode references while retaining backward compatibility with old refs.
-6. Add alternate-provider episode resolution: on primary provider failure/no source, discover the same title, resolve alternate series, select the matching episode number, and try bounded candidates before `NO_PLAYABLE_SOURCE`.
-7. Keep all direct media behind an Al-Qahtani Range-aware proxy; do not expose provider tokens or credentials to the browser.
-8. Require Safari `Range: bytes=0-1023` to return 200/206 and useful range/content headers in deployed runtime smoke.
-9. Expand matches/news regression smoke and add browser-level GitHub Pages navigation coverage after playback turns green.
-10. Only after live Web parity is proven, begin the unified Flutter Android Mobile/Android TV/iOS migration and gated release workflows.
+1. Open PR #15 from `fix/live-search-fallback-15` and run Web smoke plus Live provider smoke; repair failures on the same branch only.
+2. Merge PR #15 only when both PR gates are green.
+3. Verify the exact merge commit is deployed and rerun Remote runtime smoke.
+4. If `/api/search` fallback also reports all providers empty/failed, inspect provider-level diagnostics and fix the failing provider/search layer instead of lengthening retries again.
+5. Expand deployed category regression coverage to every iPhone Safari category: series foreign/Arabic/Turkish/Asian/anime/Ramadan and movies foreign/Arabic/Indian/Asian/Turkish/anime.
+6. Preserve series title/query, provider series id and episode number in provider episode references while retaining backward compatibility with existing refs.
+7. Add alternate-provider episode resolution before `NO_PLAYABLE_SOURCE` and keep direct media behind Al-Qahtani Range-aware proxies.
+8. Require Safari `Range: bytes=0-1023` to return 200/206 and useful content/range headers on a real source.
+9. Keep matches/news regression checks green and add GitHub Pages browser navigation coverage after cinema playback turns green.
+10. Only after live Web parity is proven, begin unified Flutter Android Mobile/Android TV/iOS migration and gated release workflows.

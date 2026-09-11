@@ -53,6 +53,49 @@ test("keeps retrying discovery across a short 502 wave before recovering", async
   assert.ok(events.includes("theeb_discovery_recovered"));
 });
 
+test("falls back to protected live search when discovery stays empty", async () => {
+  const seen = [];
+  const fetcher = createTheebFetch({
+    serviceToken: "secret-token",
+    discoveryRetries: 0,
+    nativeFetch: async (input, init = {}) => {
+      const url = new URL(String(input));
+      seen.push({ url, headers: new Headers(init.headers || {}) });
+      if (url.pathname === "/v1/discover") return jsonResponse(empty);
+      if (url.pathname === "/api/search") {
+        return jsonResponse({
+          searched_providers: 8,
+          successful_providers: 3,
+          failed_providers: 5,
+          results: [{
+            provider: "qask",
+            provider_series_id: "wolf",
+            title: "الذئب الوحيد",
+            source_url: "https://example.invalid/wolf",
+            image: "https://example.invalid/wolf.jpg",
+            type: "series",
+            match_score: 98,
+            match_level: "strong",
+          }],
+        });
+      }
+      throw new Error(`unexpected path ${url.pathname}`);
+    },
+    wait: async () => {},
+    log: () => {},
+  });
+
+  const response = await fetcher("https://theeb-arab-api.onrender.com/v1/discover?q=" + encodeURIComponent("الذئب الوحيد"));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("X-Al-Qahtani-Discovery-Fallback"), "live-search");
+  const body = await response.json();
+  assert.equal(body.data.items.length, 1);
+  assert.equal(body.data.items[0].provider_series_id, "wolf");
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0].headers.get("Authorization"), null);
+  assert.equal(seen[1].headers.get("Authorization"), "Bearer secret-token");
+});
+
 test("serves a successful discovery from cache during a later empty outage", async () => {
   let clock = 1000;
   let calls = 0;
@@ -76,7 +119,7 @@ test("serves a successful discovery from cache during a later empty outage", asy
   assert.equal(calls, 4);
 });
 
-test("injects the service bearer token only for protected provider routes", async () => {
+test("injects the service bearer token only for protected server routes", async () => {
   const seen = [];
   const fetcher = createTheebFetch({
     serviceToken: "secret-token",
@@ -87,9 +130,11 @@ test("injects the service bearer token only for protected provider routes", asyn
     log: () => {},
   });
   await fetcher("https://theeb-arab-api.onrender.com/api/providers/qask/episode/1");
+  await fetcher("https://theeb-arab-api.onrender.com/api/search?q=test");
   await fetcher("https://theeb-arab-api.onrender.com/v1/search?q=test");
   assert.equal(seen[0].headers.get("Authorization"), "Bearer secret-token");
-  assert.equal(seen[1].headers.get("Authorization"), null);
+  assert.equal(seen[1].headers.get("Authorization"), "Bearer secret-token");
+  assert.equal(seen[2].headers.get("Authorization"), null);
 });
 
 test("retries transient 5xx failures from protected provider GET routes", async () => {
@@ -107,8 +152,8 @@ test("retries transient 5xx failures from protected provider GET routes", async 
   const response = await fetcher("https://theeb-arab-api.onrender.com/api/providers/akwam/episode/44");
   assert.equal(response.status, 200);
   assert.equal(calls, 2);
-  assert.ok(events.includes("theeb_provider_http_error"));
-  assert.ok(events.includes("theeb_provider_recovered"));
+  assert.ok(events.includes("theeb_protected_http_error"));
+  assert.ok(events.includes("theeb_protected_recovered"));
 });
 
 test("does not retry provider target validation failures", async () => {
