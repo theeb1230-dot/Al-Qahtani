@@ -11,8 +11,8 @@ GitHub repository state wins over this handoff if they disagree. The checked-in 
 - Cinema stays on the original Basri chain. The historical cinema Worker currently returns `403 FORBIDDEN_ORIGIN`; the backend uses the same original content source through a server-side compatibility fallback rather than switching provider projects.
 
 ## Current state
-- PRs #17 through #29 are merged.
-- Current product `main`: `03b57f54cdb692f5d2094770e4b2afdbd0cb5652` (`Harden rejected download references`).
+- PRs #17 through #31 are merged.
+- Current product `main`: `8e27b10c7baf25a61c43aab55a5656a64b5539ea` (`Prove media references expire fail closed`).
 - No cross-project Theeb/akwam-indexer runtime dependency is present.
 - Live Web parity, including playback and the recovered Basri-style download flow, remains proven through the deployed Al-Qahtani backend.
 
@@ -52,48 +52,66 @@ Root issue:
 - invalid or expired references were still rejected by `server/app.mjs`, but their JSON error responses could inherit download decoration.
 
 Fix:
-- download decoration is now delayed until the Al-Qahtani media path produces a successful 2xx, non-JSON proxied media response;
+- download decoration is delayed until the Al-Qahtani media path produces a successful 2xx, non-JSON proxied media response;
 - invalid, expired, URL-shaped fake IDs and arbitrary `url=` query attempts remain ordinary JSON errors and never receive attachment/nosniff headers;
 - no browser-supplied URL is accepted as a media source;
 - the valid download path still uses the same short-lived opaque media reference and retains its successful attachment behavior.
 
-Negative regression coverage in `scripts/local_backend_smoke.mjs` now checks:
-- a fake media ID;
-- an ID shaped like `https://evil.example/video.mp4`;
-- an arbitrary `url=https://evil.example/video.mp4` query without a valid opaque ID.
+### PR #30 — download hardening evidence recorded
+Merged as `d8aa860df67121941aae275933f640c588d78e16`. It records the final-head and post-merge evidence for PR #29 and keeps the security boundary explicit.
 
-Every case must fail with HTTP 404 and `MEDIA_REFERENCE_EXPIRED`, remain `application/json`, and omit download headers. The smoke then proves a real Basri episode still resolves through the opaque proxy, Safari Range still returns 206, and the valid download still returns attachment/nosniff headers.
+### PR #31 — deterministic opaque media-reference expiry gate
+Merged as `8e27b10c7baf25a61c43aab55a5656a64b5539ea`.
 
-## PR #29 final-head evidence
-Final PR head: `9f530aefa5b845cf735f035f342f81c5a44a2fdb`.
+Goal:
+- prove the real 15-minute opaque media-reference expiry behavior fail-closed without waiting 15 minutes in CI;
+- avoid exposing the private `mediaRefs` store, adding an HTTP test route, or allowing production callers to change TTL.
 
-All final-head gates passed:
-- Web smoke #115, run `34617301112`.
-- Live provider smoke #79, run `34617301041`.
-- Original Basri download contract #11, run `34617301101`.
-- Mobile WebKit smoke #29, run `34617301115`.
-- Remote movie playback smoke #21, run `34617301182`.
+Implementation:
+- production TTL remains `15 * 60_000` milliseconds;
+- `server/app.mjs` now has a narrowly scoped mutable TTL used only through exported test helpers guarded by `NODE_ENV === "test"`;
+- test TTL must be between 1 ms and the production TTL and cannot be set through HTTP, query parameters or user input;
+- a test-only helper creates an otherwise normal opaque `/api/cinema/media?id=...` reference using the same `storeMedia()` path;
+- reset restores the production TTL and clears test references.
 
-The Live provider/local-backend log explicitly proved:
-- invalid download reference: 404, opaque JSON error, no attachment/nosniff headers;
-- URL-shaped fake media ID: same fail-closed result;
-- arbitrary `url=` query: same fail-closed result;
-- real Basri search/category/details/episode path remained green;
-- real media proxy returned HTTP 206 with `Content-Range: bytes 0-1023/350455536` and `Accept-Ranges: bytes`;
-- valid safe download returned HTTP 206 with `Content-Disposition: attachment; filename="al-qahtani-media"` and `X-Content-Type-Options: nosniff`.
+Deterministic regression:
+- `scripts/media_reference_expiry_test.mjs` sets a 25 ms TTL in test mode;
+- creates an opaque reference for an allowed `.downet.net` dummy media URL;
+- waits 60 ms;
+- requests the expired reference with `download=1`, Origin and Safari-style Range headers;
+- the request must stop before any upstream access and return HTTP 404 with `MEDIA_REFERENCE_EXPIRED`;
+- response must remain `application/json` and must not receive `Content-Disposition` or `X-Content-Type-Options` download decoration.
 
-## Post-merge evidence for PR #29
-Push/main commit: `03b57f54cdb692f5d2094770e4b2afdbd0cb5652`.
+A dedicated workflow `.github/workflows/media-reference-expiry.yml` now protects this boundary on pull requests and `main` pushes.
 
-Post-merge gates completed without a failure. Confirmed successful runs include:
-- Web smoke #116, run `34617449008`.
-- Remote runtime smoke #21, run `34617448922`, against the deployed backend.
-- Mobile WebKit smoke #30, run `34617449043`.
-- Original Basri download contract #12: success.
-- Remote movie playback #22 completed as part of the same main push without a reported failure.
-- GitHub Pages deploy was triggered for the same merge commit.
+## PR #31 final-head evidence
+Final PR head: `408a15a97d95640b060e3e778264f0873649ccc7`.
 
-No regression was observed in search, categories, details, episodes, playback, movie flow, Download UX or iPhone WebKit behavior after the hardening merge.
+All six final-head gates passed:
+- Media reference expiry #1, run `34620067538`.
+- Web smoke #119, run `34620067377`.
+- Live provider smoke #81, run `34620067373`.
+- Original Basri download contract #15, run `34620067386`.
+- Remote movie playback smoke #25, run `34620067395`.
+- Mobile WebKit smoke #33, run `34620067336`.
+
+The expiry job log explicitly proved:
+- HTTP 404 before upstream access;
+- JSON body `{"status":"error","message":"MEDIA_REFERENCE_EXPIRED"}`;
+- opaque error contract preserved;
+- no attachment header;
+- no download MIME decoration.
+
+## Post-merge evidence for PR #31
+Push/main commit: `8e27b10c7baf25a61c43aab55a5656a64b5539ea`.
+
+Confirmed successful post-merge gates include:
+- Media reference expiry #2, run `34620293281`.
+- Original Basri download contract #16, run `34620293336`.
+- Mobile WebKit smoke #34, run `34620293347`.
+- Remote runtime smoke #23, run `34620293323`, completed successfully against the deployed Render backend after the auto-deploy wait.
+
+No live regression was observed after the expiry-gate merge.
 
 ## Proven live Web parity
 The deployed path has proven:
@@ -111,8 +129,9 @@ The deployed path has proven:
 
 ## Security and regression boundaries
 - Direct upstream media URLs stay hidden behind short-lived backend references.
+- Production opaque media references expire after 15 minutes.
 - Browser-controlled arbitrary external URLs are forbidden for playback/download.
-- Invalid or expired opaque media references must fail closed as JSON and must not be decorated as downloads.
+- Invalid or expired opaque media references fail closed as JSON and are not decorated as downloads.
 - Source/media host allowlists and SSRF protections remain in force.
 - Worker/session tokens stay server-side.
 - CORS and Safari Range forwarding remain active.
@@ -121,11 +140,11 @@ The deployed path has proven:
 
 ## Render evidence and limitation
 - External deployed-runtime tests target `https://al-qahtani-api.onrender.com` and prove live behavior after the workflow's Render auto-deploy wait.
-- The Render connector still has no selected workspace and explicitly forbids guessing one. Do not claim direct Render deployment IDs/log inspection until a workspace is explicitly selected.
+- Direct Render inspection is still intentionally not claimed: the connector exposes two workspaces (`My Workspace` and `بيانات`) and workspace selection must not be guessed during autonomous execution.
 
 ## Next run goals
-1. Add a deterministic expired-reference regression test, preferably through a narrowly scoped test seam or injectable TTL, without exposing or weakening the private media-reference store.
-2. Inspect whether download filename metadata can be derived only from trusted title/episode metadata, sanitize it rigorously, and avoid leaking upstream URL/path structure.
+1. Derive download filename metadata only from trusted title/episode metadata, sanitize it rigorously, and never use upstream URL/path structure as a filename source.
+2. Add deterministic tests for filename sanitization: Arabic titles, ASCII titles, path separators, quotes, control characters, empty names and oversized names.
 3. Compare current `Player.html` with the baseline and decide whether the historical player-level Download control should also use the same opaque proxy route.
 4. Add negative CORS/header tests around failed media/download requests so rejected origins cannot gain broader response access.
 5. Preserve all search/category/details/series/movie/playback/download/Safari Range/iPhone WebKit gates while hardening.
