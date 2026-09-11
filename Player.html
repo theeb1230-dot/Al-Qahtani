@@ -24,6 +24,10 @@ const serversEl=document.getElementById('servers');
 let hls=null;
 let transientObjectUrl='';
 let playGeneration=0;
+const TS_PACKET_SIZE=188;
+const TS_CLOCK=90000;
+const TS_PTS_MOD=8589934592;
+const TS_DURATION_SAMPLE_BYTES=262144;
 
 function b64uDecode(s){
   s=s.replace(/-/g,'+').replace(/_/g,'/');
@@ -84,6 +88,12 @@ function createVideo(){
 
 function bindVideoStatus(v,source){
   v.addEventListener('playing',()=>{statusEl.textContent='يعمل الآن: '+source.name;},{once:true});
+  v.addEventListener('loadedmetadata',()=>{
+    if(Number.isFinite(v.duration)&&v.duration>0)statusEl.dataset.duration=String(v.duration);
+  });
+  v.addEventListener('durationchange',()=>{
+    if(Number.isFinite(v.duration)&&v.duration>0)statusEl.dataset.duration=String(v.duration);
+  });
   v.addEventListener('error',()=>{
     const code=v.error?.code||0;
     const labels={1:'تم إيقاف التحميل',2:'خطأ في الشبكة',3:'تعذر فك ترميز الفيديو',4:'صيغة الفيديو غير مدعومة'};
@@ -100,8 +110,8 @@ function bytesLookLikeMatroska(bytes){
 }
 
 function bytesLookLikeMpegTs(bytes){
-  if(bytes.length<188||bytes[0]!==0x47)return false;
-  if(bytes.length>=376&&bytes[188]!==0x47)return false;
+  if(bytes.length<TS_PACKET_SIZE||bytes[0]!==0x47)return false;
+  if(bytes.length>=TS_PACKET_SIZE*2&&bytes[TS_PACKET_SIZE]!==0x47)return false;
   return true;
 }
 
@@ -109,16 +119,108 @@ function bytesLookLikeHls(bytes){
   try{return new TextDecoder().decode(bytes.slice(0,64)).trimStart().startsWith('#EXTM3U')}catch{return false}
 }
 
+function contentRangeTotal(value=''){
+  const m=String(value).match(/\/(\d+)\s*$/);
+  const total=Number(m?.[1]||0);
+  return Number.isSafeInteger(total)&&total>0?total:0;
+}
+
+function findTsSyncOffset(bytes){
+  const limit=Math.min(TS_PACKET_SIZE,Math.max(0,bytes.length-TS_PACKET_SIZE));
+  for(let i=0;i<=limit;i++){
+    if(bytes[i]===0x47&&(i+TS_PACKET_SIZE>=bytes.length||bytes[i+TS_PACKET_SIZE]===0x47))return i;
+  }
+  return -1;
+}
+
+function decodePts(bytes,offset){
+  if(offset+4>=bytes.length)return null;
+  const b0=bytes[offset],b1=bytes[offset+1],b2=bytes[offset+2],b3=bytes[offset+3],b4=bytes[offset+4];
+  if((b0&1)!==1||(b2&1)!==1||(b4&1)!==1)return null;
+  return (((b0>>1)&7)*1073741824)+(b1*4194304)+(((b2>>1)&127)*32768)+(b3*128)+((b4>>1)&127);
+}
+
+function collectTsPts(bytes,absoluteStart=0){
+  const sync=findTsSyncOffset(bytes);
+  if(sync<0)return [];
+  const out=[];
+  for(let packet=sync;packet+TS_PACKET_SIZE<=bytes.length;packet+=TS_PACKET_SIZE){
+    if(bytes[packet]!==0x47)continue;
+    const payloadStart=(bytes[packet+1]&0x40)!==0;
+    const adaptationControl=(bytes[packet+3]>>4)&3;
+    if(!payloadStart||adaptationControl===0||adaptationControl===2)continue;
+    let p=packet+4;
+    if(adaptationControl===3){
+      const adaptationLength=bytes[p]||0;
+      p+=1+adaptationLength;
+    }
+    if(p+14>packet+TS_PACKET_SIZE||p+14>bytes.length)continue;
+    if(bytes[p]!==0x00||bytes[p+1]!==0x00||bytes[p+2]!==0x01)continue;
+    const streamId=bytes[p+3];
+    if(!((streamId>=0xc0&&streamId<=0xef)||streamId===0xbd))continue;
+    const ptsFlags=(bytes[p+7]>>6)&3;
+    if(ptsFlags!==2&&ptsFlags!==3)continue;
+    const pts=decodePts(bytes,p+9);
+    if(pts===null)continue;
+    out.push({pts,offset:absoluteStart+packet});
+  }
+  return out;
+}
+
+function ptsDeltaSeconds(first,last){
+  if(!first||!last)return 0;
+  const ticks=(last.pts-first.pts+TS_PTS_MOD)%TS_PTS_MOD;
+  const seconds=ticks/TS_CLOCK;
+  return Number.isFinite(seconds)&&seconds>0&&seconds<86400?seconds:0;
+}
+
+async function fetchRangeBytes(url,start,end){
+  const response=await fetch(url,{headers:{Range:`bytes=${start}-${end}`},cache:'no-store'});
+  if(!response.ok&&response.status!==206)throw new Error('STREAM_DURATION_PROBE_'+response.status);
+  return {bytes:new Uint8Array(await response.arrayBuffer()),totalBytes:contentRangeTotal(response.headers.get('content-range'))};
+}
+
+async function probeMpegTsDuration(url,totalBytes,initialBytes){
+  if(!totalBytes)return null;
+  try{
+    let headBytes=initialBytes;
+    if(headBytes.length<TS_DURATION_SAMPLE_BYTES){
+      const headEnd=Math.min(totalBytes-1,TS_DURATION_SAMPLE_BYTES-1);
+      headBytes=(await fetchRangeBytes(url,0,headEnd)).bytes;
+    }
+    const tailStart=Math.max(0,totalBytes-TS_DURATION_SAMPLE_BYTES);
+    const tail=(await fetchRangeBytes(url,tailStart,totalBytes-1)).bytes;
+    const headPts=collectTsPts(headBytes,0);
+    const tailPts=collectTsPts(tail,tailStart);
+    if(headPts.length&&tailPts.length){
+      const exact=ptsDeltaSeconds(headPts[0],tailPts[tailPts.length-1]);
+      if(exact>1)return exact;
+    }
+    if(headPts.length>=2){
+      const spanSeconds=ptsDeltaSeconds(headPts[0],headPts[headPts.length-1]);
+      const spanBytes=headPts[headPts.length-1].offset-headPts[0].offset;
+      if(spanSeconds>0.5&&spanBytes>0){
+        const estimated=totalBytes/(spanBytes/spanSeconds);
+        if(Number.isFinite(estimated)&&estimated>1&&estimated<86400)return estimated;
+      }
+    }
+  }catch(e){
+    console.warn('MPEG-TS duration probe failed',e);
+  }
+  return null;
+}
+
 async function inspectStream(url){
   const response=await fetch(url,{headers:{Range:'bytes=0-4095'},cache:'no-store'});
   if(!response.ok&&response.status!==206)throw new Error('STREAM_PROBE_'+response.status);
   const contentType=String(response.headers.get('content-type')||'').toLowerCase();
+  const totalBytes=contentRangeTotal(response.headers.get('content-range'));
   const bytes=new Uint8Array(await response.arrayBuffer());
   const mp4=bytesLookLikeMp4(bytes)||contentType.includes('video/mp4');
   const matroska=bytesLookLikeMatroska(bytes)||contentType.includes('matroska')||contentType.includes('webm');
   const mpegTs=bytesLookLikeMpegTs(bytes)||contentType.includes('video/mp2t');
   const hls=bytesLookLikeHls(bytes)||contentType.includes('mpegurl');
-  return {contentType,mp4,matroska,mpegTs,hls};
+  return {contentType,mp4,matroska,mpegTs,hls,totalBytes,bytes};
 }
 
 function playHls(source){
@@ -138,21 +240,28 @@ function playHls(source){
   v.play().catch(()=>{});
 }
 
-function playMpegTsAsHls(source){
+async function playMpegTsAsHls(source,inspection,generation){
+  const duration=await probeMpegTsDuration(source.url,inspection.totalBytes,inspection.bytes);
+  if(generation!==playGeneration)return;
   const segmentUrl=new URL(source.url,location.href).href;
+  const durationKnown=Number.isFinite(duration)&&duration>1;
+  const extinf=durationKnown?Math.max(1,duration):10;
   const manifest=[
     '#EXTM3U',
     '#EXT-X-VERSION:3',
-    '#EXT-X-PLAYLIST-TYPE:VOD',
-    '#EXT-X-TARGETDURATION:43200',
+    durationKnown?'#EXT-X-PLAYLIST-TYPE:VOD':'#EXT-X-PLAYLIST-TYPE:EVENT',
+    '#EXT-X-TARGETDURATION:'+Math.max(1,Math.ceil(extinf)),
     '#EXT-X-MEDIA-SEQUENCE:0',
-    '#EXTINF:43200.000,',
+    '#EXTINF:'+extinf.toFixed(3)+',',
     segmentUrl,
-    '#EXT-X-ENDLIST',
+    ...(durationKnown?['#EXT-X-ENDLIST']:[]),
     '',
   ].join('\n');
   transientObjectUrl=URL.createObjectURL(new Blob([manifest],{type:'application/vnd.apple.mpegurl'}));
-  statusEl.textContent='تم التحقق من MPEG-TS — جارٍ تشغيله عبر HLS المتوافق مع Safari';
+  statusEl.dataset.mpegTsDuration=durationKnown?String(duration):'unknown';
+  statusEl.textContent=durationKnown
+    ?'تم التحقق من MPEG-TS — مدة المصدر '+Math.round(duration)+' ثانية — جارٍ التشغيل عبر HLS'
+    :'تم التحقق من MPEG-TS — مدة المصدر غير متاحة بشكل موثوق، جارٍ التشغيل دون مدة VOD مصطنعة';
   playHls({...source,url:transientObjectUrl,type:'m3u8'});
 }
 
@@ -169,7 +278,7 @@ async function playDirectStream(source,generation){
     return;
   }
   if(inspection?.mpegTs){
-    playMpegTsAsHls(source);
+    await playMpegTsAsHls(source,inspection,generation);
     return;
   }
   const v=createVideo();
@@ -194,6 +303,8 @@ function play(source){
   stop();
   const generation=playGeneration;
   statusEl.textContent='جارٍ تشغيل '+source.name;
+  delete statusEl.dataset.mpegTsDuration;
+  delete statusEl.dataset.duration;
   document.querySelectorAll('.servers button').forEach(b=>b.classList.toggle('active',b.dataset.url===source.url));
   if(source.type==='m3u8'){
     playHls(source);
