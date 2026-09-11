@@ -29,6 +29,9 @@ function assert(cond, message, detail = {}) {
   return true;
 }
 
+const safeRef = value => {
+  try { return new URL(String(value)).href; } catch { return encodeURI(String(value)); }
+};
 const jsonHeaders = (page, extra = {}) => ({
   Accept: "application/json",
   Origin: ORIGIN,
@@ -40,7 +43,7 @@ const htmlHeaders = (referer = SOURCE + "/") => ({
   Accept: "text/html,application/xhtml+xml",
   "Accept-Language": "ar-SA,ar;q=0.9,en-US;q=0.8,en;q=0.7",
   "User-Agent": SAFARI_UA,
-  Referer: referer,
+  Referer: safeRef(referer),
 });
 
 function uniqueMatches(text, re) {
@@ -91,7 +94,7 @@ async function cinemaDirectSmoke() {
   const range = await fetch(media[0], {
     method: "GET",
     redirect: "follow",
-    headers: { Range: "bytes=0-1023", Referer: watch[0], "User-Agent": SAFARI_UA, Accept: "*/*" },
+    headers: { Range: "bytes=0-1023", Referer: safeRef(watch[0]), "User-Agent": SAFARI_UA, Accept: "*/*" },
   });
   try {
     assert(range.status === 206 || range.status === 200, "direct media responds to Safari range probe", {
