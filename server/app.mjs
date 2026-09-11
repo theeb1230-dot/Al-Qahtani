@@ -1,13 +1,18 @@
 import http from "node:http";
 import crypto from "node:crypto";
+import {
+  assertSourceUrl,
+  directCategory,
+  directSearch,
+  directDetails,
+  directWatch,
+  BasriSource,
+} from "./basri-source.mjs";
 
 const MATCHES = "https://api.albasritv1.workers.dev/";
 const CINEMA = "https://albas.albesriali03.workers.dev/";
-const BASRI_ORIGINS = [
-  "https://www.albasritv.abrdns.com",
-  "https://albasritv.abrdns.com",
-];
-const SAFARI_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1";
+const BASRI_ORIGIN = "https://www.albasritv.abrdns.com";
+const BASRI_REFERER = `${BASRI_ORIGIN}/2026/09/movies-series.html`;
 
 const ALLOWED_ORIGINS = new Set([
   "https://theeb1230-dot.github.io",
@@ -19,11 +24,6 @@ const mediaRefs = new Map();
 let cinemaToken = "";
 let cinemaTokenExpiresAt = 0;
 let cinemaSessionPromise = null;
-let activeCinemaOrigin = BASRI_ORIGINS[0];
-
-function refererFor(origin, page = "/2026/09/movies-series.html") {
-  return `${origin}${page}`;
-}
 
 function applyCors(req, res) {
   const origin = String(req.headers.origin || "");
@@ -57,37 +57,25 @@ async function fetchTextJson(url, init = {}, timeoutMs = 45_000) {
   }
 }
 
-function basriHeaders(origin = BASRI_ORIGINS[0], page = "/2026/09/movies-series.html", extra = {}) {
+function basriHeaders(page = "/2026/09/movies-series.html", extra = {}) {
   return {
     Accept: "application/json",
-    Origin: origin,
-    Referer: refererFor(origin, page),
+    Origin: BASRI_ORIGIN,
+    Referer: `${BASRI_ORIGIN}${page}`,
     "X-BSR-Page": page,
     ...extra,
   };
 }
 
-function cinemaBrowserHeaders(origin = activeCinemaOrigin) {
-  return basriHeaders(origin, "/2026/09/movies-series.html", {
-    "User-Agent": SAFARI_UA,
-    "Accept-Language": "ar-SA,ar;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Sec-Fetch-Site": "cross-site",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Dest": "empty",
-  });
-}
-
 async function getMatchToken() {
-  const origin = BASRI_ORIGINS[0];
-  const result = await fetchTextJson(`${MATCHES}session`, { headers: basriHeaders(origin, "/2026/09/matches.html") });
+  const result = await fetchTextJson(`${MATCHES}session`, { headers: basriHeaders("/2026/09/matches.html") });
   if (!result.response.ok || !result.data?.token) throw new Error(`MATCH_SESSION_${result.response.status}`);
   return String(result.data.token);
 }
 
 async function getMatches() {
-  const origin = BASRI_ORIGINS[0];
   const token = await getMatchToken();
-  const result = await fetchTextJson(MATCHES, { headers: basriHeaders(origin, "/2026/09/matches.html", { "X-BSR-Token": token }) });
+  const result = await fetchTextJson(MATCHES, { headers: basriHeaders("/2026/09/matches.html", { "X-BSR-Token": token }) });
   if (!result.response.ok) throw new Error(`MATCH_LIST_${result.response.status}`);
   return result.data;
 }
@@ -95,15 +83,10 @@ async function getMatches() {
 async function getMatchServers(target) {
   const url = new URL(target);
   if (url.origin !== new URL(MATCHES).origin) throw new Error("BAD_MATCH_TARGET");
-  const origin = BASRI_ORIGINS[0];
   const token = await getMatchToken();
-  const result = await fetchTextJson(url.href, { headers: basriHeaders(origin, "/2026/09/matches.html", { "X-BSR-Token": token }) });
+  const result = await fetchTextJson(url.href, { headers: basriHeaders("/2026/09/matches.html", { "X-BSR-Token": token }) });
   if (!result.response.ok) throw new Error(`MATCH_SERVERS_${result.response.status}`);
   return result.data;
-}
-
-async function createCinemaSessionForOrigin(origin) {
-  return fetchTextJson(`${CINEMA}session`, { headers: cinemaBrowserHeaders(origin) }, 20_000);
 }
 
 async function ensureCinemaSession(force = false) {
@@ -111,40 +94,41 @@ async function ensureCinemaSession(force = false) {
   if (!force && cinemaToken && cinemaTokenExpiresAt > now + 10_000) return cinemaToken;
   if (!force && cinemaSessionPromise) return cinemaSessionPromise;
   cinemaSessionPromise = (async () => {
-    const orderedOrigins = [activeCinemaOrigin, ...BASRI_ORIGINS.filter((origin) => origin !== activeCinemaOrigin)];
-    let lastStatus = 0;
-    for (const origin of orderedOrigins) {
-      const result = await createCinemaSessionForOrigin(origin);
-      lastStatus = result.response.status;
-      if (result.response.ok && result.data?.token) {
-        activeCinemaOrigin = origin;
-        cinemaToken = String(result.data.token);
-        const expiresAt = Number(result.data.expiresAt || result.data.expires_at || 0);
-        cinemaTokenExpiresAt = expiresAt > 10_000_000_000 ? expiresAt : expiresAt > 0 ? expiresAt * 1000 : Date.now() + 5 * 60_000;
-        log("cinema_session_ok", { origin });
-        return cinemaToken;
-      }
-      log("cinema_session_rejected", { origin, status: result.response.status, code: result.data?.message || "" });
-      if (result.response.status !== 403 || result.data?.message !== "FORBIDDEN_ORIGIN") break;
-    }
-    throw new Error(`CINEMA_SESSION_${lastStatus || "FAILED"}`);
+    const result = await fetchTextJson(`${CINEMA}session`, { headers: { Accept: "application/json" } }, 15_000);
+    if (!result.response.ok || !result.data?.token) throw new Error(`CINEMA_SESSION_${result.response.status}`);
+    cinemaToken = String(result.data.token);
+    const expiresAt = Number(result.data.expiresAt || 0);
+    cinemaTokenExpiresAt = expiresAt > 10_000_000_000 ? expiresAt : expiresAt > 0 ? expiresAt * 1000 : Date.now() + 5 * 60_000;
+    return cinemaToken;
   })();
   try { return await cinemaSessionPromise; } finally { cinemaSessionPromise = null; }
 }
 
-async function cinemaRequest(action, params = {}, retry = true) {
+async function cinemaWorkerRequest(action, params = {}, retry = true) {
   const token = await ensureCinemaSession(false);
   const query = new URLSearchParams({ action, token, ...params });
-  const result = await fetchTextJson(`${CINEMA}?${query}`, { headers: cinemaBrowserHeaders(activeCinemaOrigin) }, 60_000);
+  const result = await fetchTextJson(`${CINEMA}?${query}`, { headers: { Accept: "application/json" } }, 45_000);
   if (retry && result.response.status === 401) {
     cinemaToken = "";
     cinemaTokenExpiresAt = 0;
     await ensureCinemaSession(true);
-    return cinemaRequest(action, params, false);
+    return cinemaWorkerRequest(action, params, false);
   }
   if (!result.response.ok) throw new Error(`CINEMA_${action.toUpperCase()}_${result.response.status}`);
   if (result.data?.status !== "success") throw new Error(`CINEMA_${action.toUpperCase()}_REJECTED`);
   return result.data;
+}
+
+async function workerOrDirect(label, workerFn, directFn) {
+  try {
+    const data = await workerFn();
+    const count = Array.isArray(data?.data) ? data.data.length : null;
+    if (count === 0) throw new Error(`${label}_EMPTY`);
+    return { data, source: "basri-worker" };
+  } catch (error) {
+    log("cinema_worker_fallback", { label, reason: String(error?.message || error) });
+    return { data: await directFn(), source: "basri-direct" };
+  }
 }
 
 function normalizeCatalog(items = []) {
@@ -160,9 +144,10 @@ function normalizeCatalog(items = []) {
   }).filter((item) => item.href);
 }
 
-function storeMedia(url) {
+function storeMedia(url, referer = BasriSource.origin + "/") {
+  const parsed = assertSourceUrl(url, { allowMedia: true });
   const id = crypto.randomBytes(18).toString("base64url");
-  mediaRefs.set(id, { url, expiresAt: Date.now() + 15 * 60_000 });
+  mediaRefs.set(id, { url: parsed.href, referer, expiresAt: Date.now() + 15 * 60_000 });
   if (mediaRefs.size > 256) {
     const now = Date.now();
     for (const [key, value] of mediaRefs) if (value.expiresAt <= now) mediaRefs.delete(key);
@@ -170,43 +155,85 @@ function storeMedia(url) {
   return id;
 }
 
-function normalizeDetails(data = {}) {
-  const normalized = { ...data, status: "success", source: "basri-worker" };
-  const episodes = Array.isArray(data.episodes) ? data.episodes : [];
-  normalized.episodes = episodes.map((episode, index) => {
-    const raw = episode.link || episode.url || episode.href || episode.id || "";
+function wrapEpisodes(episodes = []) {
+  return episodes.map((episode, index) => {
+    const raw = episode.link || episode.url || episode.href || "";
     return {
       ...episode,
-      num: episode.num || episode.number || index + 1,
+      num: Number(episode.num || episode.number || index + 1),
       link: raw ? `legacy:${encodeURIComponent(String(raw))}` : "",
       watch_available: episode.watch_available !== false && Boolean(raw),
     };
   });
+}
+
+function normalizeWorkerDetails(data = {}) {
+  const normalized = { ...data, status: "success", source: "basri-worker", episodes: wrapEpisodes(data.episodes || []) };
   if (data.media_src && !data.is_iframe) {
-    const id = storeMedia(String(data.media_src));
+    const id = storeMedia(String(data.media_src), BASRI_REFERER);
     normalized.media_path = `/api/cinema/media?id=${encodeURIComponent(id)}`;
     delete normalized.media_src;
-    normalized.media_type = data.media_type || (/\.m3u8(?:$|\?)/i.test(String(data.media_src)) ? "m3u8" : "stream");
+    normalized.media_type = data.media_type || "stream";
   }
   return normalized;
 }
 
 async function cinemaSearch(query) {
-  const data = await cinemaRequest("search", { q: query });
-  return { status: "success", source: "basri-worker", data: normalizeCatalog(data.data || []) };
+  const result = await workerOrDirect(
+    "search",
+    () => cinemaWorkerRequest("search", { q: query }),
+    () => directSearch(query),
+  );
+  const items = result.source === "basri-worker" ? (result.data.data || []) : result.data;
+  return { status: "success", source: result.source, data: normalizeCatalog(items) };
 }
 
 async function cinemaCategory(sourceUrl, page = 1) {
-  if (!sourceUrl) return { status: "success", source: "basri-worker", data: [] };
-  const data = await cinemaRequest("genre", { genre: sourceUrl, p: String(page || 1) });
-  return { status: "success", source: "basri-worker", data: normalizeCatalog(data.data || []) };
+  if (!sourceUrl) return { status: "success", source: "basri-direct", data: [] };
+  assertSourceUrl(sourceUrl);
+  const result = await workerOrDirect(
+    "category",
+    () => cinemaWorkerRequest("genre", { genre: sourceUrl, p: String(page || 1) }),
+    () => directCategory(sourceUrl, page),
+  );
+  const items = result.source === "basri-worker" ? (result.data.data || []) : result.data;
+  return { status: "success", source: result.source, data: normalizeCatalog(items) };
+}
+
+async function directDetailsResolved(target) {
+  const details = await directDetails(target);
+  if (Array.isArray(details.episodes) && details.episodes.length) {
+    return { ...details, episodes: wrapEpisodes(details.episodes) };
+  }
+  if (Array.isArray(details.watch) && details.watch.length) {
+    const watch = await directWatch(details.watch[0], target);
+    if (watch.status !== "success" || !watch.media_src) throw new Error("DIRECT_WATCH_NO_MEDIA");
+    const id = storeMedia(watch.media_src, details.watch[0]);
+    return {
+      status: "success",
+      source: "basri-direct",
+      movie_title: details.movie_title || watch.movie_title || "",
+      episodes: [],
+      media_path: `/api/cinema/media?id=${encodeURIComponent(id)}`,
+      media_type: "stream",
+      is_iframe: false,
+      download_options: details.downloads || [],
+    };
+  }
+  return { ...details, episodes: wrapEpisodes(details.episodes || []) };
 }
 
 async function cinemaDetails(ref) {
   if (!ref.startsWith("legacy:")) throw new Error("BAD_CINEMA_REFERENCE");
   const target = decodeURIComponent(ref.slice("legacy:".length));
-  const data = await cinemaRequest("series", { series: target });
-  return normalizeDetails(data);
+  assertSourceUrl(target);
+  try {
+    const data = await cinemaWorkerRequest("series", { series: target });
+    return normalizeWorkerDetails(data);
+  } catch (error) {
+    log("cinema_details_direct_fallback", { reason: String(error?.message || error), targetType: new URL(target).pathname.split("/")[1] || "" });
+    return directDetailsResolved(target);
+  }
 }
 
 async function proxyMedia(req, res, id) {
@@ -215,10 +242,8 @@ async function proxyMedia(req, res, id) {
     mediaRefs.delete(id);
     return sendJson(res, 404, { status: "error", message: "MEDIA_REFERENCE_EXPIRED" });
   }
-  let target;
-  try { target = new URL(entry.url); } catch { return sendJson(res, 400, { status: "error", message: "BAD_MEDIA_REFERENCE" }); }
-  if (!/^https?:$/.test(target.protocol)) return sendJson(res, 400, { status: "error", message: "BAD_MEDIA_SCHEME" });
-  const headers = { Accept: "*/*", Referer: refererFor(activeCinemaOrigin), "User-Agent": SAFARI_UA };
+  const target = assertSourceUrl(entry.url, { allowMedia: true });
+  const headers = { Accept: "*/*", Referer: entry.referer || BasriSource.origin + "/", "User-Agent": BasriSource.userAgent };
   if (req.headers.range) headers.Range = req.headers.range;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60_000);
@@ -230,6 +255,7 @@ async function proxyMedia(req, res, id) {
       const value = upstream.headers.get(name);
       if (value) res.setHeader(name, value);
     }
+    if (!upstream.headers.get("content-type")) res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Cache-Control", "no-store");
     res.statusCode = upstream.status;
     if (!upstream.body) return res.end();
@@ -250,7 +276,7 @@ export function createServer() {
     const url = new URL(req.url, "http://localhost");
     const started = Date.now();
     try {
-      if (url.pathname === "/health") return sendJson(res, 200, { status: "ok", cinema_source: "basri-worker", cinema_origin: activeCinemaOrigin });
+      if (url.pathname === "/health") return sendJson(res, 200, { status: "ok", cinema_source: "basri-original" });
       if (url.pathname === "/api/matches") return sendJson(res, 200, await getMatches());
       if (url.pathname === "/api/matches/servers") return sendJson(res, 200, await getMatchServers(url.searchParams.get("url") || ""));
       if (url.pathname === "/api/cinema/search") return sendJson(res, 200, await cinemaSearch((url.searchParams.get("q") || "").trim()));
