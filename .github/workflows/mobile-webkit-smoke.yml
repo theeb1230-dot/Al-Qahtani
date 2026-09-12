@@ -20,5 +20,7 @@ jobs:
           npx playwright install --with-deps webkit
       - name: Exercise cinema navigation in iPhone WebKit
         run: node scripts/mobile_webkit_smoke.mjs
+      - name: Verify endless 30-item category loading in iPhone WebKit
+        run: node scripts/category_infinite_webkit_smoke.mjs
       - name: Verify MPEG-TS media typing in iPhone WebKit
         run: node scripts/player_mpegts_webkit_smoke.mjs
