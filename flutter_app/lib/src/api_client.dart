@@ -15,6 +15,25 @@ class AlQahtaniApi {
     return _list(json['data']).map(MatchItem.fromJson).toList(growable: false);
   }
 
+  Future<List<MatchServer>> matchServers(String ref) async {
+    if (ref.trim().isEmpty) throw const ApiException('MISSING_MATCH_REFERENCE');
+    final json = await _getJson('/api/v1/matches/servers', {'ref': ref});
+    return _list(json['data'])
+        .map(MatchServer.fromJson)
+        .where((server) => server.ref.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<MatchPlayback> resolveMatchPlayback(String serverRef) async {
+    if (serverRef.trim().isEmpty) throw const ApiException('MISSING_MATCH_SERVER_REFERENCE');
+    final json = await _getJson('/api/v1/matches/playback', {'ref': serverRef});
+    final data = json['data'];
+    if (data is! Map) throw const ApiException('INVALID_MATCH_PLAYBACK');
+    final playback = MatchPlayback.fromJson(data.cast<String, dynamic>());
+    if (playback.mediaPath.isEmpty) throw const ApiException('NO_MATCH_MEDIA');
+    return playback;
+  }
+
   Future<List<NewsItem>> news() async {
     final json = await _getJson('/api/v1/news');
     return _list(json['data']).map(NewsItem.fromJson).where((item) => item.ref.isNotEmpty).toList(growable: false);
@@ -35,7 +54,21 @@ class AlQahtaniApi {
 
   Future<List<CatalogItem>> search(String query) async {
     final json = await _getJson('/api/v1/search', {'q': query.trim()});
-    return _list(json['data']).map(CatalogItem.fromJson).toList(growable: false);
+    final seenRefs = <String>{};
+    final seenFallback = <String>{};
+    final out = <CatalogItem>[];
+    for (final raw in _list(json['data'])) {
+      final item = CatalogItem.fromJson(raw);
+      final ref = item.ref.trim();
+      final fallback = '${item.type}|${item.title.trim().toLowerCase()}|${item.year ?? ''}';
+      if (ref.isNotEmpty) {
+        if (!seenRefs.add(ref)) continue;
+      } else if (!seenFallback.add(fallback)) {
+        continue;
+      }
+      out.add(item);
+    }
+    return out;
   }
 
   Future<TitleDetails> details(String ref) async {
@@ -54,9 +87,9 @@ class AlQahtaniApi {
   }
 
   Uri mediaUri(String mediaPath, {bool download = false}) {
-    if (!mediaPath.startsWith('/api/cinema/media?')) {
-      throw const ApiException('INVALID_MEDIA_REFERENCE');
-    }
+    final cinema = mediaPath.startsWith('/api/cinema/media?');
+    final matches = mediaPath.startsWith('/api/matches/media?');
+    if (!cinema && !matches) throw const ApiException('INVALID_MEDIA_REFERENCE');
     final uri = _baseUri.resolve(mediaPath);
     if (!download) return uri;
     final params = Map<String, String>.from(uri.queryParameters)..['download'] = '1';
