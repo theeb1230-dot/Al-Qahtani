@@ -178,7 +178,7 @@ class _DetailsPageState extends State<DetailsPage> {
                     focusNode: _directPlayFocus,
                     leading: const Icon(Icons.play_circle_outline),
                     title: const Text('مشاهدة داخل التطبيق'),
-                    subtitle: const Text('المصدر يمر عبر Al-Qahtani media proxy دون كشف العنوان الأصلي.'),
+                    subtitle: const Text('تشغيل آمن داخل المشغل المدمج'),
                     trailing: const Icon(Icons.play_arrow),
                     onTap: () => _openDirect(details),
                   )),
@@ -187,13 +187,13 @@ class _DetailsPageState extends State<DetailsPage> {
                         ? const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.download_outlined),
                     title: Text(_activeDownloads.contains('direct') ? 'جاري التنزيل…' : 'تنزيل داخل التطبيق'),
-                    subtitle: const Text('يستخدم نفس media reference المعتم ومسار Download الموثوق.'),
+                    subtitle: const Text('يحفظ الملف داخل مساحة التطبيق'),
                     onTap: _activeDownloads.contains('direct')
                         ? null
                         : () => _download(key: 'direct', title: details.title, mediaPath: details.mediaPath),
                   )),
                 ] else if (details.playbackUnavailable)
-                  const ListTile(leading: Icon(Icons.info_outline), title: Text('المشاهدة غير متاحة من هذا المصدر حاليًا'), subtitle: Text('لن يتم فتح روابط خارجية أو تسريب عنوان المصدر.'))
+                  const ListTile(leading: Icon(Icons.info_outline), title: Text('المشاهدة غير متاحة من هذا المصدر حاليًا'), subtitle: Text('يمكن إعادة المحاولة لاحقًا دون فتح روابط خارجية.'))
                 else
                   const ListTile(title: Text('لا توجد حلقات أو وسائط متاحة حاليًا')),
               ],
@@ -273,7 +273,7 @@ class _EpisodeTile extends StatelessWidget {
       enabled: enabled,
       leading: CircleAvatar(child: Text('${episode.number}')),
       title: Text(label),
-      subtitle: const Text('رقم الحلقة منفصل عن معرف المصدر الداخلي'),
+      subtitle: Text(enabled ? 'مشاهدة أو تنزيل الحلقة' : 'المشاهدة غير متاحة حاليًا'),
       trailing: enabled
           ? Wrap(
               spacing: 4,
