@@ -22,32 +22,33 @@ async function waitForHealth() {
   throw new Error('BACKEND_START_TIMEOUT');
 }
 
-async function sanitizedServerDiagnostics() {
-  try {
-    const rawRes = await fetch(base + '/api/matches');
-    const raw = await rawRes.json();
-    const liveRaw = Array.isArray(raw?.data) ? raw.data.find(item => item?.priority === 1 && item?.link) : null;
-    if (!liveRaw) return { liveRaw: false };
-    const serversRes = await fetch(base + '/api/matches/servers?url=' + encodeURIComponent(String(liveRaw.link)));
-    const payload = await serversRes.json();
-    const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.servers) ? payload.servers : [];
-    const protocols = [];
-    for (const row of rows.slice(0, 8)) {
-      const value = typeof row === 'string' ? row : row?.url || row?.src || row?.link || row?.file || row?.embed || row?.iframe || row?.player || '';
-      try { protocols.push(new URL(String(value), 'https://api.albasritv1.workers.dev/').protocol); } catch { protocols.push('invalid'); }
-    }
-    return {
-      liveRaw: true,
-      status: serversRes.status,
-      topKeys: payload && typeof payload === 'object' && !Array.isArray(payload) ? Object.keys(payload).sort() : [],
-      count: rows.length,
-      firstRowKeys: rows[0] && typeof rows[0] === 'object' ? Object.keys(rows[0]).sort() : [],
-      types: [...new Set(rows.map(row => typeof row === 'object' ? String(row?.type || '') : '').filter(Boolean))],
-      protocols: [...new Set(protocols)],
-    };
-  } catch (error) {
-    return { diagnosticsFailed: String(error?.message || error).replace(/https?:\/\/\S+/g, '[redacted]') };
+async function liveServerState() {
+  const rawRes = await fetch(base + '/api/matches');
+  const raw = await rawRes.json();
+  const rawItems = Array.isArray(raw?.data) ? raw.data : [];
+  const liveIndexes = rawItems
+    .map((item, index) => item?.priority === 1 && item?.link ? index : -1)
+    .filter(index => index >= 0);
+
+  for (const index of liveIndexes) {
+    const rawMatch = rawItems[index];
+    try {
+      const serversRes = await fetch(base + '/api/matches/servers?url=' + encodeURIComponent(String(rawMatch.link)));
+      const payload = await serversRes.json();
+      const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.servers) ? payload.servers : [];
+      if (rows.length) {
+        return {
+          available: true,
+          index,
+          status: serversRes.status,
+          count: rows.length,
+          firstRowKeys: rows[0] && typeof rows[0] === 'object' ? Object.keys(rows[0]).sort() : [],
+          types: [...new Set(rows.map(row => typeof row === 'object' ? String(row?.type || '') : '').filter(Boolean))],
+        };
+      }
+    } catch {}
   }
+  return { available: false, liveCount: liveIndexes.length };
 }
 
 try {
@@ -78,12 +79,27 @@ try {
 
   console.log('PASS opaque match logo proxy', { status: imageRes.status, type, bytes: bytes.length, reference: 'opaque-runtime-path' });
 
-  const live = matches.data.find(match => match?.status === 'live' && typeof match?.ref === 'string' && match.ref.startsWith('match:'));
-  if (live) {
-    const playRes = await fetch(base + '/api/v1/matches/play?ref=' + encodeURIComponent(live.ref));
+  const state = await liveServerState();
+  if (!state.available) {
+    const live = matches.data.find(match => match?.status === 'live' && typeof match?.ref === 'string' && match.ref.startsWith('match:'));
+    if (live) {
+      const playRes = await fetch(base + '/api/v1/matches/play?ref=' + encodeURIComponent(live.ref));
+      const play = await playRes.json();
+      if (playRes.ok || play?.status === 'success') throw new Error('MATCH_RUNTIME_FALSE_PLAYBACK_SUCCESS_WITHOUT_SERVERS');
+      if (/https?:\/\//i.test(JSON.stringify(play))) throw new Error('MATCH_UNAVAILABLE_RESPONSE_LEAKED_UPSTREAM_URL');
+      console.log('PASS live match fail-closed: source currently exposes no playable servers', {
+        liveCount: state.liveCount,
+        status: playRes.status,
+      });
+    } else {
+      console.log('SKIP live match playback proxy: no live match in current Basri schedule');
+    }
+  } else {
+    const runtimeMatch = matches.data[state.index];
+    if (!runtimeMatch?.ref?.startsWith('match:')) throw new Error('LIVE_MATCH_RUNTIME_INDEX_MISMATCH');
+    const playRes = await fetch(base + '/api/v1/matches/play?ref=' + encodeURIComponent(runtimeMatch.ref));
     const play = await playRes.json();
     if (!playRes.ok || play?.status !== 'success' || !play?.data?.media_path?.startsWith('/api/v1/matches/media?id=')) {
-      console.log('INFO sanitized live match server diagnostics', await sanitizedServerDiagnostics());
       throw new Error(`LIVE_MATCH_PLAYBACK_RESOLUTION_FAILED_${playRes.status}`);
     }
     const playSerialized = JSON.stringify(play);
@@ -101,10 +117,9 @@ try {
       status: mediaRes.status,
       mediaType: mediaType.includes('mpegurl') ? 'hls' : mediaType.startsWith('video/') ? 'video' : 'binary',
       bytes: mediaBytes.length,
+      serverCount: state.count,
       reference: 'opaque-runtime-path',
     });
-  } else {
-    console.log('SKIP live match playback proxy: no live match in current Basri schedule');
   }
 } finally {
   child.kill('SIGTERM');
