@@ -103,20 +103,23 @@ function listPayload(payload) { return Array.isArray(payload) ? payload : Array.
 
 async function runtimeMatches() {
   const payload = await matchWorker();
-  const data = listPayload(payload).map((raw) => {
+  const data = listPayload(payload).map((raw, index) => {
     const target = String(raw?.link || raw?.url || "");
     const normalized = normalizeMatch(raw);
     let ref = "";
+    let publicId = `match-${index + 1}`;
     if (target) {
       const parsed = new URL(target, MATCHES);
       if (parsed.origin === new URL(MATCHES).origin) {
         const key = id();
         matchRefs.set(key, { target: parsed.href, expiresAt: now() + MATCH_TTL_MS });
         ref = `match:${key}`;
+        publicId = `match-${key.slice(0, 12)}`;
       }
     }
     return {
       ...normalized,
+      id: publicId,
       ref,
       team1: { ...normalized.team1, logo: storeLogo(normalized.team1.logo) },
       team2: { ...normalized.team2, logo: storeLogo(normalized.team2.logo) },
