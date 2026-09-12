@@ -17,10 +17,10 @@ void main() {
                 context,
                 returnFocus: focusNode,
                 route: MaterialPageRoute<void>(
-                  builder: (_) => Scaffold(
+                  builder: (routeContext) => Scaffold(
                     body: TextButton(
                       key: const Key('close-player'),
-                      onPressed: () => Navigator.of(_).pop(),
+                      onPressed: () => Navigator.of(routeContext).pop(),
                       child: const Text('إغلاق'),
                     ),
                   ),
