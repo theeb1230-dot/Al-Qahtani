@@ -71,6 +71,13 @@ function sourceLinks(text, kind) {
   return out;
 }
 
+function sanitizeSnippet(value = "") {
+  return String(value)
+    .replace(/https?:\/\/[^\s"'`)]+/g, "[url]")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function safeHtmlDiagnostics(text) {
   const title = String(text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "")
     .replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
@@ -96,8 +103,56 @@ function safeHtmlDiagnostics(text) {
   }
   const markers = [...text.matchAll(/(?:fetch|ajax|section|series|load|recent)[^\n<>]{0,120}/gi)]
     .slice(0, 20)
-    .map((m) => String(m[0]).replace(/https?:\/\/[^\s"']+/g, "[url]").slice(0, 160));
+    .map((m) => sanitizeSnippet(m[0]).slice(0, 160));
   return { title, hrefs, scripts, markers };
+}
+
+function safeDynamicDiagnostics(text) {
+  const inputs = [];
+  for (const m of text.matchAll(/<input\b([^>]*)>/gi)) {
+    if (inputs.length >= 30) break;
+    const attrs = m[1];
+    const type = attrs.match(/\btype=["']([^"']+)["']/i)?.[1] || "";
+    const name = attrs.match(/\bname=["']([^"']+)["']/i)?.[1] || "";
+    const id = attrs.match(/\bid=["']([^"']+)["']/i)?.[1] || "";
+    const value = attrs.match(/\bvalue=["']([^"']*)["']/i)?.[1] || "";
+    if (!type && !name && !id && !value) continue;
+    inputs.push({ type, name, id, value: sanitizeSnippet(value).slice(0, 120) });
+  }
+
+  const dataAttrs = [];
+  for (const m of text.matchAll(/\b(data-[a-z0-9_-]+)=["']([^"']*)["']/gi)) {
+    if (dataAttrs.length >= 40) break;
+    const pair = { name: m[1], value: sanitizeSnippet(m[2]).slice(0, 140) };
+    if (!dataAttrs.some(x => x.name === pair.name && x.value === pair.value)) dataAttrs.push(pair);
+  }
+
+  const forms = [];
+  for (const m of text.matchAll(/<form\b([^>]*)>/gi)) {
+    if (forms.length >= 20) break;
+    const attrs = m[1];
+    forms.push({
+      action: sanitizeSnippet(attrs.match(/\baction=["']([^"']*)["']/i)?.[1] || "").slice(0, 160),
+      method: attrs.match(/\bmethod=["']([^"']*)["']/i)?.[1] || "",
+      id: attrs.match(/\bid=["']([^"']*)["']/i)?.[1] || "",
+      className: attrs.match(/\bclass=["']([^"']*)["']/i)?.[1] || "",
+    });
+  }
+
+  const inline = [];
+  for (const m of text.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) {
+    const body = m[1];
+    if (!/(?:ajax|fetch|loader|load|section|page|recent|entry|series|movie)/i.test(body)) continue;
+    for (const line of body.split(/\r?\n/)) {
+      if (!/(?:ajax|fetch|loader|load|section|page|recent|entry|series|movie|url\s*:|data\s*:)/i.test(line)) continue;
+      const snippet = sanitizeSnippet(line).slice(0, 500);
+      if (snippet && !inline.includes(snippet)) inline.push(snippet);
+      if (inline.length >= 40) break;
+    }
+    if (inline.length >= 40) break;
+  }
+
+  return { inputs, dataAttrs, forms, inline };
 }
 
 function safeJsDiagnostics(text) {
@@ -107,11 +162,7 @@ function safeJsDiagnostics(text) {
     if (!/(?:\$\.ajax|ajax\(|fetch\(|url\s*:|data\s*:|type\s*:|method\s*:|success\s*:|recently|entry-box|section|load)/i.test(lines[i])) continue;
     const start = Math.max(0, i - 1);
     const end = Math.min(lines.length, i + 3);
-    const snippet = lines.slice(start, end).join(" ")
-      .replace(/https?:\/\/[^\s"'`)]+/g, "[url]")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 420);
+    const snippet = sanitizeSnippet(lines.slice(start, end).join(" ")).slice(0, 420);
     if (snippet && !out.includes(snippet)) out.push(snippet);
     if (out.length >= 40) break;
   }
@@ -148,6 +199,7 @@ async function cinemaDirectSmoke() {
   const series = sourceLinks(category.text, "series");
   if (!series.length) {
     console.log("INFO direct cinema HTML diagnostics", JSON.stringify(safeHtmlDiagnostics(category.text)));
+    console.log("INFO direct cinema dynamic diagnostics", JSON.stringify(safeDynamicDiagnostics(category.text)));
     const js = await request(SOURCE + "/style/assets/js/akwam.js", { headers: htmlHeaders(SOURCE + "/series?section=30") }, 20000);
     console.log("INFO direct cinema loader diagnostics", JSON.stringify({ status: js.status, bytes: js.text.length, markers: safeJsDiagnostics(js.text) }));
   }
