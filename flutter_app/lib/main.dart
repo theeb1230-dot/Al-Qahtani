@@ -3,12 +3,18 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'src/api_client.dart';
 import 'src/app_target.dart';
 import 'src/details_page.dart';
+import 'src/library_store.dart';
 import 'src/models.dart';
 
 void main() => runApp(const AlQahtaniApp());
 
-class AlQahtaniApp extends StatelessWidget {
+class AlQahtaniApp extends StatefulWidget {
   const AlQahtaniApp({super.key});
+  @override State<AlQahtaniApp> createState() => _AlQahtaniAppState();
+}
+
+class _AlQahtaniAppState extends State<AlQahtaniApp> {
+  late final Future<LocalLibraryStore> storeFuture = LocalLibraryStore.create();
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -21,34 +27,43 @@ class AlQahtaniApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF22D3EE), brightness: Brightness.dark),
         visualDensity: isTvTarget ? VisualDensity.comfortable : VisualDensity.standard,
       ),
-      home: const Directionality(textDirection: TextDirection.rtl, child: Shell()),
+      home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: FutureBuilder<LocalLibraryStore>(
+          future: storeFuture,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            return Shell(store: snapshot.data!);
+          },
+        ),
+      ),
     );
   }
 }
 
-void openDetails(BuildContext context, AlQahtaniApi api, CatalogItem item) {
-  Navigator.of(context).push(MaterialPageRoute(builder: (_) => DetailsPage(api: api, item: item)));
+void openDetails(BuildContext context, AlQahtaniApi api, LocalLibraryStore store, CatalogItem item) {
+  Navigator.of(context).push(MaterialPageRoute(builder: (_) => DetailsPage(api: api, store: store, item: item)));
 }
 
 class Shell extends StatefulWidget {
-  const Shell({super.key});
-  @override
-  State<Shell> createState() => _ShellState();
+  const Shell({super.key, required this.store});
+  final LocalLibraryStore store;
+  @override State<Shell> createState() => _ShellState();
 }
 
 class _ShellState extends State<Shell> {
   int index = 0;
   final api = AlQahtaniApi();
-  @override
-  void dispose() { api.close(); super.dispose(); }
+  @override void dispose() { api.close(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     final pages = [
       RuntimeHome(api: api), MatchesPage(api: api),
-      CatalogPage(api: api, title: 'الأفلام', categoryId: 'movie-foreign'),
-      CatalogPage(api: api, title: 'المسلسلات', categoryId: 'series-foreign'),
-      SearchPage(api: api),
+      CatalogPage(api: api, store: widget.store, title: 'الأفلام', categoryId: 'movie-foreign'),
+      CatalogPage(api: api, store: widget.store, title: 'المسلسلات', categoryId: 'series-foreign'),
+      SearchPage(api: api, store: widget.store),
+      LibraryPage(api: api, store: widget.store),
     ];
     final content = IndexedStack(index: index, children: pages);
     return Scaffold(
@@ -68,6 +83,7 @@ class _ShellState extends State<Shell> {
           NavigationDestination(icon: Icon(Icons.movie_outlined), label: 'الأفلام'),
           NavigationDestination(icon: Icon(Icons.live_tv_outlined), label: 'المسلسلات'),
           NavigationDestination(icon: Icon(Icons.search), label: 'البحث'),
+          NavigationDestination(icon: Icon(Icons.bookmark_outline), selectedIcon: Icon(Icons.bookmark), label: 'مكتبتي'),
         ],
       ),
     );
@@ -86,6 +102,7 @@ class _TvNavigation extends StatelessWidget {
       NavigationRailDestination(icon: Icon(Icons.movie_outlined), label: Text('الأفلام')),
       NavigationRailDestination(icon: Icon(Icons.live_tv_outlined), label: Text('المسلسلات')),
       NavigationRailDestination(icon: Icon(Icons.search), label: Text('البحث')),
+      NavigationRailDestination(icon: Icon(Icons.bookmark_outline), selectedIcon: Icon(Icons.bookmark), label: Text('مكتبتي')),
     ],
   );
 }
@@ -125,8 +142,8 @@ class MatchesPage extends StatelessWidget {
 }
 
 class CatalogPage extends StatefulWidget {
-  const CatalogPage({super.key, required this.api, required this.title, required this.categoryId});
-  final AlQahtaniApi api; final String title; final String categoryId;
+  const CatalogPage({super.key, required this.api, required this.store, required this.title, required this.categoryId});
+  final AlQahtaniApi api; final LocalLibraryStore store; final String title; final String categoryId;
   @override State<CatalogPage> createState() => _CatalogPageState();
 }
 
@@ -166,7 +183,7 @@ class _CatalogPageState extends State<CatalogPage> {
         return Card(
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: () => openDetails(context, widget.api, item), canRequestFocus: true,
+            onTap: () => openDetails(context, widget.api, widget.store, item), canRequestFocus: true,
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Expanded(child: item.poster.isEmpty ? const ColoredBox(color: Color(0xFF132238)) : Image.network(item.poster, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFF132238)))),
               Padding(padding: EdgeInsets.all(isTvTarget ? 12 : 8), child: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis)),
@@ -179,7 +196,7 @@ class _CatalogPageState extends State<CatalogPage> {
 }
 
 class SearchPage extends StatefulWidget {
-  const SearchPage({super.key, required this.api}); final AlQahtaniApi api;
+  const SearchPage({super.key, required this.api, required this.store}); final AlQahtaniApi api; final LocalLibraryStore store;
   @override State<SearchPage> createState() => _SearchPageState();
 }
 class _SearchPageState extends State<SearchPage> {
@@ -196,8 +213,55 @@ class _SearchPageState extends State<SearchPage> {
     child: Column(children: [
       TextField(controller: query, textInputAction: TextInputAction.search, onSubmitted: (_) => run(), decoration: InputDecoration(hintText: 'ابحث عن فيلم أو مسلسل', suffixIcon: IconButton(onPressed: run, icon: const Icon(Icons.search)))),
       if (loading) const LinearProgressIndicator(),
-      Expanded(child: ListView.builder(itemCount: items.length, itemBuilder: (context, i) => ListTile(onTap: () => openDetails(context, widget.api, items[i]), title: Text(items[i].title), subtitle: Text(items[i].type)))),
+      Expanded(child: ListView.builder(itemCount: items.length, itemBuilder: (context, i) => ListTile(onTap: () => openDetails(context, widget.api, widget.store, items[i]), title: Text(items[i].title), subtitle: Text(items[i].type)))),
     ]),
+  );
+}
+
+class LibraryPage extends StatelessWidget {
+  const LibraryPage({super.key, required this.api, required this.store});
+  final AlQahtaniApi api; final LocalLibraryStore store;
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: store,
+    builder: (context, _) {
+      final favorites = store.favorites;
+      final watching = store.continueWatching;
+      final history = store.history;
+      return ListView(
+        padding: EdgeInsets.all(isTvTarget ? 24 : 12),
+        children: [
+          Text('المفضلة', style: Theme.of(context).textTheme.titleLarge),
+          if (favorites.isEmpty) const ListTile(title: Text('لا توجد عناصر مفضلة بعد')),
+          ...favorites.map((item) => ListTile(
+                leading: const Icon(Icons.favorite),
+                title: Text(item.title),
+                onTap: () => openDetails(context, api, store, item),
+              )),
+          const SizedBox(height: 18),
+          Text('أكمل المشاهدة', style: Theme.of(context).textTheme.titleLarge),
+          if (watching.isEmpty) const ListTile(title: Text('لا توجد مشاهدة غير مكتملة')),
+          ...watching.map((entry) => ListTile(
+                leading: const Icon(Icons.play_circle_outline),
+                title: Text(entry.title),
+                subtitle: LinearProgressIndicator(value: entry.durationMs > 0 ? entry.progress : null),
+                onTap: () => openDetails(context, api, store, entry.catalogItem),
+              )),
+          const SizedBox(height: 18),
+          Row(children: [
+            Expanded(child: Text('السجل', style: Theme.of(context).textTheme.titleLarge)),
+            if (history.isNotEmpty) TextButton(onPressed: store.clearHistory, child: const Text('مسح السجل')),
+          ]),
+          if (history.isEmpty) const ListTile(title: Text('سجل المشاهدة فارغ')),
+          ...history.map((entry) => ListTile(
+                leading: const Icon(Icons.history),
+                title: Text(entry.title),
+                subtitle: Text(entry.episodeNumber == null ? 'آخر مشاهدة' : 'الحلقة ${entry.episodeNumber}'),
+                onTap: () => openDetails(context, api, store, entry.catalogItem),
+              )),
+        ],
+      );
+    },
   );
 }
 
