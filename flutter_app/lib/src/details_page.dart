@@ -23,6 +23,7 @@ class _DetailsPageState extends State<DetailsPage> {
   final Set<String> _activeDownloads = <String>{};
   final FocusNode _directPlayFocus = FocusNode(debugLabel: 'details-direct-play');
   final Map<String, FocusNode> _episodeFocusNodes = <String, FocusNode>{};
+  final Map<String, FocusNode> _episodeDownloadFocusNodes = <String, FocusNode>{};
 
   @override
   void initState() {
@@ -36,6 +37,9 @@ class _DetailsPageState extends State<DetailsPage> {
     for (final node in _episodeFocusNodes.values) {
       node.dispose();
     }
+    for (final node in _episodeDownloadFocusNodes.values) {
+      node.dispose();
+    }
     _downloads.close();
     super.dispose();
   }
@@ -47,6 +51,14 @@ class _DetailsPageState extends State<DetailsPage> {
     return _episodeFocusNodes.putIfAbsent(
       key,
       () => FocusNode(debugLabel: 'details-episode-$key'),
+    );
+  }
+
+  FocusNode _episodeDownloadFocus(EpisodeItem episode) {
+    final key = '${episode.id}:${episode.number}';
+    return _episodeDownloadFocusNodes.putIfAbsent(
+      key,
+      () => FocusNode(debugLabel: 'details-episode-download-$key'),
     );
   }
 
@@ -151,6 +163,7 @@ class _DetailsPageState extends State<DetailsPage> {
                     return _EpisodeTile(
                       episode: episode,
                       focusNode: focusNode,
+                      downloadFocusNode: isTvTarget ? _episodeDownloadFocus(episode) : null,
                       downloading: _activeDownloads.contains(key),
                       onTap: () => _openEpisode(episode, focusNode),
                       onDownload: () => _download(
@@ -193,9 +206,18 @@ class _DetailsPageState extends State<DetailsPage> {
 }
 
 class _EpisodeTile extends StatelessWidget {
-  const _EpisodeTile({required this.episode, required this.focusNode, required this.onTap, required this.onDownload, required this.downloading});
+  const _EpisodeTile({
+    required this.episode,
+    required this.focusNode,
+    required this.onTap,
+    required this.onDownload,
+    required this.downloading,
+    this.downloadFocusNode,
+  });
+
   final EpisodeItem episode;
   final FocusNode focusNode;
+  final FocusNode? downloadFocusNode;
   final VoidCallback onTap;
   final VoidCallback onDownload;
   final bool downloading;
@@ -204,7 +226,49 @@ class _EpisodeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = episode.title.trim().isEmpty ? 'الحلقة ${episode.number}' : episode.title;
     final enabled = episode.watchAvailable && episode.ref.isNotEmpty;
+
+    if (isTvTarget) {
+      return Card(
+        child: FocusTraversalGroup(
+          policy: OrderedTraversalPolicy(),
+          child: Row(
+            children: [
+              Expanded(
+                child: FocusTraversalOrder(
+                  order: const NumericFocusOrder(1),
+                  child: ListTile(
+                    key: ValueKey('episode-play-${episode.id}'),
+                    focusNode: focusNode,
+                    enabled: enabled,
+                    leading: CircleAvatar(child: Text('${episode.number}')),
+                    title: Text(label),
+                    subtitle: const Text('اضغط موافق للتشغيل، وانتقل إلى زر التنزيل عند الحاجة'),
+                    trailing: enabled ? const Icon(Icons.play_arrow) : const Icon(Icons.block),
+                    onTap: enabled ? onTap : null,
+                  ),
+                ),
+              ),
+              if (enabled)
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(2),
+                  child: IconButton(
+                    key: ValueKey('episode-download-${episode.id}'),
+                    focusNode: downloadFocusNode,
+                    tooltip: downloading ? 'جاري التنزيل' : 'تنزيل الحلقة',
+                    onPressed: downloading ? null : onDownload,
+                    icon: downloading
+                        ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.download_outlined),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Card(child: ListTile(
+      key: ValueKey('episode-play-${episode.id}'),
       focusNode: focusNode,
       enabled: enabled,
       leading: CircleAvatar(child: Text('${episode.number}')),
@@ -215,13 +279,19 @@ class _EpisodeTile extends StatelessWidget {
               spacing: 4,
               children: [
                 IconButton(
+                  key: ValueKey('episode-download-${episode.id}'),
                   tooltip: downloading ? 'جاري التنزيل' : 'تنزيل الحلقة',
                   onPressed: downloading ? null : onDownload,
                   icon: downloading
                       ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.download_outlined),
                 ),
-                IconButton(tooltip: 'تشغيل الحلقة', onPressed: onTap, icon: const Icon(Icons.play_arrow)),
+                IconButton(
+                  key: ValueKey('episode-play-button-${episode.id}'),
+                  tooltip: 'تشغيل الحلقة',
+                  onPressed: onTap,
+                  icon: const Icon(Icons.play_arrow),
+                ),
               ],
             )
           : const Icon(Icons.block),
