@@ -5,22 +5,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+http.Response jsonResponse(Object value, [int statusCode = 200]) => http.Response.bytes(
+      utf8.encode(jsonEncode(value)),
+      statusCode,
+      headers: const {'content-type': 'application/json; charset=utf-8'},
+    );
+
 void main() {
   test('resolvePlayback accepts only backend-issued opaque media path', () async {
     final client = MockClient((request) async {
       expect(request.url.path, '/api/cinema/details');
       expect(request.url.queryParameters['ref'], 'legacy:episode-1');
-      return http.Response(
-        jsonEncode({
-          'status': 'success',
-          'movie_title': 'الحلقة 1',
-          'episodes': const [],
-          'media_path': '/api/cinema/media?id=opaque-short-lived',
-          'media_type': 'm3u8',
-        }),
-        200,
-        headers: {'content-type': 'application/json'},
-      );
+      return jsonResponse({
+        'status': 'success',
+        'movie_title': 'الحلقة 1',
+        'episodes': const [],
+        'media_path': '/api/cinema/media?id=opaque-short-lived',
+        'media_type': 'm3u8',
+      });
     });
     final api = AlQahtaniApi(client: client, baseUri: Uri.parse('https://runtime.example'));
     final resolved = await api.resolvePlayback('legacy:episode-1');
@@ -32,29 +34,23 @@ void main() {
     final client = MockClient((request) async {
       expect(request.url.host, 'runtime.example');
       if (request.url.path == '/api/v1/news') {
-        return http.Response(
-          jsonEncode({
-            'status': 'success',
-            'version': '1.0.1',
-            'kind': 'news',
-            'data': [
-              {'id': 'opaque-news-1', 'ref': 'opaque-news-1', 'title': 'خبر تجريبي', 'date': 'اليوم', 'description': 'وصف'},
-            ],
-          }),
-          200,
-        );
+        return jsonResponse({
+          'status': 'success',
+          'version': '1.0.1',
+          'kind': 'news',
+          'data': [
+            {'id': 'opaque-news-1', 'ref': 'opaque-news-1', 'title': 'خبر تجريبي', 'date': 'اليوم', 'description': 'وصف'},
+          ],
+        });
       }
       expect(request.url.path, '/api/v1/news/article');
       expect(request.url.queryParameters['ref'], 'opaque-news-1');
-      return http.Response(
-        jsonEncode({
-          'status': 'success',
-          'version': '1.0.1',
-          'kind': 'news-article',
-          'data': {'ref': 'opaque-news-1', 'title': 'خبر تجريبي', 'date': 'اليوم', 'paragraphs': ['الفقرة الأولى']},
-        }),
-        200,
-      );
+      return jsonResponse({
+        'status': 'success',
+        'version': '1.0.1',
+        'kind': 'news-article',
+        'data': {'ref': 'opaque-news-1', 'title': 'خبر تجريبي', 'date': 'اليوم', 'paragraphs': ['الفقرة الأولى']},
+      });
     });
     final api = AlQahtaniApi(client: client, baseUri: Uri.parse('https://runtime.example'));
     final items = await api.news();
@@ -74,17 +70,13 @@ void main() {
   });
 
   test('resolvePlayback fails closed when details contain no playable media', () async {
-    final client = MockClient((request) async => http.Response(
-          jsonEncode({
-            'status': 'success',
-            'movie_title': 'غير متاح',
-            'episodes': const [],
-            'playback_unavailable': true,
-            'playback_reason': 'NO_PLAYABLE_MEDIA',
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        ));
+    final client = MockClient((request) async => jsonResponse({
+          'status': 'success',
+          'movie_title': 'غير متاح',
+          'episodes': const [],
+          'playback_unavailable': true,
+          'playback_reason': 'NO_PLAYABLE_MEDIA',
+        }));
     final api = AlQahtaniApi(client: client, baseUri: Uri.parse('https://runtime.example'));
     await expectLater(
       api.resolvePlayback('legacy:unavailable'),
