@@ -5,6 +5,7 @@ import 'download_service.dart';
 import 'library_store.dart';
 import 'models.dart';
 import 'player_page.dart';
+import 'route_focus_restorer.dart';
 
 class DetailsPage extends StatefulWidget {
   const DetailsPage({super.key, required this.api, required this.store, required this.item});
@@ -20,6 +21,8 @@ class _DetailsPageState extends State<DetailsPage> {
   late Future<TitleDetails> future;
   final DownloadService _downloads = DownloadService();
   final Set<String> _activeDownloads = <String>{};
+  final FocusNode _directPlayFocus = FocusNode(debugLabel: 'details-direct-play');
+  final Map<String, FocusNode> _episodeFocusNodes = <String, FocusNode>{};
 
   @override
   void initState() {
@@ -29,35 +32,59 @@ class _DetailsPageState extends State<DetailsPage> {
 
   @override
   void dispose() {
+    _directPlayFocus.dispose();
+    for (final node in _episodeFocusNodes.values) {
+      node.dispose();
+    }
     _downloads.close();
     super.dispose();
   }
 
   void retry() => setState(() => future = widget.api.details(widget.item.ref));
 
-  void _openDirect(TitleDetails details) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => PlayerPage(
-      api: widget.api,
-      store: widget.store,
-      item: widget.item,
-      title: details.title,
-      mediaPath: details.mediaPath,
-      mediaType: details.mediaType,
-    )));
+  FocusNode _episodeFocus(EpisodeItem episode) {
+    final key = '${episode.id}:${episode.number}';
+    return _episodeFocusNodes.putIfAbsent(
+      key,
+      () => FocusNode(debugLabel: 'details-episode-$key'),
+    );
   }
 
-  void _openEpisode(EpisodeItem episode) {
+  Future<void> _openDirect(TitleDetails details) async {
+    await RouteFocusRestorer.push<void>(
+      context,
+      returnFocus: _directPlayFocus,
+      route: MaterialPageRoute(
+        builder: (_) => PlayerPage(
+          api: widget.api,
+          store: widget.store,
+          item: widget.item,
+          title: details.title,
+          mediaPath: details.mediaPath,
+          mediaType: details.mediaType,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openEpisode(EpisodeItem episode, FocusNode returnFocus) async {
     if (episode.ref.isEmpty || !episode.watchAvailable) return;
     final label = episode.title.trim().isEmpty ? 'الحلقة ${episode.number}' : episode.title;
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => PlayerPage(
-      api: widget.api,
-      store: widget.store,
-      item: widget.item,
-      title: label,
-      sourceRef: episode.ref,
-      episodeId: episode.id,
-      episodeNumber: episode.number,
-    )));
+    await RouteFocusRestorer.push<void>(
+      context,
+      returnFocus: returnFocus,
+      route: MaterialPageRoute(
+        builder: (_) => PlayerPage(
+          api: widget.api,
+          store: widget.store,
+          item: widget.item,
+          title: label,
+          sourceRef: episode.ref,
+          episodeId: episode.id,
+          episodeNumber: episode.number,
+        ),
+      ),
+    );
   }
 
   Future<void> _download({required String key, required String title, String mediaPath = '', String sourceRef = ''}) async {
@@ -120,10 +147,12 @@ class _DetailsPageState extends State<DetailsPage> {
                   const SizedBox(height: 8),
                   ...details.episodes.map((episode) {
                     final key = 'episode:${episode.id}:${episode.number}';
+                    final focusNode = _episodeFocus(episode);
                     return _EpisodeTile(
                       episode: episode,
+                      focusNode: focusNode,
                       downloading: _activeDownloads.contains(key),
-                      onTap: () => _openEpisode(episode),
+                      onTap: () => _openEpisode(episode, focusNode),
                       onDownload: () => _download(
                         key: key,
                         title: '${details.title} - الحلقة ${episode.number}',
@@ -133,6 +162,7 @@ class _DetailsPageState extends State<DetailsPage> {
                   }),
                 ] else if (details.hasDirectMedia) ...[
                   Card(child: ListTile(
+                    focusNode: _directPlayFocus,
                     leading: const Icon(Icons.play_circle_outline),
                     title: const Text('مشاهدة داخل التطبيق'),
                     subtitle: const Text('المصدر يمر عبر Al-Qahtani media proxy دون كشف العنوان الأصلي.'),
@@ -163,8 +193,9 @@ class _DetailsPageState extends State<DetailsPage> {
 }
 
 class _EpisodeTile extends StatelessWidget {
-  const _EpisodeTile({required this.episode, required this.onTap, required this.onDownload, required this.downloading});
+  const _EpisodeTile({required this.episode, required this.focusNode, required this.onTap, required this.onDownload, required this.downloading});
   final EpisodeItem episode;
+  final FocusNode focusNode;
   final VoidCallback onTap;
   final VoidCallback onDownload;
   final bool downloading;
@@ -174,6 +205,7 @@ class _EpisodeTile extends StatelessWidget {
     final label = episode.title.trim().isEmpty ? 'الحلقة ${episode.number}' : episode.title;
     final enabled = episode.watchAvailable && episode.ref.isNotEmpty;
     return Card(child: ListTile(
+      focusNode: focusNode,
       enabled: enabled,
       leading: CircleAvatar(child: Text('${episode.number}')),
       title: Text(label),
