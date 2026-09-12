@@ -148,11 +148,13 @@ jobs:
           node --check scripts/episode_number_test.mjs
           node --check scripts/match_time_test.mjs
           node --check server/app.mjs
+          node --check server/hardening.mjs
           node --check server/index.mjs
           node --check scripts/local_backend_smoke.mjs
           node --check scripts/remote_runtime_smoke.mjs
           node scripts/episode_number_test.mjs
           node scripts/match_time_test.mjs
+          NODE_ENV=test node scripts/server_hardening_test.mjs
 
       - name: Guard provider module retry
         shell: bash
