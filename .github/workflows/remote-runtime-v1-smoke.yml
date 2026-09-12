@@ -1,0 +1,19 @@
+name: Remote runtime v1 smoke
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deployed-runtime-v1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Wait briefly for backend auto-deploy
+        run: sleep 35
+      - name: Probe deployed 1.0.1 runtime contracts
+        run: node scripts/remote_runtime_v1_smoke.mjs
