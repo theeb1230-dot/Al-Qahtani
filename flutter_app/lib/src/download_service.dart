@@ -54,6 +54,8 @@ class DownloadService {
   final http.Client _client;
   final DownloadDirectoryProvider _directoryProvider;
 
+  static const int _maxReconnectAttempts = 4;
+
   static Future<Directory> _defaultDirectory() async {
     final root = await getApplicationDocumentsDirectory();
     return Directory('${root.path}${Platform.pathSeparator}AlQahtani${Platform.pathSeparator}Downloads');
@@ -70,56 +72,170 @@ class DownloadService {
     }
     _throwIfCancelled(cancellationToken);
 
+    var bytes = 0;
+    int? total;
+    var reconnectAttempt = 0;
+    File? finalFile;
+    File? tempFile;
+
+    Future<void> cleanupPartial() async {
+      final partial = tempFile;
+      if (partial != null && await partial.exists()) {
+        await partial.delete();
+      }
+    }
+
+    try {
+      while (true) {
+        _throwIfCancelled(cancellationToken);
+        http.StreamedResponse response;
+        try {
+          response = await _send(uri, offset: bytes, cancellationToken: cancellationToken);
+        } catch (error) {
+          if (_canReconnect(error, reconnectAttempt, bytes)) {
+            reconnectAttempt += 1;
+            await _reconnectDelay(reconnectAttempt, cancellationToken);
+            continue;
+          }
+          rethrow;
+        }
+
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          final error = DownloadException('HTTP_${response.statusCode}');
+          if (_canReconnect(error, reconnectAttempt, bytes)) {
+            reconnectAttempt += 1;
+            await _reconnectDelay(reconnectAttempt, cancellationToken);
+            continue;
+          }
+          throw error;
+        }
+
+        var append = bytes > 0;
+        if (append && response.statusCode == 206) {
+          final rangeStart = _contentRangeStart(response.headers['content-range']);
+          if (rangeStart != bytes) throw const DownloadException('INVALID_RESUME_RANGE');
+        } else if (append && response.statusCode == 200) {
+          // The origin ignored Range. Restart safely instead of appending duplicate bytes.
+          append = false;
+          bytes = 0;
+          total = null;
+        } else if (append) {
+          throw const DownloadException('RESUME_NOT_SUPPORTED');
+        }
+
+        total = _mergeTotal(total, _responseLength(response.headers));
+
+        if (finalFile == null || tempFile == null) {
+          final directory = await _downloadDirectory(create: true);
+          final fileName = _trustedFileName(response.headers['content-disposition']) ?? _sanitizeFileName(fallbackName);
+          finalFile = File('${directory.path}${Platform.pathSeparator}$fileName');
+          tempFile = File('${finalFile.path}.part');
+        }
+
+        IOSink? sink;
+        StreamIterator<List<int>>? iterator;
+        Object? streamError;
+        try {
+          sink = tempFile.openWrite(mode: append ? FileMode.append : FileMode.writeOnly);
+          if (!append) onProgress?.call(DownloadProgress(receivedBytes: 0, totalBytes: total));
+          final stream = response.stream.timeout(
+            const Duration(seconds: 30),
+            onTimeout: (eventSink) => eventSink.addError(const DownloadException('DOWNLOAD_STALLED')),
+          );
+          iterator = StreamIterator<List<int>>(stream);
+          while (await _moveNextOrCancel(iterator, cancellationToken)) {
+            final chunk = iterator.current;
+            bytes += chunk.length;
+            sink.add(chunk);
+            onProgress?.call(DownloadProgress(receivedBytes: bytes, totalBytes: total));
+          }
+          await sink.flush();
+          await sink.close();
+          sink = null;
+        } catch (error) {
+          streamError = error;
+          try {
+            await iterator?.cancel();
+          } catch (_) {}
+          try {
+            await sink?.close();
+          } catch (_) {}
+        }
+
+        if (streamError != null) {
+          if (_canReconnect(streamError, reconnectAttempt, bytes)) {
+            reconnectAttempt += 1;
+            await _reconnectDelay(reconnectAttempt, cancellationToken);
+            continue;
+          }
+          throw streamError;
+        }
+
+        if (bytes == 0) throw const DownloadException('EMPTY_DOWNLOAD');
+        if (total != null && bytes < total!) {
+          if (reconnectAttempt < _maxReconnectAttempts && bytes > 0) {
+            reconnectAttempt += 1;
+            await _reconnectDelay(reconnectAttempt, cancellationToken);
+            continue;
+          }
+          throw const DownloadException('INCOMPLETE_DOWNLOAD');
+        }
+        if (total != null && bytes > total!) throw const DownloadException('INVALID_DOWNLOAD_LENGTH');
+
+        final completedFile = finalFile!;
+        final partialFile = tempFile!;
+        if (await completedFile.exists()) await completedFile.delete();
+        await partialFile.rename(completedFile.path);
+        return DownloadResult(path: completedFile.path, bytes: bytes);
+      }
+    } catch (_) {
+      await cleanupPartial();
+      rethrow;
+    }
+  }
+
+  Future<http.StreamedResponse> _send(
+    Uri uri, {
+    required int offset,
+    DownloadCancellationToken? cancellationToken,
+  }) {
     final request = http.Request('GET', uri)..headers['accept'] = '*/*';
-    final response = await _awaitOrCancel(
+    if (offset > 0) request.headers['range'] = 'bytes=$offset-';
+    return _awaitOrCancel(
       _client.send(request).timeout(const Duration(seconds: 30)),
       cancellationToken,
     );
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw DownloadException('HTTP_${response.statusCode}');
-    }
+  }
 
-    final total = _responseLength(response.headers);
-    final directory = await _downloadDirectory(create: true);
-    final fileName = _trustedFileName(response.headers['content-disposition']) ?? _sanitizeFileName(fallbackName);
-    final finalFile = File('${directory.path}${Platform.pathSeparator}$fileName');
-    final tempFile = File('${finalFile.path}.part');
-
-    var bytes = 0;
-    IOSink? sink;
-    StreamIterator<List<int>>? iterator;
-    try {
-      sink = tempFile.openWrite(mode: FileMode.writeOnly);
-      onProgress?.call(DownloadProgress(receivedBytes: 0, totalBytes: total));
-      final stream = response.stream.timeout(
-        const Duration(seconds: 30),
-        onTimeout: (eventSink) => eventSink.addError(const DownloadException('DOWNLOAD_STALLED')),
-      );
-      iterator = StreamIterator<List<int>>(stream);
-      while (await _moveNextOrCancel(iterator, cancellationToken)) {
-        final chunk = iterator.current;
-        bytes += chunk.length;
-        sink.add(chunk);
-        onProgress?.call(DownloadProgress(receivedBytes: bytes, totalBytes: total));
+  static bool _canReconnect(Object error, int attempts, int bytes) {
+    if (attempts >= _maxReconnectAttempts || bytes <= 0) return false;
+    if (error is DownloadException) {
+      if (error.code == 'DOWNLOAD_CANCELLED' || error.code == 'INVALID_RESUME_RANGE' || error.code == 'RESUME_NOT_SUPPORTED') {
+        return false;
       }
-      await sink.flush();
-      await sink.close();
-      sink = null;
-      if (bytes == 0) throw const DownloadException('EMPTY_DOWNLOAD');
-      if (total != null && bytes != total) throw const DownloadException('INCOMPLETE_DOWNLOAD');
-      if (await finalFile.exists()) await finalFile.delete();
-      await tempFile.rename(finalFile.path);
-      return DownloadResult(path: finalFile.path, bytes: bytes);
-    } catch (_) {
-      try {
-        await iterator?.cancel();
-      } catch (_) {}
-      try {
-        await sink?.close();
-      } catch (_) {}
-      if (await tempFile.exists()) await tempFile.delete();
-      rethrow;
+      if (error.code == 'DOWNLOAD_STALLED' || error.code == 'INCOMPLETE_DOWNLOAD') return true;
+      if (error.code.startsWith('HTTP_5') || error.code == 'HTTP_408' || error.code == 'HTTP_429') return true;
+      return false;
     }
+    return error is SocketException || error is TimeoutException || error is http.ClientException;
+  }
+
+  static Future<void> _reconnectDelay(int attempt, DownloadCancellationToken? token) {
+    final milliseconds = 500 * attempt.clamp(1, _maxReconnectAttempts);
+    return _awaitOrCancel(Future<void>.delayed(Duration(milliseconds: milliseconds)), token);
+  }
+
+  static int? _mergeTotal(int? current, int? next) {
+    if (next == null || next <= 0) return current;
+    if (current == null) return next;
+    if (current != next) throw const DownloadException('DOWNLOAD_LENGTH_CHANGED');
+    return current;
+  }
+
+  static int? _contentRangeStart(String? header) {
+    if (header == null) return null;
+    final match = RegExp(r'^bytes\s+([0-9]+)-[0-9]+/[0-9*]+$', caseSensitive: false).firstMatch(header.trim());
+    return match == null ? null : int.tryParse(match.group(1)!);
   }
 
   static void _throwIfCancelled(DownloadCancellationToken? token) {
