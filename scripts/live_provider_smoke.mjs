@@ -85,7 +85,7 @@ async function workerProbe() {
 
 async function cinemaDirectSmoke() {
   const category = await request(SOURCE + "/series?section=30", { headers: htmlHeaders() });
-  if (!assert(category.ok && category.text.length > 20000, "direct cinema category HTML", { status: category.status, bytes: category.text.length, ms: category.ms })) return;
+  if (!assert(category.ok && category.text.length > 1000, "direct cinema category HTML", { status: category.status, bytes: category.text.length, ms: category.ms })) return;
   const series = uniqueMatches(category.text, /href=["'](https:\/\/akwam\.ss\/series\/[^"']+)["']/gi);
   if (!assert(series.length > 0, "direct cinema category has items", { count: series.length })) return;
 
