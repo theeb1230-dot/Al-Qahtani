@@ -82,7 +82,7 @@ class _PlayerPageState extends State<PlayerPage> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    final ready = controller?.value.isInitialized == true;
+    final activeController = controller?.value.isInitialized == true ? controller : null;
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       body: SafeArea(
@@ -94,10 +94,12 @@ class _PlayerPageState extends State<PlayerPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (ready)
+                  if (activeController != null)
                     AspectRatio(
-                      aspectRatio: controller!.value.aspectRatio > 0 ? controller.value.aspectRatio : 16 / 9,
-                      child: VideoPlayer(controller),
+                      aspectRatio: activeController.value.aspectRatio > 0
+                          ? activeController.value.aspectRatio
+                          : 16 / 9,
+                      child: VideoPlayer(activeController),
                     )
                   else if (_failed)
                     const Icon(Icons.error_outline, size: 72)
@@ -105,9 +107,13 @@ class _PlayerPageState extends State<PlayerPage> {
                     const CircularProgressIndicator(),
                   const SizedBox(height: 16),
                   Text(_status, textAlign: TextAlign.center),
-                  if (ready) ...[
+                  if (activeController != null) ...[
                     const SizedBox(height: 12),
-                    VideoProgressIndicator(controller, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8)),
+                    VideoProgressIndicator(
+                      activeController,
+                      allowScrubbing: true,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
                     Wrap(
                       alignment: WrapAlignment.center,
                       spacing: 12,
@@ -118,10 +124,12 @@ class _PlayerPageState extends State<PlayerPage> {
                           icon: const Icon(Icons.replay_10),
                         ),
                         ValueListenableBuilder<VideoPlayerValue>(
-                          valueListenable: controller,
+                          valueListenable: activeController,
                           builder: (context, value, _) => IconButton.filled(
                             tooltip: value.isPlaying ? 'إيقاف مؤقت' : 'تشغيل',
-                            onPressed: () => value.isPlaying ? controller.pause() : controller.play(),
+                            onPressed: () => value.isPlaying
+                                ? activeController.pause()
+                                : activeController.play(),
                             icon: Icon(value.isPlaying ? Icons.pause : Icons.play_arrow),
                           ),
                         ),
