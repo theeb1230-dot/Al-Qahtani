@@ -103,7 +103,7 @@ void main() {
 
     await expectLater(
       service.download(Uri.parse('https://al-qahtani-api.onrender.com/api/cinema/media?id=opaque&download=1')),
-      throwsA(isA<DownloadException>().having((e) => e.code, 'code', 'INCOMPLETE_DOWNLOAD')),
+      throwsA(isA<DownloadException>().having((e) => e.code, 'code', 'INVALID_RESUME_RANGE')),
     );
     expect(root.listSync().whereType<File>(), isEmpty);
   });
