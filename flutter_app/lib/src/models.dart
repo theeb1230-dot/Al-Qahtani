@@ -103,6 +103,41 @@ class MatchItem {
   }
 }
 
+class NewsItem {
+  const NewsItem({required this.id, required this.ref, required this.title, required this.date, required this.description});
+  final String id;
+  final String ref;
+  final String title;
+  final String date;
+  final String description;
+
+  factory NewsItem.fromJson(Map<String, dynamic> json) => NewsItem(
+        id: '${json['id'] ?? ''}',
+        ref: '${json['ref'] ?? ''}',
+        title: '${json['title'] ?? 'بدون عنوان'}',
+        date: '${json['date'] ?? ''}',
+        description: '${json['description'] ?? ''}',
+      );
+}
+
+class NewsArticle {
+  const NewsArticle({required this.ref, required this.title, required this.date, required this.paragraphs});
+  final String ref;
+  final String title;
+  final String date;
+  final List<String> paragraphs;
+
+  factory NewsArticle.fromJson(Map<String, dynamic> json) {
+    final raw = json['paragraphs'];
+    return NewsArticle(
+      ref: '${json['ref'] ?? ''}',
+      title: '${json['title'] ?? ''}',
+      date: '${json['date'] ?? ''}',
+      paragraphs: raw is List ? raw.map((e) => '$e').where((e) => e.trim().isNotEmpty).toList(growable: false) : const [],
+    );
+  }
+}
+
 class RuntimeEnvelope<T> {
   const RuntimeEnvelope({required this.version, required this.kind, required this.data});
   final String version;
