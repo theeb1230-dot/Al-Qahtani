@@ -4,109 +4,113 @@
 GitHub is authoritative when this file disagrees with repository state. The preserved original `albasritv.github.io-main.zip`, live runtime/provider evidence, and the user's iPhone screenshots are behavioral references. CI alone does not prove a physical-device issue fixed.
 
 ## Current state
-- Current main: `61029a2ec6b39f08a3f4613dd231dafbe0bef0bf` (merged PR #79).
-- Latest verified product release: `v1.0.8`, target `61029a2ec6b39f08a3f4613dd231dafbe0bef0bf`, version/build `1.0.8+8`.
-- Active PR: #80 `Restore deployed news runtime and visible Flutter request states`.
-- Active branch: `fix/media-content-type-79`.
-- Reconciled code head before this documentation-only update: `50fe685313007bf5f78395dcc3b54f7221d4400f`.
-- Active product version: `1.0.9+9`.
-- PR #80 was rebuilt directly on current main so the merged MP4-first playback/download work from PR #79 is preserved.
+- Current main: `27a143f3ece91ce6e71341f859c6566c5c1fc7f8` (merged PR #80).
+- Latest verified package release: `v1.0.9`, target `27a143f3ece91ce6e71341f859c6566c5c1fc7f8`, version/build `1.0.9+9`.
+- Active PR: #81 `Recover non-empty deployed news runtime`.
+- Active branch: `fix/news-runtime-live-81`.
+- Active PR head before this documentation update: `55816e06307573077dc43652af46416055de569e`.
+- Active product version: `1.0.10+10`.
 - Web/PWA remains GitHub Pages at `https://theeb1230-dot.github.io/Al-Qahtani/` and is not replaced by Flutter Web.
+- Render `al-qahtani-api` auto-deployed exact main `27a143f3...` and runs `node server/index.mjs`.
 
 ## Four-surface policy
-Every product-impacting merge is one product on four surfaces: Web/PWA on GitHub Pages, Android Mobile APK, Android TV APK with LEANBACK/D-Pad/focus, and iOS IPA explicitly UNSIGNED/no-codesign. The three native packages must come from the same commit/version and appear together in a real GitHub Release with checksums/provenance. Actions artifacts alone never count as a release.
+Every product-impacting merge is one product on four surfaces: Web/PWA on GitHub Pages, Android Mobile APK, Android TV APK with LEANBACK/D-Pad/focus, and iOS IPA explicitly UNSIGNED/no-codesign. Native packages must come from the same commit/version and appear together in a real GitHub Release with SHA-256/provenance. Actions artifacts alone never count as a release.
 
 ## Product boundary
 Al-Qahtani remains independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and Theeb-specific providers. `akwam.ss` is allowed only server-side as inherited Basri behavior. Flutter consumes Al-Qahtani Runtime/API only. Never expose raw upstream URLs, Worker/session material, or media source URLs in Flutter/UI/logs. Preserve SSRF allowlists, opaque media refs, CORS and Range semantics.
 
-## RELEASE VERIFIED v1.0.8
-- URL: `https://github.com/theeb1230-dot/Al-Qahtani/releases/tag/v1.0.8`.
-- Target: `61029a2ec6b39f08a3f4613dd231dafbe0bef0bf`.
-- `Al-Qahtani-Mobile-v1.0.8.apk`: 54,277,122 bytes; SHA-256 `dabc828678188a804f9e1bbe65e22748ef821ebdda11e75d37d9aa96f31cf769`.
-- `Al-Qahtani-TV-v1.0.8.apk`: 54,277,234 bytes; SHA-256 `d0fb3f18f57966a34d5418d360284d0b2b81989d45105fdb082b29223208e9e5`.
-- `Al-Qahtani-iOS-v1.0.8-UNSIGNED.ipa`: 7,460,252 bytes; SHA-256 `b9d9964b20a364c3e723c211ee6c9e6456e4ee3db0b0b3d7901c40cd6d1eccbb`; UNSIGNED/no-codesign and requires external signing/provisioning.
+## RELEASE VERIFIED v1.0.9
+- URL: `https://github.com/theeb1230-dot/Al-Qahtani/releases/tag/v1.0.9`.
+- Target: `27a143f3ece91ce6e71341f859c6566c5c1fc7f8`.
+- `Al-Qahtani-Mobile-v1.0.9.apk`: 54,342,658 bytes; SHA-256 `16fc4be7426d8113c5690d813e391393fac0b2516a776b391a52127b67c53d1f`.
+- `Al-Qahtani-TV-v1.0.9.apk`: 54,342,770 bytes; SHA-256 `af14c4de64cf7bad9f075e4471d4f007b79b8ce3379ce338253f4ee97fcb1c8c`.
+- `Al-Qahtani-iOS-v1.0.9-UNSIGNED.ipa`: 7,463,574 bytes; SHA-256 `f8f8541154a03bb9f20226fe2934f3616aee480bffad0d85cdd8d3049a7bbd38`; UNSIGNED/no-codesign and requires external signing/provisioning.
 - `SHA256SUMS.txt` and `PROVENANCE.json` are present and non-empty.
+- Important regression evidence: the first post-merge `Remote news smoke` failed on this exact release commit because `/api/v1/news` returned success with zero items. Therefore v1.0.9 packages are verified as release assets, but Flutter News parity is NOT fixed in v1.0.9.
 - Historical `v1.0.5` remains RELEASE NOT PUBLISHED and must not be represented otherwise.
 
-## Work in active PR #80
-- Reconciled the branch onto released `v1.0.8` main without opening a second PR.
-- Bumped Flutter to `1.0.9+9` so the next product-impacting merge cannot collide with already-published `v1.0.8`.
-- `server/index.mjs` is the canonical testable production entry and preserves app routes, logo proxy, download decoration and opaque news routes.
-- Root `package.json` explicitly declares `npm start -> node server/index.mjs`.
-- `scripts/production_entry_test.mjs` protects production-entry routing and proves news list/article refs remain opaque.
-- `scripts/remote_news_smoke.mjs` plus `.github/workflows/remote-news-smoke.yml` will prove the deployed news runtime after merge.
-- Flutter search now has debounce, request generation/stale-response protection and explicit initial/loading/empty/error/retry states.
-- Match status/time presentation localizes `live/scheduled/ended` and AM/PM strings.
-- Episode/details UI no longer exposes implementation wording such as internal ID/proxy explanations.
-- Existing main hardening remains intact: media-ref sweeper, API/media rate limiting, JSON gzip/deflate with correct `Vary`/`Content-Length` behavior.
+## PR #81 root cause and recovery
+The post-merge Remote news run `34701599861` failed with a zero-item list after Render was already live on exact merge commit `27a143f3...`, proving this was not deploy lag. Safe diagnostics then established the inherited News worker root currently returns only metadata (`status`, `name`, `source`, `article`) while `?action=source` returns a full ~156 KB Arabic news page containing 15 real cards, `YS_NEWS_BRIDGE`, and an `ItemList`.
+
+Current PR #81 changes:
+- bumps product to `1.0.10+10`;
+- `server/news-runtime.mjs` now uses root JSON when it actually contains items, otherwise server-side fetches the inherited `action=source` HTML;
+- source parsing extracts only same-origin HTTPS `/ar/news/<numeric-id>/...` article links using the page canonical origin, preserving title/date/lead and converting source URLs immediately to short-lived opaque refs;
+- no source article URL is returned to Flutter/UI/logs;
+- JSON-LD ItemList remains a fallback if card markup changes;
+- `scripts/news_runtime_test.mjs` covers metadata-only root, HTML fallback, canonical-origin/path validation, opaque refs, title/date/description normalization, article resolution and ref expiry;
+- `Remote news smoke` is now a required gate in `.github/workflows/release-triplet.yml`, preventing another package release when deployed News is empty;
+- temporary live diagnostic files were removed after establishing the root cause.
 
 ## User screenshot/device issue matrix
-1. Series playback / Reacher: **PARTIAL FIX / NOT DEVICE VERIFIED**. PR #79 now prefers MP4 when available; HLS-only lifecycle still requires end-to-end segment/key handling proof.
-2. Episode download: **PARTIAL FIX / NOT DEVICE VERIFIED**. MP4-first avoids treating a playlist as a file when MP4 exists; HLS-only download semantics remain unresolved.
-3. Movie Details→Watch/Download: **NOT VERIFIED** for the reported titles/classes; generic live movie smoke exists but does not prove all media variants.
-4. Flutter News empty while Web has news: **FIX IN PR / NOT LIVE VERIFIED**. Production entry + opaque news smoke added; must pass on deployed main after merge.
-5. Matches: **PARTIAL FIX / NOT DEVICE VERIFIED**. Status/time localization added; real logos, Saudi presentation and Match→Player remain open.
-6. Search blank for Arabic/English: **FIX IN PR / NOT DEVICE VERIFIED**. Debounce/stale guard/loading/empty/error/retry are implemented; live/device queries still required.
+1. Series playback / Reacher: **PARTIAL FIX / NOT DEVICE VERIFIED**. MP4 is preferred when available; HLS-only segment/key lifecycle remains unresolved.
+2. Episode download: **PARTIAL FIX / NOT DEVICE VERIFIED**. MP4-first helps file downloads; HLS-only download semantics remain unresolved.
+3. Movie Details→Watch/Download: **NOT VERIFIED** for the reported titles/classes; generic live movie smoke is green but not sufficient for every media variant.
+4. Flutter News empty while Web has news: **ROOT CAUSE FOUND / FIX IN PR #81 / NOT LIVE VERIFIED**. v1.0.9 live smoke reproduced the empty Runtime list; source HTML fallback is implemented in v1.0.10 candidate.
+5. Matches: **PARTIAL FIX / NOT DEVICE VERIFIED**. Status/time localization exists; real logos, Saudi formatting and Match→Player remain open.
+6. Search blank Arabic/English: **FIXED IN CODE / NOT DEVICE VERIFIED**. Debounce, stale-response guard, loading/empty/error/retry states merged in v1.0.9.
 7. Episode engineering text: **FIXED IN CODE / NOT DEVICE VERIFIED**.
 8. Internal player valid source/start/seek/pause/resume/retry: **PARTIAL / NOT DEVICE VERIFIED**.
-9. Favorites add/remove/persistence/navigation: **WORKING BASELINE / REGRESSION TESTS EXIST / DEVICE RECHECK PENDING**.
-10. Continue Watching/history: **NOT VERIFIED** until a real playback session records progress.
+9. Favorites add/remove/persistence/navigation: **WORKING BASELINE / REGRESSION TESTED / DEVICE RECHECK PENDING**.
+10. Continue Watching/history: **NOT VERIFIED** until a real successful playback session records progress.
 11. Downloads library/progress/cancel/retry/file existence: **NOT VERIFIED** until a real download completes.
 12. Technical Home screen: **OPEN**.
 13. Arabic identity/RTL/typography consistency: **OPEN**.
-14. Web news article/back/images/date/floating overlay: **PARTIAL BASELINE / OVERLAY INVESTIGATION OPEN**.
+14. Web news article/back/images/date/floating overlay: **PARTIAL**. List/date/lead recovery is in PR #81; secure image parity and overlay investigation remain open.
 15. Safari Web Server 1 white/blank player: **OPEN / NOT VERIFIED**.
-16. Explicit request states: **PARTIALLY FIXED** for search; remaining screens need audit.
-17. Web↔Flutter Runtime normalization parity: **PARTIAL**; production-entry news regression exists, broader contract matrix pending.
+16. Explicit request states: **PARTIALLY FIXED** for Search/News; remaining screens need audit.
+17. Web↔Flutter Runtime normalization parity: **PARTIAL**; News now has dedicated local + deployed contract gates.
 18. Full four-surface E2E path matrix: **OPEN**.
 
-## CI / release state for active PR
-- The previous pre-reconcile PR #80 head `48c5a8acef310bda0a046582a135d821e66a3dec` had all PR workflows green, including Flutter foundation, Web smoke, Mobile WebKit, Content runtime, Live provider, Remote movie playback, Basri player/download, CORS and media-ref expiry.
-- Those results are stale for merge because the branch was reconciled onto current main and version-bumped.
-- Exact-final-head CI for the reconciled PR must be read again before merge.
-- `v1.0.9`: **RELEASE NOT PUBLISHED** while PR #80 remains open. After merge, Pages/runtime/native gates must pass and a complete GitHub Release must be verified.
+## CI / deployment evidence
+- PR #80 exact-final-head `c692a655222539417586927ca4cafad029df920c` passed Web smoke, Mobile WebKit, Content runtime, Live provider, Remote movie playback, Basri player/download, CORS, media-ref expiry, trusted filename and Flutter Mobile/TV/iOS jobs before merge.
+- Render deploy `dep-daimod95efls7393g3l0` became LIVE on exact main `27a143f3...` before Remote news smoke failure.
+- Post-merge Remote news run `34701599861`: FAILED solely because deployed news list count was zero and no opaque article ref existed.
+- Diagnostic run `34701961141` and follow-up run `34702174322`: SUCCESS; proved root metadata-only JSON and 15-card source HTML without logging source URLs.
+- PR #81 exact-final-head CI must be re-read after this documentation update; previous-head results are stale for merge.
+- `v1.0.10`: **RELEASE NOT PUBLISHED** while PR #81 is open. Merge only after exact-final-head green, then require deployed Remote news success, Pages/runtime gates, native triplet and complete Release verification.
 
 ## Protected regressions
-Protect iPhone Safari/Web playback, Range/206, Content-Range/Accept-Ranges, HLS/MP4/MPEG-TS classification, measured duration, opaque media refs, independent Watch/Download semantics, real match logos, Saudi match time, `episode_id` versus `episode_number`, endless 30+30 pagination with dedupe/stale guards, CORS/SSRF/allowlists, no ads/popups/unneeded tracking, no legacy Android Intent/deep-links, favorites persistence, TV D-Pad/focus, and UNSIGNED iOS labeling.
+Protect iPhone Safari/Web playback, Range/206, Content-Range/Accept-Ranges, HLS/MP4/MPEG-TS classification, measured duration, opaque media refs, independent Watch/Download semantics, News opaque refs/non-empty live list, real match logos, Saudi match time, `episode_id` versus `episode_number`, endless 30+30 pagination with dedupe/stale guards, CORS/SSRF/allowlists, no ads/popups/unneeded tracking, no legacy Android Intent/deep-links, favorites persistence, TV D-Pad/focus, and UNSIGNED iOS labeling.
 
 ## أهداف التشغيل التالي
-1. **إغلاق PR #80 بأمان.**
-   - فحص exact-final-head CI بعد المصالحة.
+1. **إغلاق PR #81 بأمان.**
+   - قراءة exact-final-head CI بعد آخر تحديث وثائقي.
    - إصلاح أي failure من logs على نفس الفرع فقط.
-   - الدمج فقط إذا كان mergeable وجميع البوابات المطلوبة خضراء.
-2. **إكمال v1.0.9 كإصدار فعلي.**
+   - الدمج فقط عندما يكون PR mergeable وجميع البوابات المطلوبة خضراء.
+2. **إثبات News recovery حيًا.**
+   - انتظار Render exact merge commit بعد الدمج.
+   - Require `Remote news smoke` non-empty list + opaque ref + article text.
+   - التحقق من عدم ظهور أي source/Worker URL في Runtime أو Flutter.
+3. **إكمال v1.0.10 كإصدار فعلي.**
    - بناء Mobile APK + TV APK + IPA UNSIGNED من merge commit/version نفسه.
-   - التحقق من الهوية والتوقيع وLEANBACK/Payload/no-codesign وSHA-256.
-   - التحقق من Release tag/target/assets/sizes بعد الرفع؛ لا قبول artifact-only.
-3. **إثبات News parity حيًا.**
-   - تشغيل remote news list/article smoke على main المنشور.
-   - مقارنة Runtime payload مع Flutter normalization والحالات المرئية.
-   - حماية الصورة والتاريخ والرجوع وعدم تسريب upstream.
-4. **إنهاء HLS-only playback من الجذر.**
-   - تصميم proxy آمن للmanifest/segments/keys أو مسار native مثبت لا يكشف upstream.
-   - اختبار relative/absolute URIs وredirects وRange عند الحاجة.
-   - إثبات start/seek/resume على iOS وAndroid بدل first-byte فقط.
-5. **فصل Watch وDownload semantics.**
-   - اختيار downloadable file مستقل عن stream عند توفر الخيارين.
-   - عدم اعتبار `.m3u8` تنزيل فيديو مكتملًا بلا packaging مثبت.
+   - التحقق من identity/signature/LEANBACK/Payload/no-codesign وSHA-256.
+   - التحقق من GitHub Release tag/target/assets/sizes بعد الرفع.
+4. **إضافة News image parity بأمان.**
+   - تصميم opaque image reference/proxy مع allowlist بدل كشف `img src` upstream.
+   - عرض الصورة في Flutter list/article مع error fallback.
+   - إضافة Web↔Runtime↔Flutter contract regression للصورة والتاريخ والرجوع.
+5. **إنهاء HLS-only playback من الجذر.**
+   - تصميم manifest/segment/key proxy آمن أو مسار native مثبت بلا upstream leakage.
+   - اختبار relative/absolute URIs وredirects وstart/seek/resume.
+   - إثبات iOS/Android device behavior بدل first-byte probe فقط.
+6. **فصل Watch وDownload semantics بالكامل.**
+   - اختيار downloadable file مستقل عن stream عند توفرهما.
+   - عدم اعتبار `.m3u8` تنزيل فيديو كاملًا بلا packaging مثبت.
    - حماية progress/cancel/retry/persistence والاسم الموثوق.
-6. **إكمال Search وrequest-state parity.**
-   - اختبار «الذئب الوحيد» و`The Odyssey` وno-results حيًا.
-   - اختبار الكتابة السريعة والإلغاء/stale-response.
-   - تعميم loading/content/empty/retryable-error على الشاشات المتبقية.
 7. **إكمال Matches وMatch→Player.**
    - عرض logos الحقيقية فقط عبر proxy المسموح.
    - ضبط توقيت السعودية وRTL وترتيب الفريقين.
-   - إثبات المشغل بدل اعتبار metadata نجاحًا.
-8. **تنظيف Home والهوية.**
+   - إثبات Match→Player playback بدل metadata فقط.
+8. **تنظيف Home والهوية وحالات الطلب.**
    - استبدال الصفحة التقنية بأقسام محتوى عملية.
    - توحيد الاسم العربي وRTL والـtypography والمسافات.
-   - إزالة أو تفسير أي overlay/gear عائم غير مقصود في Safari.
+   - تعميم loading/content/empty/retryable-error وإزالة أي overlay غير مقصود.
 9. **حماية Library بعد نجاح media.**
    - favorites add/remove/persistence/navigation regression.
    - history/continue progress بعد تشغيل حقيقي فقط مع resume/completed semantics.
    - downloads list/file existence/delete/retry دون سجلات كاذبة.
-10. **متابعة الخطة الهندسية والأربع نسخ.**
-   - إبقاء hardening فعليًا وعدم كسر Range/HLS بالـrate limits أو compression.
-   - بعد إغلاق دورة #80/v1.0.9 الانتقال إلى `providers.js` v2 و`api-client.js` health/retry/circuit-breaker/cache؛ Cloudflare mirror يبقى مؤجلًا.
-   - تشغيل matrix للـWeb/PWA/Mobile/TV/iOS عبر Home/Matches/News/Search/Movies/Series/Details/Episodes/Watch/Download/Library/pagination/errors/degraded behavior.
+10. **متابعة hardening وخطة providers v2.**
+   - الحفاظ على sweeper/rate limits/gzip/Vary/Content-Length وRange/HLS.
+   - بعد إغلاق #81/v1.0.10 مراجعة `providers.js` v2 و`api-client.js` health/retry/circuit-breaker/cache باختبارات.
+   - إبقاء Cloudflare mirror مؤجلًا حتى وجود بنية وصلاحيات مثبتة داخل حدود Al-Qahtani/Basri فقط.
