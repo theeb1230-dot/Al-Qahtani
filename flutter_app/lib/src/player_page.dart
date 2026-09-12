@@ -10,6 +10,7 @@ import 'library_store.dart';
 import 'media_format_policy.dart';
 import 'models.dart';
 import 'player_controls.dart';
+import 'web_playback_event.dart';
 
 class PlayerPage extends StatefulWidget {
   const PlayerPage({
@@ -44,12 +45,14 @@ class _PlayerPageState extends State<PlayerPage> {
   WebViewController? _webController;
   Timer? _progressTimer;
   Timer? _nativeStartupTimer;
+  Timer? _webStartupTimer;
   String _status = 'جاري تجهيز المشاهدة…';
   String _resolvedMediaPath = '';
   String _resolvedMediaType = '';
   bool _failed = false;
   bool _usingWebFallback = false;
   bool _nativeFailureInFlight = false;
+  bool _webPlaybackStarted = false;
   double _playbackSpeed = 1.0;
 
   @override
@@ -60,7 +63,9 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _initialize() async {
     _nativeStartupTimer?.cancel();
+    _webStartupTimer?.cancel();
     _nativeFailureInFlight = false;
+    _webPlaybackStarted = false;
     try {
       var mediaPath = widget.mediaPath;
       var mediaType = widget.mediaType;
@@ -145,16 +150,19 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Future<void> _startInternalWebFallback() async {
     final opaqueMedia = widget.api.mediaUri(_resolvedMediaPath);
+    final resume = widget.store.resumePosition(widget.item.ref, episodeId: widget.episodeId);
     final playerUri = Uri.parse('https://theeb1230-dot.github.io/Al-Qahtani/Player.html').replace(
       queryParameters: {
         'url': opaqueMedia.toString(),
         'type': _resolvedMediaType.trim().isEmpty ? 'stream' : _resolvedMediaType,
         'name': widget.title,
+        if (resume >= const Duration(seconds: 5)) 'resume': '${resume.inMilliseconds / 1000}',
       },
     );
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF101827))
+      ..addJavaScriptChannel('AlQahtaniPlayer', onMessageReceived: _handleWebPlaybackMessage)
       ..setNavigationDelegate(NavigationDelegate(
         onNavigationRequest: (request) {
           final uri = Uri.tryParse(request.url);
@@ -165,6 +173,7 @@ class _PlayerPageState extends State<PlayerPage> {
         onWebResourceError: (error) {
           final isMainFrame = error.isForMainFrame ?? true;
           if (!mounted || !_usingWebFallback || !isMainFrame) return;
+          _webStartupTimer?.cancel();
           setState(() {
             _failed = true;
             _usingWebFallback = false;
@@ -177,10 +186,56 @@ class _PlayerPageState extends State<PlayerPage> {
     setState(() {
       _webController = controller;
       _usingWebFallback = true;
+      _webPlaybackStarted = false;
       _failed = false;
-      _status = 'تم التحويل تلقائيًا إلى محرك الويب الداخلي';
+      _status = 'جارٍ تجربة محرك الويب الداخلي…';
+    });
+    _webStartupTimer?.cancel();
+    _webStartupTimer = Timer(const Duration(seconds: 25), () {
+      if (!mounted || !_usingWebFallback || _webPlaybackStarted) return;
+      setState(() {
+        _failed = true;
+        _usingWebFallback = false;
+        _status = 'لم يبدأ تشغيل المصدر داخل المهلة المحددة';
+      });
     });
     _nativeFailureInFlight = false;
+  }
+
+  void _handleWebPlaybackMessage(JavaScriptMessage message) {
+    final event = WebPlaybackEvent.tryParse(message.message);
+    if (event == null || !mounted || !_usingWebFallback) return;
+    switch (event.type) {
+      case 'playing':
+        _webStartupTimer?.cancel();
+        if (!_webPlaybackStarted) {
+          setState(() {
+            _webPlaybackStarted = true;
+            _failed = false;
+            _status = 'يعمل الآن عبر محرك الويب الداخلي';
+          });
+        }
+        break;
+      case 'progress':
+      case 'ended':
+        if (!_webPlaybackStarted || event.position < const Duration(milliseconds: 500)) return;
+        unawaited(widget.store.recordProgress(
+          item: widget.item,
+          position: event.position,
+          duration: event.duration,
+          episodeId: widget.episodeId,
+          episodeNumber: widget.episodeNumber,
+        ));
+        break;
+      case 'error':
+        _webStartupTimer?.cancel();
+        setState(() {
+          _failed = true;
+          _usingWebFallback = false;
+          _status = _webPlaybackStarted ? 'انقطع التشغيل داخل محرك الويب الداخلي' : 'تعذر بدء التشغيل داخل محرك الويب الداخلي';
+        });
+        break;
+    }
   }
 
   Future<void> _saveProgress() async {
@@ -224,6 +279,7 @@ class _PlayerPageState extends State<PlayerPage> {
   @override
   void dispose() {
     _nativeStartupTimer?.cancel();
+    _webStartupTimer?.cancel();
     _progressTimer?.cancel();
     _saveProgress();
     _controller?.removeListener(_nativeValueChanged);
@@ -297,9 +353,11 @@ class _PlayerPageState extends State<PlayerPage> {
                         _controller?.dispose();
                         _controller = null;
                         _webController = null;
+                        _webStartupTimer?.cancel();
                         setState(() {
                           _failed = false;
                           _usingWebFallback = false;
+                          _webPlaybackStarted = false;
                           _status = 'جاري إعادة المحاولة…';
                         });
                         _initialize();
