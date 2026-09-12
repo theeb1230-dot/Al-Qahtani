@@ -12,7 +12,6 @@ permissions:
 jobs:
   release:
     if: >-
-      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
@@ -26,6 +25,17 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+
+      - name: Verify triggering run is a main push
+        shell: bash
+        run: |
+          set -euo pipefail
+          EVENT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" --jq .event)"
+          BRANCH="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" --jq .head_branch)"
+          SHA="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" --jq .head_sha)"
+          test "$EVENT" = push
+          test "$BRANCH" = main
+          test "$SHA" = "$SOURCE_SHA"
 
       - name: Read and validate release version
         id: version

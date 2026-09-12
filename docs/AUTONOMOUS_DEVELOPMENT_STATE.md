@@ -4,117 +4,117 @@
 GitHub is authoritative when this file disagrees with the repository. The preserved original `albasritv.github.io-main.zip` remains the behavioral baseline. Live deployment and artifact evidence are required before claiming parity or release readiness.
 
 ## Current state
-- Main: `ea85d4238cf0333779ebb33fbca5d7900111bb7a` (merged PR #70: Flutter local Download library management).
-- Active branch: `feat/flutter-media-format-70`.
-- Active PR: #71 `Honor runtime media formats in Flutter playback`.
-- PR #71 was rebased/reapplied onto current main after a merge conflict; the final head must be read from GitHub before merge.
-- Flutter product version: `1.0.1+1`; this must be bumped before the first mandatory four-surface release under the new policy.
-- Existing Web/PWA remains the GitHub Pages product root and was not replaced by Flutter Web.
-- Scheduled automation `تطوير Al-Qahtani الأربع نسخ` is enabled hourly and now requires four-surface parity plus a GitHub Release triplet after every product-impacting merge.
+- Main: `f19ce24e4808cc5d1914ba09475ba3eb51cac1da` (merged PR #71: Flutter HLS/MP4/MPEG-TS format handling plus first automatic Release workflow).
+- Active branch: `fix/release-triplet-trigger-73`.
+- Active PR: to be opened for the Release trigger repair.
+- Flutter product version on this branch: `1.0.3+3`.
+- Web/PWA remains the GitHub Pages product root and is not replaced by Flutter Web.
+- Hourly automation `تطوير Al-Qahtani الأربع نسخ` is enabled and enforces four-surface parity, version/build bumps, triplet builds and complete GitHub Releases after product-impacting merges.
 
-## Four-surface product policy
-Every future product-impacting change is treated as one product across four surfaces:
-1. Existing Web/PWA on GitHub Pages.
+## Four-surface policy
+Every product-impacting change is treated as one product on four surfaces:
+1. Web/PWA on GitHub Pages.
 2. Android Mobile APK.
 3. Android TV APK with LEANBACK, D-Pad/focus and TV-specific UX.
-4. iOS IPA UNSIGNED/no-codesign.
+4. iOS IPA explicitly UNSIGNED/no-codesign.
 
-The Web/PWA remains deployed on GitHub Pages rather than being uploaded as a Release asset. The other three packages must be built from the same commit/version and published together in a GitHub Release only after fail-closed verification. Feature parity is required where platform APIs permit it; platform-specific differences must be explicit rather than silently dropping features.
+Web remains on Pages. Mobile APK, TV APK and IPA UNSIGNED must be produced from the same commit/version and published together in GitHub Releases only after fail-closed verification. Platform-specific exceptions must be explicit rather than silently dropping features.
 
 ## Product boundary
-Al-Qahtani remains independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and Theeb-specific providers. Flutter consumes only Al-Qahtani contracts and must not expose upstream hosts, Worker/session material, or source URLs. The inherited Basri source contract remains server-side only.
+Al-Qahtani stays independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and Theeb-specific providers. Flutter consumes Al-Qahtani contracts only and must not expose upstream hosts, Worker/session material or source URLs. The inherited Basri contract remains server-side only.
 
 ## Protected Web behavior
-Protected regressions remain iPhone Safari playback, Range/206, Content-Range/Accept-Ranges, MPEG-TS/HLS handling, measured duration, real match logos, Saudi match times, separated episode numbering, endless 30-item pagination, explicit Download behavior, CORS, SSRF/allowlists, zero ads/popups/unneeded tracking, and no legacy Android Intent/deep-link handoff.
+Protect iPhone Safari playback, Range/206, Content-Range/Accept-Ranges, HLS/MPEG-TS handling, measured duration, real match logos, Saudi times, separated episode numbering, endless 30+30 pagination, explicit Download semantics, CORS, SSRF/allowlists, no ads/popups/unneeded tracking, and no legacy Android Intent/deep-links.
 
 ## Flutter structure
-- `flutter_app/lib/main.dart`: Arabic RTL shell, Mobile navigation, Android TV NavigationRail and local library integration.
+- `flutter_app/lib/main.dart`: Arabic RTL shell, Mobile navigation, Android TV NavigationRail and local library.
 - `flutter_app/lib/src/api_client.dart`: Al-Qahtani-only API access with opaque media resolution.
-- `flutter_app/lib/src/details_page.dart`: details/episodes, favorites, playback, native Download and route-return focus ownership.
-- `flutter_app/lib/src/player_page.dart`: internal `video_player` playback, resume/progress, TV remote-safe controls, playback speed and media-type format hints.
-- `flutter_app/lib/src/media_format_policy.dart`: HLS/MP4/MPEG-TS normalization without exposing source URLs.
-- `flutter_app/lib/src/player_controls.dart`: focusable rewind/play/forward plus playback-speed menu.
-- `flutter_app/lib/src/download_service.dart`: opaque-only atomic native downloader plus safe local listing/deletion.
-- `flutter_app/lib/src/download_library_section.dart`: local Download listing, refresh and deletion UI without exposing filesystem paths or upstream URLs.
+- `flutter_app/lib/src/details_page.dart`: details/episodes, favorites, playback, Download and route-return focus ownership.
+- `flutter_app/lib/src/player_page.dart`: internal player, resume/progress, TV controls, playback speed and media-format hinting.
+- `flutter_app/lib/src/media_format_policy.dart`: HLS/MP4/MPEG-TS normalization; only HLS forces `VideoFormat.hls`, MP4/MPEG-TS use native detection.
+- `flutter_app/lib/src/download_service.dart`: opaque-only atomic downloader plus safe local listing/deletion.
+- `flutter_app/lib/src/download_library_section.dart`: safe local Download list/refresh/delete UI without filesystem/upstream path exposure.
 - `flutter_app/lib/src/library_store.dart`: favorites/history/continue-watching without persisted media refs.
 
+## Release implementation
+- `flutter-foundation.yml` reads version/build dynamically from `pubspec.yaml`.
+- Mobile verification checks APK presence, package id, signature, versionName and versionCode.
+- TV verification adds LEANBACK/touchscreen/TV source checks.
+- iOS verification checks bundle id/version/build and rejects provisioning / `_CodeSignature` before packaging the UNSIGNED IPA.
+- `release-triplet.yml` waits for exact-commit Pages/Web/runtime gates, downloads exact-run triplet artifacts, verifies supplied checksums, creates `SHA256SUMS.txt` and `PROVENANCE.json`, publishes all five assets and verifies them.
+- The first merged Release workflow run `34687111604` was skipped before any job step. Root cause was the top-level job gate being over-constrained by `workflow_run.event == 'push'`.
+- Current fix removes that fragile field from the job-level expression and instead verifies the triggering run event/branch/SHA explicitly inside the job with GitHub API data. Thus an invalid trigger fails visibly rather than silently skipping the release.
+
 ## This run
-1. Re-inspected main, open PRs, CI and repository state.
-2. Verified PR #70 final head `6b0afdbdbdb1b25a75b7f6b625ac5e1259413e4d` passed all protected workflows and the Flutter Mobile/TV/iOS triplet build.
-3. Merged PR #70 to main as `ea85d4238cf0333779ebb33fbca5d7900111bb7a`.
-4. Verified post-merge GitHub Pages runs `34686487667` and dynamic Pages run `34686487105` succeeded for that exact main commit.
-5. Found PR #71 and #72 open simultaneously, violating the one-PR policy.
-6. Closed #72 without merging; its news branch remains preserved for later reapplication after #71 is complete.
-7. PR #71 had green checks on its old head but could not merge because main advanced after #70; GitHub correctly reported merge conflicts.
-8. Reset #71 branch to current main and reapplied the media-format changes instead of force-merging stale code.
-9. Restored explicit HLS/MP4/MPEG-TS normalization and regression tests; HLS supplies the native `VideoFormat.hls` hint while MP4/MPEG-TS leave platform-native detection in control.
-10. Updated the hourly automation to require four-surface parity and mandatory triplet GitHub Releases after every future product-impacting merge.
+1. Verified PR #70 final head and triplet, then merged it to main `ea85d4238cf0333779ebb33fbca5d7900111bb7a`.
+2. Verified Pages `34686487667` and dynamic Pages `34686487105` on that exact commit.
+3. Recovered from simultaneous #71/#72 by closing #72 unmerged and preserving its news branch.
+4. Rebased/reapplied #71 over current main after stale merge conflicts.
+5. Added HLS/MP4/MPEG-TS Flutter format normalization and regression tests.
+6. Raised version to `1.0.2+2`, made triplet version checks dynamic and added fail-closed automatic GitHub Release automation.
+7. PR #71 was merged as main `f19ce24e4808cc5d1914ba09475ba3eb51cac1da`.
+8. Main protected Web/runtime jobs observed so far on that commit are green, while the main Flutter foundation run `34687043483` is the triplet source run.
+9. Automatic Release run `34687111604` was `skipped`, so no false Release claim was made.
+10. Created `fix/release-triplet-trigger-73`, bumped to `1.0.3+3`, and repaired the release gate so trigger provenance is checked inside the job rather than skipped at job selection.
 
-## CI / deployment evidence
-- PR #70 final-head Flutter foundation: `34686105171` success.
-- PR #70 protected workflows all succeeded before merge, including Content Runtime `34686105132`, Web Smoke `34686105218`, Mobile WebKit `34686105126`, Remote Movie `34686105315`, Live Provider `34686105173`, Remote CORS `34686105081`, CORS Boundary `34686105180`, Media Reference Expiry `34686105222`, Original Basri Download `34686105063`, Original Basri Player `34686105254`, Trusted Download Filename `34686105232`.
-- Main `ea85d423...` GitHub Pages deploy: `34686487667` success.
-- Main `ea85d423...` dynamic Pages deploy: `34686487105` success.
-- PR #71 rebased-head protected workflows were started again after the reapply; merge requires exact-final-head green evidence after this documentation commit.
+## Artifact / Release state
+- PR #70 triplet artifacts were successful but were only Actions artifacts.
+- PR #71 pre-merge `1.0.2+2` triplet passed Mobile, TV, iOS UNSIGNED and analyze/tests.
+- Main source run for the first automatic Release: Flutter foundation `34687043483` on `f19ce24e...`.
+- Automatic Release run `34687111604`: skipped; therefore `v1.0.2` is not claimed as published.
+- Current target after this repair merges: `v1.0.3`, build `3`.
+- A Release is valid only when Mobile APK, TV APK, iOS UNSIGNED IPA, `SHA256SUMS.txt`, and `PROVENANCE.json` are all present and non-empty.
 
-## Artifact state
-PR #70 produced a full CI triplet from the same exact head, but these are Actions artifacts rather than GitHub Release assets:
-- Android Mobile: `Al-Qahtani-Mobile-APK`, artifact id `10295422905`, size `25,407,065`, artifact digest `sha256:fa1eb78769fea141f49f69a6247d2fd29ec1ba678827f6a443aba6bf9cc7f597`.
-- Android TV: `Al-Qahtani-TV-APK`, artifact id `10295432670`, size `25,406,944`, artifact digest `sha256:38db34988d04b06e866dec9b915c74a1d6899e9472b8a284604f8efdfccf9789`.
-- iOS IPA UNSIGNED: `Al-Qahtani-iOS-UNSIGNED-IPA`, artifact id `10295522326`, size `7,421,807`, artifact digest `sha256:879daad74f02b0609996cd770b79cb22b6e4f65d7d66175d58467352d27f4e4e`.
-- iOS remains UNSIGNED/no-codesign and requires external signing/provisioning for installation.
-- GitHub Release: none yet. Actions artifacts are not considered a substitute.
-
-## Repository Website / GitHub Pages URL
-- Repository metadata currently reports `homepage: null` and `has_pages: true`.
-- The connector currently exposes repository reads but no confirmed repository-metadata mutation action for the Website/Homepage field.
-- Do not invent or hard-code a guessed Pages URL in product files. Verify the official Pages URL from GitHub deployment metadata and set the repository Website/Homepage only when a supported write action is available.
+## Repository Website / Pages URL
+- Repository metadata reports `homepage: null` and `has_pages: true`.
+- The current connector does not expose a confirmed repository Website/Homepage mutation action and blocks the Pages settings endpoint required for authoritative URL retrieval.
+- Do not guess or hard-code the Pages URL. The automation is instructed to populate Website/Homepage only when the official URL can be read authoritatively and a supported write action exists.
 
 ## Current blockers / gaps
-- PR #71 must complete exact-final-head CI after this state update before merge.
-- The mandatory version-bump + automatic GitHub Release workflow is not yet merged; it must be implemented after the currently open PR is closed because of the one-PR rule.
-- The preserved news work from closed PR #72 must be rebased/reapplied from current main before it returns as the sole open PR.
-- Native runtime evidence is still needed for MP4/HLS and especially standalone MPEG-TS behavior on Android ExoPlayer and iOS AVPlayer.
-- GitHub Website/Homepage cannot yet be changed through the currently exposed repository mutation tools.
+- This Release trigger fix must pass exact-final-head CI and merge before `v1.0.3` can be attempted.
+- The Release must then be observed and its five assets verified; until then no Release success claim is valid.
+- The news work from closed #72 remains preserved and must be reapplied only after this PR closes.
+- Native standalone MPEG-TS evidence on ExoPlayer/AVPlayer still needs strengthening.
+- Repository Website/Homepage write remains blocked by connector capability.
 
 ## أهداف التشغيل التالي
-1. **إغلاق PR #71 بأمان.**
-   - انتظار CI على الرأس النهائي بعد تحديث هذا الملف.
-   - إصلاح أي failure على نفس الفرع.
-   - الدمج فقط بعد الخضرة الكاملة وعدم وجود conflicts.
-2. **التحقق بعد دمج #71.**
-   - فحص GitHub Pages على نفس merge commit.
-   - فحص WebKit/CORS/Range/Download regressions.
-   - توثيق main الجديد فعليًا.
-3. **إعادة أخبار #72 فوق main.**
-   - إعادة تطبيق runtime/news facade دون upstream URL leakage.
-   - إبقاء article refs opaque وقصيرة العمر.
-   - فتح PR واحد فقط بعد إغلاق #71.
-4. **توحيد سياسة الإصدار للأربع نسخ.**
-   - رفع `version/build` لكل تعديل منتج مدمج.
-   - إبقاء Web على Pages.
-   - ربط الثلاث حزم بنفس commit/version.
-5. **إنشاء GitHub Release workflow fail-closed.**
-   - APK Mobile + APK TV + IPA UNSIGNED فقط.
-   - إنشاء `SHA256SUMS.txt` وprovenance/release manifest.
-   - منع Release إذا فشلت أي حزمة أو تحقق.
-6. **نشر أول Release كامل.**
-   - تشغيل triplet من main بعد رفع النسخة.
-   - التحقق من Android identities/signatures وTV LEANBACK وiOS no-codesign.
-   - التحقق أن الأصول الثلاثة قابلة للتنزيل من Releases.
+1. **إغلاق إصلاح Release بأمان.**
+   - فتح PR واحد لهذا الفرع.
+   - فحص exact-final-head CI وإصلاح أي failure.
+   - الدمج فقط بعد الخضرة الكاملة.
+2. **إثبات v1.0.3.**
+   - انتظار main Flutter triplet لنفس merge commit.
+   - انتظار Pages/Web/runtime gates لنفس SHA.
+   - التحقق من نجاح Release workflow وعدم skip.
+3. **التحقق من أصول Release.**
+   - Mobile APK وTV APK وIPA UNSIGNED.
+   - `SHA256SUMS.txt` و`PROVENANCE.json`.
+   - التأكد من أنها غير فارغة وقابلة للتنزيل.
+4. **حماية الويب.**
+   - فحص Pages على merge commit نفسه.
+   - حماية WebKit/CORS/Range/Download.
+   - عدم استبدال الويب بـFlutter Web حاليًا.
+5. **إعادة أخبار #72.**
+   - إعادة تطبيقها فوق main الجديد.
+   - إبقاء refs opaque وعدم كشف upstream.
+   - فتحها فقط بعد إغلاق PR الإصدار.
+6. **توحيد الأربع نسخ.**
+   - تقييم Web/Mobile/TV/iOS لكل ميزة.
+   - تسجيل اختلافات المنصة الضرورية.
+   - منع سقوط ميزة بصمت.
 7. **تثبيت HLS/MP4/MPEG-TS.**
-   - اختبار initialize/play/seek/resume وRange/206.
-   - فحص ExoPlayer وAVPlayer فعليًا قدر ما تسمح الأدوات.
-   - عدم اختلاق support أو duration غير مثبت.
-8. **تحسين Download/library parity.**
-   - تطبيق list/refresh/delete بأمان على Mobile/TV.
-   - إضافة export/share عبر APIs عامة فقط.
+   - اختبار play/seek/resume وRange/206.
+   - فحص ExoPlayer وAVPlayer قدر ما تسمح الأدوات.
+   - عدم اختلاق دعم غير مثبت.
+8. **تطوير Download/library.**
+   - تثبيت list/refresh/delete على Mobile/TV.
+   - إضافة export/share آمن لاحقًا.
    - عدم كشف filesystem/upstream paths.
-9. **تثبيت GitHub Pages Website field.**
-   - استخراج URL الرسمي الموثق من deployment.
-   - استخدام repository Website/Homepage write action إذا أصبح متاحًا.
-   - عدم تعديل المنتج لمجرد محاكاة حقل GitHub.
-10. **حماية parity مستقبلًا.**
-   - إضافة checklist/tests للويب وMobile وTV وiOS لكل ميزة.
-   - تسجيل الاستثناءات الخاصة بالمنصة صراحة.
-   - منع دمج ميزة تسقط بصمت من إحدى النسخ الأربع.
+9. **تثبيت Website/Homepage.**
+   - قراءة URL الرسمي عند توفر endpoint مسموح.
+   - استخدام write action رسمي عند توفره.
+   - عدم التخمين.
+10. **صيانة مستمرة.**
+   - منع regressions وتحديث الاعتماديات الآمنة.
+   - تحسين الأداء والأمن وTV UX.
+   - تحديث هذا الملف في نهاية كل تشغيل بالدلائل الفعلية.
