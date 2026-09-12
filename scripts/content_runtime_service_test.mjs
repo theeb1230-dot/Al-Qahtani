@@ -47,9 +47,10 @@ const service = createContentRuntimeService({
 });
 
 const firstMatches = await service.matches();
-assert.equal(firstMatches.version, "1.0.13");
+assert.equal(firstMatches.version, "1.0.14");
 assert.equal(firstMatches.kind, "matches");
 assert.equal(firstMatches.cached, false);
+assert.equal(firstMatches.stale, false);
 assert.equal(firstMatches.data.length, 1);
 assert.equal(firstMatches.data[0].team1.name, "راسينج");
 assert.equal(firstMatches.health.successes, 1);
@@ -57,6 +58,7 @@ assert.equal(firstMatches.health.lastLatencyMs, 25);
 
 const cachedMatches = await service.matches();
 assert.equal(cachedMatches.cached, true);
+assert.equal(cachedMatches.stale, false);
 assert.equal(matchCalls, 1);
 
 clock += 1_001;
@@ -97,10 +99,11 @@ assert.equal(categoryCalls, 2, "unknown IDs must not reach upstream fetcher");
 
 const homeBeforeCalls = categoryCalls;
 const home = await service.home();
-assert.equal(home.version, "1.0.13");
+assert.equal(home.version, "1.0.14");
 assert.equal(home.kind, "home");
 assert.equal(home.source, "al-qahtani-runtime");
 assert.equal(home.data.partial, false);
+assert.equal(home.data.stale, false);
 assert.equal(home.data.matches.status, "ready");
 assert.ok(home.data.matches.data.length <= 12);
 assert.deepEqual(home.data.sections.map((section) => section.id), [
@@ -142,9 +145,46 @@ assert.ok(partialHome.data.sections.some((section) => section.status === "unavai
 assert.ok(partialHome.data.sections.some((section) => section.status === "ready"));
 assert.ok(peakSections <= 2, `home catalog aggregation must remain bounded to concurrency=2, saw ${peakSections}`);
 
+let staleClock = 10_000;
+let staleSearchCalls = 0;
+let failStaleSearch = false;
+const staleService = createContentRuntimeService({
+  now: () => staleClock,
+  catalogTtlMs: 100,
+  staleIfErrorMs: 1_000,
+  fetchAttempts: 2,
+  fetchMatches: async () => ({ data: [] }),
+  fetchCategory: async () => ({ data: [] }),
+  searchCatalog: async () => {
+    staleSearchCalls += 1;
+    if (failStaleSearch) throw new Error("TRANSIENT_SEARCH_DOWN");
+    return {
+      status: "success",
+      source: "basri-direct",
+      data: [{ title: "نتيجة ثابتة", img: "poster.jpg", is_series: true, href: "legacy:stale-demo" }],
+    };
+  },
+});
+
+const warmSearch = await staleService.search("تجربة");
+assert.equal(warmSearch.stale, false);
+assert.equal(staleSearchCalls, 1);
+staleClock += 101;
+failStaleSearch = true;
+const staleSearch = await staleService.search("تجربة");
+assert.equal(staleSearch.cached, true);
+assert.equal(staleSearch.stale, true);
+assert.equal(staleSearch.data[0].title, "نتيجة ثابتة");
+assert.equal(staleSearchCalls, 3, "expired cache must retry twice before serving bounded stale data");
+staleClock += 1_001;
+await assert.rejects(() => staleService.search("تجربة"), /TRANSIENT_SEARCH_DOWN/);
+assert.equal(staleSearchCalls, 5, "stale data beyond the configured window must fail closed after bounded retries");
+
 const status = service.status();
 assert.equal(status.status, "ok");
-assert.equal(status.version, "1.0.13");
+assert.equal(status.version, "1.0.14");
+assert.equal(status.resilience.fetch_attempts, 2);
+assert.equal(status.resilience.stale_if_error_ms, 300_000);
 assert.ok(status.cache_entries >= 2);
 assert.ok(status.providers.some((provider) => provider.name === "basri-direct"));
 assert.ok(status.providers.some((provider) => provider.name === "basri-worker"));
