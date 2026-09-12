@@ -33,6 +33,19 @@ export function assertSourceUrl(value, { allowMedia = false } = {}) {
   return url;
 }
 
+function sourcePathUrl(value, allowedKinds = []) {
+  const href = absoluteUrl(value);
+  if (!href) return "";
+  try {
+    const url = assertSourceUrl(href);
+    const kind = url.pathname.split("/").filter(Boolean)[0] || "";
+    if (allowedKinds.length && !allowedKinds.includes(kind)) return "";
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
 export async function fetchSourceHtml(value, { referer = SOURCE_ORIGIN + "/", timeoutMs = 30_000 } = {}) {
   const url = assertSourceUrl(value);
   const controller = new AbortController();
@@ -66,31 +79,46 @@ function contentKind(url) {
   return "series";
 }
 
+function catalogEntry(block, seen) {
+  const hrefMatch = block.match(/<a[^>]+href=["']((?:https:\/\/akwam\.ss)?\/(?:series|movie|movies)\/[^"']+)["'][^>]*class=["'][^"']*(?:box|play)[^"']*["']/i)
+    || block.match(/href=["']((?:https:\/\/akwam\.ss)?\/(?:series|movie|movies)\/[^"']+)["']/i);
+  if (!hrefMatch) return null;
+  const href = sourcePathUrl(hrefMatch[1], ["series", "movie", "movies"]);
+  if (!href || seen.has(href)) return null;
+  seen.add(href);
+  const imgMatch = block.match(/<img[^>]+(?:data-src|src)=["']([^"']+)["'][^>]*alt=["']([^"']*)["']/i)
+    || block.match(/<img[^>]+alt=["']([^"']*)["'][^>]+(?:data-src|src)=["']([^"']+)["']/i);
+  let img = "";
+  let alt = "";
+  if (imgMatch) {
+    if (/^https?:/i.test(imgMatch[1]) || imgMatch[1].startsWith("/")) { img = absoluteUrl(imgMatch[1]); alt = imgMatch[2] || ""; }
+    else { alt = imgMatch[1] || ""; img = absoluteUrl(imgMatch[2] || ""); }
+  }
+  const titleMatch = block.match(/<h3[^>]*class=["'][^"']*entry-title[^"']*["'][^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i)
+    || block.match(/<a[^>]+href=["'](?:https:\/\/akwam\.ss)?\/(?:series|movie|movies)\/[^"']+["'][^>]*>([\s\S]*?)<\/a>/i);
+  const yearMatch = block.match(/<span[^>]*class=["'][^"']*badge[^"']*secondary[^"']*["'][^>]*>\s*(\d{4})\s*<\/span>/i);
+  const title = stripTags(titleMatch?.[1] || alt || "بدون عنوان");
+  return { title, img, is_series: contentKind(href) !== "movie", href, year: yearMatch?.[1] || null };
+}
+
 export function parseCatalog(html = "") {
   const out = [];
   const seen = new Set();
   const boxRe = /<div\s+class=["'][^"']*entry-box\s+entry-box-1[^"']*["'][^>]*>([\s\S]*?)(?=<div\s+class=["'][^"']*entry-box\s+entry-box-1|$)/gi;
   let match;
   while ((match = boxRe.exec(html))) {
-    const block = match[1];
-    const hrefMatch = block.match(/<a[^>]+href=["'](https:\/\/akwam\.ss\/(?:series|movie|movies)\/[^"']+)["'][^>]*class=["'][^"']*(?:box|play)[^"']*["']/i)
-      || block.match(/href=["'](https:\/\/akwam\.ss\/(?:series|movie|movies)\/[^"']+)["']/i);
-    if (!hrefMatch) continue;
-    const href = decodeEntities(hrefMatch[1]);
-    if (seen.has(href)) continue;
-    seen.add(href);
-    const imgMatch = block.match(/<img[^>]+(?:data-src|src)=["']([^"']+)["'][^>]*alt=["']([^"']*)["']/i)
-      || block.match(/<img[^>]+alt=["']([^"']*)["'][^>]+(?:data-src|src)=["']([^"']+)["']/i);
-    let img = "";
-    let alt = "";
-    if (imgMatch) {
-      if (/^https?:/i.test(imgMatch[1]) || imgMatch[1].startsWith("/")) { img = absoluteUrl(imgMatch[1]); alt = imgMatch[2] || ""; }
-      else { alt = imgMatch[1] || ""; img = absoluteUrl(imgMatch[2] || ""); }
+    const entry = catalogEntry(match[1], seen);
+    if (entry) out.push(entry);
+  }
+  if (!out.length) {
+    const anchorRe = /<a\b[^>]*href=["']((?:https:\/\/akwam\.ss)?\/(?:series|movie|movies)\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    while ((match = anchorRe.exec(html))) {
+      const href = sourcePathUrl(match[1], ["series", "movie", "movies"]);
+      if (!href || seen.has(href)) continue;
+      seen.add(href);
+      const title = stripTags(match[2]) || "بدون عنوان";
+      out.push({ title, img: "", is_series: contentKind(href) !== "movie", href, year: null });
     }
-    const titleMatch = block.match(/<h3[^>]*class=["'][^"']*entry-title[^"']*["'][^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i);
-    const yearMatch = block.match(/<span[^>]*class=["'][^"']*badge[^"']*secondary[^"']*["'][^>]*>\s*(\d{4})\s*<\/span>/i);
-    const title = stripTags(titleMatch?.[1] || alt || "بدون عنوان");
-    out.push({ title, img, is_series: contentKind(href) !== "movie", href, year: yearMatch?.[1] || null });
   }
   return out;
 }
@@ -174,11 +202,11 @@ function normalizeEpisodes(entries = []) {
 export function parseDetails(html = "", pageUrl = "") {
   const episodes = [];
   const seen = new Set();
-  const anchorRe = /<a\b([^>]*?)href=["'](https:\/\/akwam\.ss\/episode\/[^"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi;
+  const anchorRe = /<a\b([^>]*?)href=["']((?:https:\/\/akwam\.ss)?\/episode\/[^"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi;
   let m;
   while ((m = anchorRe.exec(html))) {
-    const href = decodeEntities(m[2]);
-    if (seen.has(href)) continue;
+    const href = sourcePathUrl(m[2], ["episode"]);
+    if (!href || seen.has(href)) continue;
     seen.add(href);
     const attrs = `${m[1]} ${m[3]}`;
     const label = stripTags(`${attrs.match(/(?:title|aria-label)=["']([^"']+)["']/i)?.[1] || ""} ${m[4] || ""}`);
@@ -192,9 +220,9 @@ export function parseDetails(html = "", pageUrl = "") {
     });
   }
   if (!episodes.length) {
-    for (const match of html.matchAll(/href=["'](https:\/\/akwam\.ss\/episode\/[^"']+)["']/gi)) {
-      const href = decodeEntities(match[1]);
-      if (seen.has(href)) continue;
+    for (const match of html.matchAll(/href=["']((?:https:\/\/akwam\.ss)?\/episode\/[^"']+)["']/gi)) {
+      const href = sourcePathUrl(match[1], ["episode"]);
+      if (!href || seen.has(href)) continue;
       seen.add(href);
       const identity = episodeIdentity(href, "", episodes.length + 1);
       episodes.push({
@@ -220,8 +248,9 @@ export function parseDetails(html = "", pageUrl = "") {
 export function parseEpisode(html = "", pageUrl = "") {
   const watch = [];
   const downloads = [];
-  for (const m of html.matchAll(/<a[^>]+href=["'](https:\/\/akwam\.ss\/(watch|download)\/[^"']+)["'][^>]*>/gi)) {
-    const url = decodeEntities(m[1]);
+  for (const m of html.matchAll(/<a[^>]+href=["']((?:https:\/\/akwam\.ss)?\/(watch|download)\/[^"']+)["'][^>]*>/gi)) {
+    const url = sourcePathUrl(m[1], ["watch", "download"]);
+    if (!url) continue;
     const kind = m[2].toLowerCase();
     const block = html.slice(m.index, Math.min(html.length, m.index + 700));
     const size = stripTags(block.match(/font-size-14[^>]*>([\s\S]*?)<\/span>/i)?.[1] || "");
