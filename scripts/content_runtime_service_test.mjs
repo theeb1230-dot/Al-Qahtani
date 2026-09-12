@@ -95,6 +95,52 @@ const unknownCategory = await service.category("movie-made-up", 1);
 assert.deepEqual(unknownCategory.data, []);
 assert.equal(categoryCalls, 2, "unknown IDs must not reach upstream fetcher");
 
+const homeBeforeCalls = categoryCalls;
+const home = await service.home();
+assert.equal(home.version, "1.0.1");
+assert.equal(home.kind, "home");
+assert.equal(home.source, "al-qahtani-runtime");
+assert.equal(home.data.partial, false);
+assert.equal(home.data.matches.status, "ready");
+assert.ok(home.data.matches.data.length <= 12);
+assert.deepEqual(home.data.sections.map((section) => section.id), [
+  "series-foreign",
+  "series-arabic",
+  "movie-foreign",
+  "movie-arabic",
+]);
+assert.ok(home.data.sections.every((section) => section.status === "ready"));
+assert.ok(home.data.sections.every((section) => section.data.length <= 8));
+assert.equal(categoryCalls, homeBeforeCalls + 4, "home must request only its four bounded catalog sections");
+
+let activeSections = 0;
+let peakSections = 0;
+const partialService = createContentRuntimeService({
+  fetchMatches: async () => { throw new Error("MATCHES_DOWN"); },
+  searchCatalog: async () => ({ status: "success", data: [] }),
+  fetchCategory: async (ref) => {
+    activeSections += 1;
+    peakSections = Math.max(peakSections, activeSections);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    activeSections -= 1;
+    if (ref.includes("section=34")) throw new Error("ONE_SECTION_DOWN");
+    return {
+      status: "success",
+      source: "basri-direct",
+      data: [{ title: "عنصر", img: "poster.jpg", is_series: true, href: "legacy:https%3A%2F%2Fakwam.ss%2Fseries%2Fhome-demo" }],
+    };
+  },
+});
+
+const partialHome = await partialService.home();
+assert.equal(partialHome.kind, "home");
+assert.equal(partialHome.data.partial, true, "one failed dependency must mark home as partial rather than fail the whole response");
+assert.equal(partialHome.data.matches.status, "unavailable");
+assert.equal(partialHome.data.matches.data.length, 0);
+assert.ok(partialHome.data.sections.some((section) => section.status === "unavailable"));
+assert.ok(partialHome.data.sections.some((section) => section.status === "ready"));
+assert.ok(peakSections <= 2, `home catalog aggregation must remain bounded to concurrency=2, saw ${peakSections}`);
+
 const status = service.status();
 assert.equal(status.status, "ok");
 assert.equal(status.version, "1.0.1");
