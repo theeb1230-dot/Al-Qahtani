@@ -1,17 +1,26 @@
 class CatalogItem {
-  const CatalogItem({required this.id, required this.title, required this.poster, required this.type, required this.ref});
+  const CatalogItem({
+    required this.id,
+    required this.title,
+    required this.poster,
+    required this.type,
+    required this.ref,
+    this.year,
+  });
   final String id;
   final String title;
   final String poster;
   final String type;
   final String ref;
+  final int? year;
 
   factory CatalogItem.fromJson(Map<String, dynamic> json) => CatalogItem(
         id: '${json['id'] ?? ''}',
         title: '${json['title'] ?? 'بدون عنوان'}',
-        poster: '${json['poster'] ?? ''}',
+        poster: '${json['poster'] ?? json['img'] ?? json['image'] ?? ''}',
         type: '${json['type'] ?? 'series'}',
         ref: '${json['ref'] ?? ''}',
+        year: int.tryParse('${json['year'] ?? ''}'),
       );
 }
 
@@ -84,12 +93,38 @@ class TitleDetails {
   }
 }
 
+int? _nullableScore(dynamic value) {
+  if (value == null) return null;
+  final text = '$value'.trim();
+  if (text.isEmpty) return null;
+  return int.tryParse(text);
+}
+
 class MatchItem {
-  const MatchItem({required this.home, required this.away, required this.time, required this.status});
+  const MatchItem({
+    required this.home,
+    required this.away,
+    required this.time,
+    required this.status,
+    required this.ref,
+    this.homeLogo = '',
+    this.awayLogo = '',
+    this.homeGoals,
+    this.awayGoals,
+    this.competition = '',
+  });
   final String home;
   final String away;
   final String time;
   final String status;
+  final String ref;
+  final String homeLogo;
+  final String awayLogo;
+  final int? homeGoals;
+  final int? awayGoals;
+  final String competition;
+
+  bool get hasScore => homeGoals != null && awayGoals != null;
 
   factory MatchItem.fromJson(Map<String, dynamic> json) {
     final team1 = (json['team1'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
@@ -99,8 +134,40 @@ class MatchItem {
       away: '${team2['name'] ?? ''}',
       time: '${json['time'] ?? ''}',
       status: '${json['status'] ?? 'scheduled'}',
+      ref: '${json['ref'] ?? ''}',
+      homeLogo: '${team1['logo'] ?? team1['image'] ?? team1['img'] ?? ''}',
+      awayLogo: '${team2['logo'] ?? team2['image'] ?? team2['img'] ?? ''}',
+      homeGoals: _nullableScore(team1['goals'] ?? json['home_score'] ?? json['homeScore']),
+      awayGoals: _nullableScore(team2['goals'] ?? json['away_score'] ?? json['awayScore']),
+      competition: '${json['competition'] ?? json['league'] ?? ''}',
     );
   }
+}
+
+class MatchServer {
+  const MatchServer({required this.ref, required this.name, required this.type});
+  final String ref;
+  final String name;
+  final String type;
+
+  factory MatchServer.fromJson(Map<String, dynamic> json) => MatchServer(
+        ref: '${json['ref'] ?? ''}',
+        name: '${json['name'] ?? 'سيرفر'}',
+        type: '${json['type'] ?? 'auto'}',
+      );
+}
+
+class MatchPlayback {
+  const MatchPlayback({required this.mediaPath, required this.mediaType, required this.serverName});
+  final String mediaPath;
+  final String mediaType;
+  final String serverName;
+
+  factory MatchPlayback.fromJson(Map<String, dynamic> json) => MatchPlayback(
+        mediaPath: '${json['media_path'] ?? ''}',
+        mediaType: '${json['media_type'] ?? 'stream'}',
+        serverName: '${json['server_name'] ?? 'سيرفر'}',
+      );
 }
 
 class NewsItem {
