@@ -1,87 +1,120 @@
 # Autonomous Development State
 
 ## Source of truth
-GitHub is authoritative when this file disagrees with the repository. The preserved original Basri archive remains the behavioral baseline. Live deployment evidence is required before claiming Web/PWA parity.
+GitHub is authoritative when this file disagrees with the repository. The preserved original `albasritv.github.io-main.zip` archive remains the behavioral baseline. Live deployment evidence is required before claiming Web/PWA parity.
 
 ## Current state
-- Main: `53d70fae870c7346ea406a19362fa928c4b92915` (`Merge pull request #57 ... Prove deployed 1.0.1 runtime contracts`).
-- PR #57 merged.
+- Main: `1e183c79a0f7da12a6742ab9d63255078cf73d48` (`Make deployed search gate source-aware`).
+- PR #57 merged and introduced the deployed 1.0.1 runtime-contract gate.
+- PR #59 merged and corrected that live gate so an English source query may truthfully return an empty normalized result rather than forcing stale/download-only content.
 - Active PR: #58 `Load cinema categories beyond the first 30 items`.
-- Branch: `test/remote-runtime-v1-57` (reused after #57 merge because new commits were added only after the merge point).
-- Current implementation head before this documentation commit: `0117b0f0ceb4a0e02815b96a2a90d2f912913c5c`.
+- Branch: `test/remote-runtime-v1-57` (reused after #57; this is the only active PR branch and must remain the only development branch used until #58 closes).
+- PR #58 was originally based on `53d70fae870c7346ea406a19362fa928c4b92915`; its pagination work was later merged with that main state at `e20aae46acd837c0fc2464518266f96f4cdcd99e`. After main advanced through #59, the branch copy of `scripts/remote_runtime_v1_smoke.mjs` was explicitly synchronized with current main so #58 cannot reintroduce the old over-strict `The Odyssey` assertion.
 - Target: Web/PWA `1.0.1`.
-- Flutter remains blocked until Web/PWA 1.0.1 is proven live.
+- Flutter remains blocked until Web/PWA 1.0.1 is proven live across the required release gates.
 
 ## Product boundary
-Al-Qahtani remains independent from unrelated projects and providers. Only original Basri source contracts are allowed. Existing source allowlists, SSRF protections, server-side session handling, opaque media references and Safari Range protections remain mandatory.
+Al-Qahtani is fully independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and all Theeb-specific APIs/providers. `https://akwam.ss/...` is allowed only because it belongs to the preserved original Basri source contract. No Theeb fallback or cross-project runtime dependency is allowed.
 
 ## Protected live behavior
-Real iPhone Safari testing has already proven working playback across multiple movie/series/anime samples after the MPEG-TS/HLS path. Match logos and Saudi match times are proven on device. Episode display numbering is separated from internal IDs. These paths remain protected regressions.
+Real iPhone Safari testing has already proven working playback across multiple movie/series/anime samples after the MPEG-TS/HLS path. Safari Range/206, MIME/magic container detection, opaque media references, explicit Download behavior, measured-duration logic, match logos, Saudi match times, and separated episode display numbering are protected regressions and must not be casually reworked.
 
-## 1.0.1 progress
-Merged to main:
-- `server/content-runtime.mjs`: version `1.0.1`, bounded TTL cache, provider health/circuit-breaker primitives and normalization helpers.
+## 1.0.1 Phase 1 progress merged to main
+- `server/content-runtime.mjs`: product version `1.0.1`, bounded TTL cache, provider-health/circuit primitives, normalization helpers.
 - `server/content-runtime-service.mjs`: normalized matches/search/category service, bounded metadata cache and health accounting.
-- additive runtime HTTP routes in `server/app.mjs`: `/api/runtime/status`, `/api/v1/matches`, `/api/v1/search`, `/api/v1/category`.
-- deployed-v1 runtime proof workflow from PR #57.
+- additive HTTP contracts in `server/app.mjs`: `/api/runtime/status`, `/api/v1/matches`, `/api/v1/search?q=...`, `/api/v1/category?ref=...&p=...`.
 - old `/api/matches` and `/api/cinema/*` routes remain available during migration.
+- deterministic local route regressions plus a post-merge deployed runtime contract workflow.
+
+## Live evidence after PR #59
+Main `1e183c79a0f7da12a6742ab9d63255078cf73d48` ran `Remote runtime v1 smoke` as run `34664018567` and completed successfully against the deployed backend:
+- `/api/runtime/status`: HTTP 200, version `1.0.1`, no sensitive/session fields exposed.
+- `/api/v1/matches`: 30 normalized matches from `basri-matches`; second request reported `cached: true`.
+- `/api/v1/search?q=الذئب الوحيد`: 4 normalized real items from `basri-direct`.
+- `/api/v1/search?q=The%20Odyssey`: valid normalized `1.0.1` search contract from `basri-direct`, current source count `0`; this is recorded honestly instead of manufacturing stale/archive/download-only content.
+- `/api/v1/category`: 24 real normalized items from `basri-direct`.
+- health summary remained structured and sanitized for `basri-direct` and `basri-matches`.
+
+The previous live run `34663761975` failed only because its test required `The Odyssey` to be non-empty; transport/runtime/cache/category/Arabic-search evidence in that run was otherwise healthy. PR #59 fixed the test semantics, not the source data.
 
 ## PR #58 — endless category loading in 30-item batches
-User requirement: movie and series categories must not stop at the first 30 items. When the user reaches the bottom after item 30, load the next 30, then the next 30, with no UI page-count limit until the source itself ends.
+Requirement: movie and series categories must not stop at the first 30 items. When the user reaches the category tail, load the next batch and continue until the original Basri source itself ends.
 
-Implemented:
-- `web/core/api-client.js` now accepts `page` in `getCinemaCategory(...)` and forwards positive `p` to the existing Al-Qahtani backend route.
+Implemented on the active PR branch:
+- `web/core/api-client.js` accepts a positive page in `getCinemaCategory(...)` and forwards `p` through the existing Al-Qahtani backend route.
 - `albasri-cinema.html` uses an `IntersectionObserver` sentinel at the category tail.
-- page 1 renders first; reaching the tail requests page 2, then 3, 4, and so on.
-- each normal source page is treated as a 30-item batch; a short/empty final page ends loading naturally.
+- page 1 renders first; reaching the tail requests page 2, then page 3 and later pages without a fixed UI page count.
 - `categoryLoading` prevents concurrent duplicate requests.
 - `categoryRequestId` discards stale responses after navigation/search/home transitions.
-- `categorySeen` deduplicates repeated upstream items and prevents duplicate-page loops.
+- `categorySeen` deduplicates repeated upstream items and helps stop duplicate-page loops.
 - search resets category paging state.
-- the existing details/player/download flow is reused for appended cards exactly like the first batch.
+- appended cards reuse the existing details/player/download flow exactly like page 1.
+- `scripts/category_infinite_scroll_test.mjs` protects forwarding, observer setup, sequential paging, deduplication, stale-response handling and 30-item UX semantics.
+- `scripts/category_infinite_webkit_smoke.mjs` uses an iPhone WebKit profile, mocks two 30-item pages, scrolls to the category tail, requires 60 rendered cards, confirms `p=2`, verifies item 60 and rejects duplicates.
+- Content runtime and Mobile WebKit workflows execute these new regressions.
 
-Regression coverage:
-- `scripts/category_infinite_scroll_test.mjs` statically protects page forwarding, observer setup, sequential paging, deduplication, stale-response handling and the 30-item UX.
-- `.github/workflows/content-runtime.yml` executes that regression.
-- `scripts/category_infinite_webkit_smoke.mjs` runs with an iPhone 13 WebKit profile, mocks 30 items for page 1 and 30 for page 2, scrolls to the category tail, requires 60 rendered cards, confirms `p=2`, confirms item 60 exists, and rejects duplicates.
-- `.github/workflows/mobile-webkit-smoke.yml` now runs this pagination smoke between the existing cinema-navigation and MPEG-TS player checks.
+## CI state for PR #58
+Only checks attached to the final actual head count for merge. Earlier green jobs on `c93afcd0e980885f9339112e4a3262cb64571714` are historical because the branch moved afterward. After main advanced through #59, `scripts/remote_runtime_v1_smoke.mjs` was synchronized onto #58 so the branch preserves the source-aware search gate. Fresh workflows triggered by this synchronization/documentation head must become green before merge.
 
-## Recent failure evidence from PR #57
-An earlier PR #57 head failed Web smoke because its test source itself contained literal forbidden cross-project markers. The fix removed the forbidden literals from test code and kept generic secret/session-field assertions. The fixed head passed the repository boundary gate and the normal runtime/player/WebKit suite before #57 merged.
-
-## Deployment / CI evidence
-PR #56 final head `1f511822203a0f3b4f3b91cf0c56d5327638e7ff` passed all required PR workflows.
-Main after PR #57 is `53d70fae...`; post-merge workflows for this main state must be treated as the source of deployment evidence for the next run.
-
-For PR #58, an earlier documentation head `40c2248ce4caac4d722639271ef6c106f9800899` had Content runtime, Web smoke, CORS boundary, media expiry, trusted download filename, original player/download, Remote CORS green while Live provider, Mobile WebKit and Remote movie playback were still settling. The later WebKit pagination test commits changed the head again, so only fresh final-head checks count for merge.
-
-Render workspace ownership remains ambiguous because repository evidence does not identify one visible workspace unambiguously. Do not guess direct Render logs. External deployed runtime workflows remain the accepted evidence until ownership is proven.
+## Render evidence / blocker
+The connected Render account currently exposes two workspaces, `My Workspace` and `بيانات`. Repository evidence still does not prove which workspace owns Al-Qahtani. Per project rules, no workspace is guessed and no direct Render service/log claim is made. External deployed HTTP/GitHub Actions evidence remains authoritative until workspace ownership is proven.
 
 ## Security/runtime invariants
 - Search/Category → Details → Episodes → Watch/Download → Media remains intact.
-- Runtime migration is additive until live parity proves replacements safe.
+- Runtime migration stays additive until live parity proves replacements safe.
 - Category paging remains server-routed; the browser does not become an arbitrary upstream fetcher.
 - Upstream media URLs remain behind short-lived opaque references.
-- Source/media allowlists and SSRF protections stay mandatory.
-- No arbitrary browser-supplied proxy targets.
-- Worker/session material stays server-side.
+- Source/media allowlists and SSRF/DNS/host protections stay mandatory.
+- No arbitrary browser-supplied proxy target is accepted.
+- Worker/session material remains server-side.
 - Referer values remain ASCII/URL-safe.
-- Metadata cache never caches video streams, media refs, sessions or Download responses.
+- Metadata cache never caches video streams, media references, sessions, or Download responses.
+- Normal playback never inherits upstream attachment semantics; explicit Download keeps trusted attachment behavior.
 - Ads/popups/unneeded tracking and legacy Android Intent/deep-link handoff remain prohibited.
 
 ## 1.0.1 readiness
-Current readiness: Phase-1 runtime + category UX expansion, NOT release ready.
+Current readiness: **Phase 1 runtime deployed; category UX expansion in PR #58; NOT release ready.**
 
-Still required: final-head green gates for PR #58, merge and live verification of page 2+ category loading, server-side category identifiers/mapping, unified home/title/episodes/play contracts, production health/circuit decisions, redesigned mobile-first UI, Live matches UX, Player 2.0 local history/favorites/continue-watching, unified search/library, installable PWA, diagnostics/observability, and the final 1.0.1 live release gate.
+Still required before `1.0.1` can be called ready: close #58 with final-head green gates and live page-2+ proof; opaque server-side category identifiers; unified home/title/episodes/play contracts; production health/circuit decisions; full mobile-first RTL interface; live matches UX; Player 2.0 local history/favorites/continue-watching; unified search/library UX; installable PWA; diagnostics/observability; and the complete Safari/security/live release matrix.
 
 ## أهداف التشغيل التالي
-1. إغلاق PR #58 بأمان: افحص الرأس النهائي، أصلح أي failure على نفس الفرع، ولا تدمج حتى خضرة كل البوابات المطلوبة.
-2. بعد الدمج انتظر GitHub Pages/backend لنفس commit واختبر حيًا أن التصنيف يعرض 30 ثم 60 ثم 90 عند مواصلة النزول إذا كان المصدر يملك صفحات إضافية.
-3. راقب WebKit pagination smoke وتأكد أن الصفحة الثانية تُطلب مرة واحدة فقط ولا تظهر عناصر مكررة.
-4. أضف category IDs أو mapping server-side حتى لا تعرف واجهة 1.0.1 source URLs الأصلية.
-5. أنشئ `/api/home` بفشل جزئي آمن وbounded concurrency للمباريات وأقسام المحتوى.
-6. ابنِ title/episodes/play contracts موحدة مع فصل `episode_id` عن `episode_number` والحفاظ على opaque media refs.
-7. فعّل قرارات health/circuit-breaker تدريجيًا في production requests مع cooldown/recovery probe ومنع retry storms.
-8. ابدأ واجهة 1.0.1 Mobile-first وBottom Navigation بعد ثبوت العقود الجديدة حيًا.
-9. أبقِ WebKit/playback/Range/CORS/download/matches/news/category-pagination regressions إلزامية عند كل PR.
-10. جهّز PWA وDiagnostics بعد استقرار runtime/UI؛ لا تبدأ Flutter ولا تعلن 1.0.1 Ready قبل اكتمال البوابات الحية الكاملة.
+1. **إغلاق PR #58 بأمان.**
+   - فحص جميع البوابات على الرأس النهائي الفعلي بعد مزامنة بوابة البحث والوثائق.
+   - جلب logs لأي failure وإصلاحه على نفس الفرع فقط.
+   - الدمج فقط بعد نجاح البوابات المطلوبة وعدم وجود regression من #59.
+2. **إثبات pagination حيًا بعد الدمج.**
+   - انتظار GitHub Pages/backend لنفس commit قدر ما تسمح الأدوات.
+   - التحقق من انتقال التصنيف من أول 30 عنصرًا إلى الدفعة التالية عند وجودها.
+   - إثبات عدم التكرار وعدم إرسال طلبات page متزامنة مكررة على WebKit.
+3. **إخفاء روابط التصنيفات الأصلية خلف IDs داخلية.**
+   - تعريف مفاتيح ثابتة للتصنيفات الرئيسية داخل Backend.
+   - تحويل المفتاح إلى رابط Basri المسموح server-side فقط.
+   - رفض أي category key مجهول وعدم توسيع arbitrary URL surface.
+4. **إنشاء `/api/v1/home` موحد.**
+   - جمع المباريات وأقسام محتوى محدودة بـbounded concurrency.
+   - السماح بفشل جزئي دون إسقاط الصفحة كاملة.
+   - تطبيق TTL قصير مناسب وإرجاع metadata منقحة.
+5. **إنشاء عقود موحدة للتفاصيل والحلقات.**
+   - إضافة title/details contract باستخدام opaque refs.
+   - إبقاء `episode_id` منفصلًا عن `episode_number` وتطبيع الموسم والترتيب.
+   - توسيع regression عبر الفئات الست للمسلسلات.
+6. **إنشاء عقد play موحد وآمن.**
+   - إبقاء media refs opaque وقصيرة العمر.
+   - ترتيب المصادر حسب compatibility/health دون retry storm.
+   - حماية MPEG-TS/HLS وRange/206 وmeasured-duration وDownload الحاليين.
+7. **ربط health/circuit-breaker بطلبات production تدريجيًا.**
+   - وضع cooldown وrecovery probe محدودين.
+   - تسجيل latency/failures دون أسرار أو upstream URLs حساسة.
+   - منع retries على الطلبات غير الآمنة أو غير المفيدة.
+8. **بدء هيكل واجهة 1.0.1 بعد اكتمال عقود runtime الأساسية.**
+   - Mobile-first RTL مع Bottom Navigation على الجوال.
+   - حالات skeleton/empty/error/retry واضحة.
+   - إبقاء Safari وواجهة البصري القديمة قابلة للرجوع خلال الانتقال.
+9. **توسيع بوابات regression الحية.**
+   - إبقاء WebKit/playback/Range/CORS/Download/matches/news إلزامية.
+   - إبقاء البحث العربي والإنجليزي كعقد دون اختلاق نتائج غير موجودة في المصدر.
+   - استمرار فحص SSRF/allowlists/secrets/Referer وفلترة download-only.
+10. **تهيئة PWA وDiagnostics والبوابة النهائية للإصدار.**
+   - manifest/service-worker للـstatic shell والmetadata فقط دون video/media-ref caching.
+   - diagnostics منقحة تعرض version/commit/readiness/health بلا secrets.
+   - عدم إنشاء Tag/Release `1.0.1` وعدم بدء Flutter قبل اكتمال كل البوابات الحية.
