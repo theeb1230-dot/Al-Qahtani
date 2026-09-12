@@ -13,6 +13,15 @@ function assert(condition, name, detail = {}) {
   return true;
 }
 
+function containsSensitiveRuntimeField(value) {
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some(containsSensitiveRuntimeField);
+  return Object.entries(value).some(([key, child]) => {
+    if (/token|secret|authorization|credential|session/i.test(key)) return true;
+    return containsSensitiveRuntimeField(child);
+  });
+}
+
 async function request(path, { timeoutMs = 90_000 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -54,7 +63,7 @@ try {
     providers: Array.isArray(status.data?.providers) ? status.data.providers.length : null,
     ms: status.ms,
   });
-  assert(!JSON.stringify(status.data).match(/THEEB_SERVICE_TOKEN|akwam-indexer|theeb-arab-api/i), "runtime status does not expose cross-project integration markers");
+  assert(!containsSensitiveRuntimeField(status.data), "runtime status does not expose secret/session fields");
 
   const firstMatches = await request("/api/v1/matches");
   const matchData = firstMatches.data;
@@ -65,6 +74,7 @@ try {
     ms: firstMatches.ms,
   });
   assert(Array.isArray(matchData?.data), "deployed v1 matches data is normalized list");
+  assert(!containsSensitiveRuntimeField(matchData), "deployed v1 matches do not expose secret/session fields");
 
   const secondMatches = await request("/api/v1/matches");
   assert(secondMatches.response.ok && secondMatches.data?.status === "success", "deployed v1 matches second request succeeds", {
@@ -87,7 +97,7 @@ try {
     });
     assert(Array.isArray(data?.data) && data.data.length > 0, `deployed v1 search returns real items: ${query}`);
     assert((data?.data || []).every((item) => item && typeof item.title === "string" && typeof item.ref === "string" && item.ref.startsWith("legacy:")), `deployed v1 search items are normalized: ${query}`);
-    assert(!(JSON.stringify(data).match(/THEEB_SERVICE_TOKEN|akwam-indexer|theeb-arab-api/i)), `deployed v1 search does not expose cross-project markers: ${query}`);
+    assert(!containsSensitiveRuntimeField(data), `deployed v1 search does not expose secret/session fields: ${query}`);
   }
 
   const categoryRef = "https://akwam.ss/series?section=30";
@@ -99,6 +109,7 @@ try {
     ms: category.ms,
   });
   assert(Array.isArray(category.data?.data) && category.data.data.length > 0, "deployed v1 category returns real items");
+  assert(!containsSensitiveRuntimeField(category.data), "deployed v1 category does not expose secret/session fields");
 
   const health = await request("/api/runtime/status");
   assert(health.response.ok && Array.isArray(health.data?.providers), "deployed runtime health summary remains structured", {
