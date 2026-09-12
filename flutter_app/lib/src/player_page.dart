@@ -43,11 +43,13 @@ class _PlayerPageState extends State<PlayerPage> {
   VideoPlayerController? _controller;
   WebViewController? _webController;
   Timer? _progressTimer;
+  Timer? _nativeStartupTimer;
   String _status = 'جاري تجهيز المشاهدة…';
   String _resolvedMediaPath = '';
   String _resolvedMediaType = '';
   bool _failed = false;
   bool _usingWebFallback = false;
+  bool _nativeFailureInFlight = false;
   double _playbackSpeed = 1.0;
 
   @override
@@ -57,6 +59,8 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Future<void> _initialize() async {
+    _nativeStartupTimer?.cancel();
+    _nativeFailureInFlight = false;
     try {
       var mediaPath = widget.mediaPath;
       var mediaType = widget.mediaType;
@@ -73,9 +77,10 @@ class _PlayerPageState extends State<PlayerPage> {
         formatHint: videoFormatHintForRuntimeMedia(mediaType),
       );
       _controller = controller;
+      controller.addListener(_nativeValueChanged);
       await controller.initialize().timeout(const Duration(seconds: 25));
       await controller.setPlaybackSpeed(_playbackSpeed);
-      if (!mounted) return;
+      if (!mounted || controller != _controller) return;
       final resume = widget.store.resumePosition(widget.item.ref, episodeId: widget.episodeId);
       if (resume >= const Duration(seconds: 5) && (controller.value.duration <= Duration.zero || resume < controller.value.duration)) {
         await controller.seekTo(resume);
@@ -88,19 +93,54 @@ class _PlayerPageState extends State<PlayerPage> {
       _progressTimer?.cancel();
       _progressTimer = Timer.periodic(const Duration(seconds: 5), (_) => _saveProgress());
       await controller.play();
-    } catch (_) {
-      await _controller?.dispose();
-      _controller = null;
-      if (!mounted) return;
-      if (!isTvTarget && _resolvedMediaPath.isNotEmpty) {
-        await _startInternalWebFallback();
-        return;
-      }
-      setState(() {
-        _failed = true;
-        _status = 'تعذر تشغيل هذا المصدر داخل المشغل الأصلي';
+      _nativeStartupTimer = Timer(const Duration(seconds: 12), () {
+        if (!mounted || controller != _controller || _usingWebFallback) return;
+        final value = controller.value;
+        final neverStarted = value.position < const Duration(milliseconds: 500) && !value.isPlaying;
+        if (value.hasError || neverStarted) {
+          unawaited(_fallbackFromNative('تعذر بدء التشغيل بالمشغل الأصلي'));
+        }
       });
+    } catch (_) {
+      await _fallbackFromNative('تعذر تشغيل هذا المصدر داخل المشغل الأصلي');
     }
+  }
+
+  void _nativeValueChanged() {
+    final controller = _controller;
+    if (controller == null || _usingWebFallback || _nativeFailureInFlight) return;
+    if (controller.value.hasError) {
+      unawaited(_fallbackFromNative('تعذر استمرار التشغيل بالمشغل الأصلي'));
+    }
+  }
+
+  Future<void> _fallbackFromNative(String failureMessage) async {
+    if (_nativeFailureInFlight) return;
+    _nativeFailureInFlight = true;
+    _nativeStartupTimer?.cancel();
+    final controller = _controller;
+    if (controller != null) {
+      controller.removeListener(_nativeValueChanged);
+      try {
+        await controller.pause();
+      } catch (_) {}
+      try {
+        await controller.dispose();
+      } catch (_) {}
+    }
+    _controller = null;
+    _progressTimer?.cancel();
+    if (!mounted) return;
+    if (!isTvTarget && _resolvedMediaPath.isNotEmpty) {
+      await _startInternalWebFallback();
+      return;
+    }
+    setState(() {
+      _failed = true;
+      _usingWebFallback = false;
+      _status = failureMessage;
+    });
+    _nativeFailureInFlight = false;
   }
 
   Future<void> _startInternalWebFallback() async {
@@ -122,6 +162,15 @@ class _PlayerPageState extends State<PlayerPage> {
           final allowed = uri.host == 'theeb1230-dot.github.io' || uri.host == 'al-qahtani-api.onrender.com';
           return allowed ? NavigationDecision.navigate : NavigationDecision.prevent;
         },
+        onWebResourceError: (error) {
+          final isMainFrame = error.isForMainFrame ?? true;
+          if (!mounted || !_usingWebFallback || !isMainFrame) return;
+          setState(() {
+            _failed = true;
+            _usingWebFallback = false;
+            _status = 'تعذر تشغيل المصدر في المشغلين الأصلي والويب الداخلي';
+          });
+        },
       ))
       ..loadRequest(playerUri);
     if (!mounted) return;
@@ -131,11 +180,12 @@ class _PlayerPageState extends State<PlayerPage> {
       _failed = false;
       _status = 'تم التحويل تلقائيًا إلى محرك الويب الداخلي';
     });
+    _nativeFailureInFlight = false;
   }
 
   Future<void> _saveProgress() async {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
+    if (controller == null || !controller.value.isInitialized || !controller.value.isPlaying) return;
     await widget.store.recordProgress(
       item: widget.item,
       position: controller.value.position,
@@ -173,8 +223,10 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   void dispose() {
+    _nativeStartupTimer?.cancel();
     _progressTimer?.cancel();
     _saveProgress();
+    _controller?.removeListener(_nativeValueChanged);
     _controller?.dispose();
     super.dispose();
   }
@@ -244,8 +296,10 @@ class _PlayerPageState extends State<PlayerPage> {
                       onPressed: () {
                         _controller?.dispose();
                         _controller = null;
+                        _webController = null;
                         setState(() {
                           _failed = false;
+                          _usingWebFallback = false;
                           _status = 'جاري إعادة المحاولة…';
                         });
                         _initialize();

@@ -63,7 +63,26 @@ void main() {
     expect(await File('${result.path}.part').exists(), isFalse);
   });
 
-  test('206 Content-Range total wins over chunk Content-Length and rejects partial files', () async {
+  test('interrupted partial response resumes at the exact byte using Range', () async {
+    final root = await Directory.systemTemp.createTemp('al-qahtani-download-resume-test');
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final client = _ResumeClient();
+    final service = DownloadService(client: client, directoryProvider: () async => root);
+    addTearDown(service.close);
+
+    final result = await service.download(
+      Uri.parse('https://al-qahtani-api.onrender.com/api/cinema/media?id=opaque&download=1'),
+    );
+
+    expect(client.requests, 2);
+    expect(result.bytes, 10);
+    expect(await File(result.path).readAsBytes(), <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(await File('${result.path}.part').exists(), isFalse);
+  });
+
+  test('206 Content-Range total wins over chunk Content-Length and rejects invalid resume ranges', () async {
     final root = await Directory.systemTemp.createTemp('al-qahtani-download-range-test');
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
@@ -179,6 +198,43 @@ void main() {
     await expectLater(service.deleteDownload('folder\\file.mp4'), throwsA(isA<DownloadException>()));
     await expectLater(service.deleteDownload('unfinished.part'), throwsA(isA<DownloadException>()));
   });
+}
+
+class _ResumeClient extends http.BaseClient {
+  int requests = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    requests += 1;
+    if (requests == 1) {
+      expect(request.headers['range'], isNull);
+      return http.StreamedResponse(
+        Stream.value(<int>[1, 2, 3, 4, 5]),
+        206,
+        request: request,
+        contentLength: 5,
+        headers: const {
+          'content-range': 'bytes 0-4/10',
+          'content-length': '5',
+          'content-disposition': 'attachment; filename="resume.mp4"',
+          'accept-ranges': 'bytes',
+        },
+      );
+    }
+    expect(request.headers['range'], 'bytes=5-');
+    return http.StreamedResponse(
+      Stream.value(<int>[6, 7, 8, 9, 10]),
+      206,
+      request: request,
+      contentLength: 5,
+      headers: const {
+        'content-range': 'bytes 5-9/10',
+        'content-length': '5',
+        'content-disposition': 'attachment; filename="resume.mp4"',
+        'accept-ranges': 'bytes',
+      },
+    );
+  }
 }
 
 class _StreamingClient extends http.BaseClient {

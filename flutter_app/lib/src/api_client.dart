@@ -10,9 +10,34 @@ class AlQahtaniApi {
   final http.Client _client;
   final Uri _baseUri;
 
+  MatchItem _matchItem(Map<String, dynamic> json) {
+    final item = MatchItem.fromJson(json);
+    String proxyLogo(String raw) {
+      final value = raw.trim();
+      if (value.isEmpty) return '';
+      if (value.startsWith('/')) return _baseUri.resolve(value).toString();
+      final parsed = Uri.tryParse(value);
+      if (parsed == null || parsed.scheme != 'https') return '';
+      return _baseUri.replace(path: '/api/matches/logo', queryParameters: {'url': value}).toString();
+    }
+
+    return MatchItem(
+      home: item.home,
+      away: item.away,
+      time: item.time,
+      status: item.status,
+      ref: item.ref,
+      homeLogo: proxyLogo(item.homeLogo),
+      awayLogo: proxyLogo(item.awayLogo),
+      homeGoals: item.homeGoals,
+      awayGoals: item.awayGoals,
+      competition: item.competition,
+    );
+  }
+
   Future<List<MatchItem>> matches() async {
     final json = await _getJson('/api/v1/matches');
-    return _list(json['data']).map(MatchItem.fromJson).toList(growable: false);
+    return _list(json['data']).map(_matchItem).toList(growable: false);
   }
 
   Future<List<MatchServer>> matchServers(String ref) async {
