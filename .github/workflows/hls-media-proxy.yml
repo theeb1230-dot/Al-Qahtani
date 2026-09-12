@@ -1,0 +1,28 @@
+name: HLS media proxy
+
+on:
+  push:
+    paths:
+      - "server/app.mjs"
+      - "server/basri-source.mjs"
+      - "scripts/hls_manifest_proxy_test.mjs"
+      - "package.json"
+      - ".github/workflows/hls-media-proxy.yml"
+  pull_request:
+    paths:
+      - "server/app.mjs"
+      - "server/basri-source.mjs"
+      - "scripts/hls_manifest_proxy_test.mjs"
+      - "package.json"
+      - ".github/workflows/hls-media-proxy.yml"
+
+jobs:
+  hls-opaque-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate runtime syntax and HLS opaque refs
+        run: npm run check
