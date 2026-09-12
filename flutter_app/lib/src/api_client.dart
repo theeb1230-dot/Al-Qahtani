@@ -25,6 +25,22 @@ class AlQahtaniApi {
     return _list(json['data']).map(CatalogItem.fromJson).toList(growable: false);
   }
 
+  Future<TitleDetails> details(String ref) async {
+    if (ref.trim().isEmpty) throw const ApiException('MISSING_TITLE_REFERENCE');
+    final json = await _getJson('/api/cinema/details', {'ref': ref});
+    return TitleDetails.fromJson(json);
+  }
+
+  Uri mediaUri(String mediaPath, {bool download = false}) {
+    if (!mediaPath.startsWith('/api/cinema/media?')) {
+      throw const ApiException('INVALID_MEDIA_REFERENCE');
+    }
+    final uri = _baseUri.resolve(mediaPath);
+    if (!download) return uri;
+    final params = Map<String, String>.from(uri.queryParameters)..['download'] = '1';
+    return uri.replace(queryParameters: params);
+  }
+
   Future<Map<String, dynamic>> _getJson(String path, [Map<String, String>? query]) async {
     final uri = _baseUri.replace(path: path, queryParameters: query);
     final response = await _client.get(uri, headers: const {'accept': 'application/json'}).timeout(const Duration(seconds: 30));
