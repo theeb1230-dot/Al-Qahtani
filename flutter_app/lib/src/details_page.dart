@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'app_target.dart';
+import 'download_service.dart';
 import 'library_store.dart';
 import 'models.dart';
 import 'player_page.dart';
@@ -17,11 +18,19 @@ class DetailsPage extends StatefulWidget {
 
 class _DetailsPageState extends State<DetailsPage> {
   late Future<TitleDetails> future;
+  final DownloadService _downloads = DownloadService();
+  final Set<String> _activeDownloads = <String>{};
 
   @override
   void initState() {
     super.initState();
     future = widget.api.details(widget.item.ref);
+  }
+
+  @override
+  void dispose() {
+    _downloads.close();
+    super.dispose();
   }
 
   void retry() => setState(() => future = widget.api.details(widget.item.ref));
@@ -49,6 +58,31 @@ class _DetailsPageState extends State<DetailsPage> {
       episodeId: episode.id,
       episodeNumber: episode.number,
     )));
+  }
+
+  Future<void> _download({required String key, required String title, String mediaPath = '', String sourceRef = ''}) async {
+    if (_activeDownloads.contains(key)) return;
+    setState(() => _activeDownloads.add(key));
+    try {
+      var resolvedPath = mediaPath;
+      if (resolvedPath.isEmpty) {
+        final resolved = await widget.api.resolvePlayback(sourceRef);
+        resolvedPath = resolved.mediaPath;
+      }
+      final uri = widget.api.mediaUri(resolvedPath, download: true);
+      final result = await _downloads.download(uri, fallbackName: title);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('اكتمل التنزيل داخل مساحة التطبيق • ${(result.bytes / (1024 * 1024)).toStringAsFixed(1)} MB'),
+      ));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('تعذر تنزيل هذا المصدر حاليًا. لم يتم فتح رابط خارجي.'),
+      ));
+    } finally {
+      if (mounted) setState(() => _activeDownloads.remove(key));
+    }
   }
 
   @override
@@ -84,16 +118,38 @@ class _DetailsPageState extends State<DetailsPage> {
                 if (details.hasEpisodes) ...[
                   Text('الحلقات', style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 8),
-                  ...details.episodes.map((episode) => _EpisodeTile(episode: episode, onTap: () => _openEpisode(episode))),
-                ] else if (details.hasDirectMedia)
+                  ...details.episodes.map((episode) {
+                    final key = 'episode:${episode.id}:${episode.number}';
+                    return _EpisodeTile(
+                      episode: episode,
+                      downloading: _activeDownloads.contains(key),
+                      onTap: () => _openEpisode(episode),
+                      onDownload: () => _download(
+                        key: key,
+                        title: '${details.title} - الحلقة ${episode.number}',
+                        sourceRef: episode.ref,
+                      ),
+                    );
+                  }),
+                ] else if (details.hasDirectMedia) ...[
                   Card(child: ListTile(
                     leading: const Icon(Icons.play_circle_outline),
                     title: const Text('مشاهدة داخل التطبيق'),
                     subtitle: const Text('المصدر يمر عبر Al-Qahtani media proxy دون كشف العنوان الأصلي.'),
                     trailing: const Icon(Icons.play_arrow),
                     onTap: () => _openDirect(details),
-                  ))
-                else if (details.playbackUnavailable)
+                  )),
+                  Card(child: ListTile(
+                    leading: _activeDownloads.contains('direct')
+                        ? const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.download_outlined),
+                    title: Text(_activeDownloads.contains('direct') ? 'جاري التنزيل…' : 'تنزيل داخل التطبيق'),
+                    subtitle: const Text('يستخدم نفس media reference المعتم ومسار Download الموثوق.'),
+                    onTap: _activeDownloads.contains('direct')
+                        ? null
+                        : () => _download(key: 'direct', title: details.title, mediaPath: details.mediaPath),
+                  )),
+                ] else if (details.playbackUnavailable)
                   const ListTile(leading: Icon(Icons.info_outline), title: Text('المشاهدة غير متاحة من هذا المصدر حاليًا'), subtitle: Text('لن يتم فتح روابط خارجية أو تسريب عنوان المصدر.'))
                 else
                   const ListTile(title: Text('لا توجد حلقات أو وسائط متاحة حاليًا')),
@@ -107,9 +163,12 @@ class _DetailsPageState extends State<DetailsPage> {
 }
 
 class _EpisodeTile extends StatelessWidget {
-  const _EpisodeTile({required this.episode, required this.onTap});
+  const _EpisodeTile({required this.episode, required this.onTap, required this.onDownload, required this.downloading});
   final EpisodeItem episode;
   final VoidCallback onTap;
+  final VoidCallback onDownload;
+  final bool downloading;
+
   @override
   Widget build(BuildContext context) {
     final label = episode.title.trim().isEmpty ? 'الحلقة ${episode.number}' : episode.title;
@@ -119,7 +178,21 @@ class _EpisodeTile extends StatelessWidget {
       leading: CircleAvatar(child: Text('${episode.number}')),
       title: Text(label),
       subtitle: const Text('رقم الحلقة منفصل عن معرف المصدر الداخلي'),
-      trailing: enabled ? const Icon(Icons.play_arrow) : const Icon(Icons.block),
+      trailing: enabled
+          ? Wrap(
+              spacing: 4,
+              children: [
+                IconButton(
+                  tooltip: downloading ? 'جاري التنزيل' : 'تنزيل الحلقة',
+                  onPressed: downloading ? null : onDownload,
+                  icon: downloading
+                      ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.download_outlined),
+                ),
+                IconButton(tooltip: 'تشغيل الحلقة', onPressed: onTap, icon: const Icon(Icons.play_arrow)),
+              ],
+            )
+          : const Icon(Icons.block),
       onTap: enabled ? onTap : null,
     ));
   }
