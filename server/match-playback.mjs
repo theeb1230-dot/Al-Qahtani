@@ -289,8 +289,7 @@ export function createMatchPlaybackRuntime({ fetchServers, matchOrigin }) {
     const server = resolveRef(servers, serverRef, 'MATCH_SERVER_REFERENCE_EXPIRED');
     let resolved = null;
     if (server.type !== 'embed') {
-      const probe = await probeDirectMedia(server.url, '');
-      resolved = { url: server.url, referer: '', type: probe?.type || server.type };
+      resolved = { url: server.url, referer: '', type: server.type };
     } else {
       resolved = await resolveEmbed(server.url);
     }
