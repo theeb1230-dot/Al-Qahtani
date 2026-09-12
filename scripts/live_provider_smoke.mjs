@@ -71,6 +71,22 @@ function sourceLinks(text, kind) {
   return out;
 }
 
+function safeHtmlDiagnostics(text) {
+  const title = String(text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "")
+    .replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+  const hrefs = [];
+  for (const m of text.matchAll(/href=["']([^"']+)["']/gi)) {
+    if (hrefs.length >= 20) break;
+    try {
+      const url = new URL(m[1], SOURCE + "/");
+      hrefs.push({ host: url.hostname, path: url.pathname.slice(0, 180) });
+    } catch {
+      hrefs.push({ host: "invalid", path: String(m[1]).slice(0, 180) });
+    }
+  }
+  return { title, hrefs };
+}
+
 async function matchesSmoke() {
   const page = "/2026/09/matches.html";
   const session = await request(MATCHES + "session", { headers: jsonHeaders(page) });
@@ -99,6 +115,7 @@ async function cinemaDirectSmoke() {
   const category = await request(SOURCE + "/series?section=30", { headers: htmlHeaders() });
   if (!assert(category.ok && category.text.length > 1000, "direct cinema category HTML", { status: category.status, bytes: category.text.length, ms: category.ms })) return;
   const series = sourceLinks(category.text, "series");
+  if (!series.length) console.log("INFO direct cinema HTML diagnostics", JSON.stringify(safeHtmlDiagnostics(category.text)));
   if (!assert(series.length > 0, "direct cinema category has items", { count: series.length })) return;
 
   const search = await request(SOURCE + "/search?q=" + encodeURIComponent("الذئب الوحيد"), { headers: htmlHeaders() });
