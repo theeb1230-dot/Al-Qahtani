@@ -5,6 +5,7 @@ let clock = 1_000;
 let matchCalls = 0;
 let searchCalls = 0;
 let categoryCalls = 0;
+let lastCategoryRef = "";
 
 const service = createContentRuntimeService({
   now: () => clock,
@@ -35,11 +36,12 @@ const service = createContentRuntimeService({
   },
   fetchCategory: async (ref, page) => {
     categoryCalls += 1;
+    lastCategoryRef = ref;
     clock += 30;
     return {
       status: "success",
       source: "basri-worker",
-      data: [{ title: `صفحة ${page}`, image: "poster.jpg", is_series: false, href: ref }],
+      data: [{ title: `صفحة ${page}`, image: "poster.jpg", is_series: false, href: "legacy:https%3A%2F%2Fakwam.ss%2Fmovie%2Fdemo" }],
     };
   },
 });
@@ -77,11 +79,21 @@ const emptySearch = await service.search(" ");
 assert.deepEqual(emptySearch.data, []);
 assert.equal(searchCalls, 1);
 
-const category = await service.category("legacy:https%3A%2F%2Fakwam.ss%2Fmovie%2Fdemo", 2);
+const category = await service.category("movie-foreign", 2);
 assert.equal(category.kind, "category");
 assert.equal(category.source, "basri-worker");
 assert.equal(category.data[0].type, "movie");
 assert.equal(categoryCalls, 1);
+assert.equal(lastCategoryRef, "https://akwam.ss/movies?section=30");
+
+const legacyCompatible = await service.category("https://akwam.ss/movies?section=29", 1);
+assert.equal(legacyCompatible.kind, "category");
+assert.equal(categoryCalls, 2);
+assert.equal(lastCategoryRef, "https://akwam.ss/movies?section=29");
+
+const unknownCategory = await service.category("movie-made-up", 1);
+assert.deepEqual(unknownCategory.data, []);
+assert.equal(categoryCalls, 2, "unknown IDs must not reach upstream fetcher");
 
 const status = service.status();
 assert.equal(status.status, "ok");
