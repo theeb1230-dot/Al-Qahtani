@@ -24,15 +24,25 @@ async function waitForHealth() {
 
 try {
   await waitForHealth();
-  const matchesRes = await fetch(base + '/api/matches');
+  const matchesRes = await fetch(base + '/api/v1/matches');
   const matches = await matchesRes.json();
-  if (!matchesRes.ok || !matches?.success || !Array.isArray(matches.data) || !matches.data.length) {
-    throw new Error(`MATCH_LIST_FAILED_${matchesRes.status}`);
+  if (!matchesRes.ok || matches?.status !== 'success' || !Array.isArray(matches.data) || !matches.data.length) {
+    throw new Error(`MATCH_RUNTIME_LIST_FAILED_${matchesRes.status}`);
   }
-  const logo = matches.data.flatMap(match => [match?.team1?.logo, match?.team2?.logo]).find(Boolean);
-  if (!logo) throw new Error('NO_MATCH_LOGO_IN_ORIGINAL_BASRI_PAYLOAD');
-  const proxy = base + '/api/matches/logo?url=' + encodeURIComponent(String(logo));
-  const imageRes = await fetch(proxy, { headers: { Origin: 'https://theeb1230-dot.github.io' } });
+
+  const serialized = JSON.stringify(matches.data);
+  if (/kooorracity\.com|workers\.dev/i.test(serialized)) {
+    throw new Error('MATCH_RUNTIME_LEAKED_UPSTREAM_URL');
+  }
+
+  const logoPath = matches.data
+    .flatMap(match => [match?.team1?.logo, match?.team2?.logo])
+    .find(value => typeof value === 'string' && value.startsWith('/api/matches/logo?id='));
+  if (!logoPath) throw new Error('NO_OPAQUE_MATCH_LOGO_REFERENCE');
+
+  const imageRes = await fetch(new URL(logoPath, base), {
+    headers: { Origin: 'https://theeb1230-dot.github.io' },
+  });
   const type = imageRes.headers.get('content-type') || '';
   const bytes = new Uint8Array(await imageRes.arrayBuffer());
   if (!imageRes.ok || !type.toLowerCase().startsWith('image/') || bytes.length < 64) {
@@ -41,7 +51,13 @@ try {
   if (imageRes.headers.get('access-control-allow-origin') !== 'https://theeb1230-dot.github.io') {
     throw new Error('MATCH_LOGO_CORS_MISSING');
   }
-  console.log('PASS match logo proxy', { status: imageRes.status, type, bytes: bytes.length, sourceHost: new URL(logo).hostname });
+
+  console.log('PASS opaque match logo proxy', {
+    status: imageRes.status,
+    type,
+    bytes: bytes.length,
+    reference: 'opaque-runtime-path',
+  });
 } finally {
   child.kill('SIGTERM');
 }
