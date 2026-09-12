@@ -17,11 +17,14 @@ jobs:
         run: |
           node --check server/content-runtime.mjs
           node --check server/content-runtime-service.mjs
+          node --check server/app.mjs
       - name: Validate runtime regression test syntax
         run: |
           node --check scripts/content_runtime_test.mjs
           node --check scripts/content_runtime_service_test.mjs
+          node --check scripts/runtime_http_test.mjs
       - name: Run content runtime regressions
         run: |
           node scripts/content_runtime_test.mjs
           node scripts/content_runtime_service_test.mjs
+          node scripts/runtime_http_test.mjs
