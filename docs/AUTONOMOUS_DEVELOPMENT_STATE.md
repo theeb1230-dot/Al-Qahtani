@@ -4,12 +4,11 @@
 GitHub is authoritative when this file disagrees with the repository. The preserved original Basri archive remains the behavioral baseline. Live deployment evidence is required before claiming Web/PWA parity.
 
 ## Current state
-- Main: `2eff04b462a40f2c5f103aa2d4ceba5943d364d1` (`Expose versioned 1.0.1 runtime HTTP routes`).
-- PR #55 merged: runtime service integration.
-- PR #56 merged after all 11 required final-head PR checks succeeded.
-- Active PR: #57 `Prove deployed 1.0.1 runtime contracts`.
-- Branch: `test/remote-runtime-v1-57`.
-- Current implementation head before this documentation commit: `a2777c4ee63a9da372e69de527a842b18bf3bede`.
+- Main: `53d70fae870c7346ea406a19362fa928c4b92915` (`Merge pull request #57 ... Prove deployed 1.0.1 runtime contracts`).
+- PR #57 merged.
+- Active PR: #58 `Load cinema categories beyond the first 30 items`.
+- Branch: `test/remote-runtime-v1-57` (reused after #57 merge because new commits were added only after the merge point).
+- Current implementation head before this documentation commit: `0117b0f0ceb4a0e02815b96a2a90d2f912913c5c`.
 - Target: Web/PWA `1.0.1`.
 - Flutter remains blocked until Web/PWA 1.0.1 is proven live.
 
@@ -24,43 +23,44 @@ Merged to main:
 - `server/content-runtime.mjs`: version `1.0.1`, bounded TTL cache, provider health/circuit-breaker primitives and normalization helpers.
 - `server/content-runtime-service.mjs`: normalized matches/search/category service, bounded metadata cache and health accounting.
 - additive runtime HTTP routes in `server/app.mjs`: `/api/runtime/status`, `/api/v1/matches`, `/api/v1/search`, `/api/v1/category`.
+- deployed-v1 runtime proof workflow from PR #57.
 - old `/api/matches` and `/api/cinema/*` routes remain available during migration.
 
-PR #57 currently contains two bounded follow-ups because it was already open when the user added the category requirement and the one-open-PR rule forbids opening another PR:
+## PR #58 — endless category loading in 30-item batches
+User requirement: movie and series categories must not stop at the first 30 items. When the user reaches the bottom after item 30, load the next 30, then the next 30, with no UI page-count limit until the source itself ends.
 
-### A. Deployed v1 runtime proof
-- `scripts/remote_runtime_v1_smoke.mjs` validates deployed `1.0.1`, normalized matches, `الذئب الوحيد`, `The Odyssey`, a real category, health summary, metadata cache behavior and absence of secret/session-shaped fields.
-- `.github/workflows/remote-runtime-v1-smoke.yml` runs after pushes to main so the deployed commit itself is tested.
-- First attempt failed Web smoke because the test source contained literal forbidden cross-project markers. The fix removed those literals and retained generic secret/session privacy assertions instead of weakening the repository boundary gate.
-- Fixed head `ba1ac007d4117fb98dbc261ae3c02c3078989772` passed Web smoke, Content runtime, Live provider, Mobile WebKit, Remote movie playback, Remote CORS, CORS boundary, original player/download, media expiry and trusted download filename gates.
+Implemented:
+- `web/core/api-client.js` now accepts `page` in `getCinemaCategory(...)` and forwards positive `p` to the existing Al-Qahtani backend route.
+- `albasri-cinema.html` uses an `IntersectionObserver` sentinel at the category tail.
+- page 1 renders first; reaching the tail requests page 2, then 3, 4, and so on.
+- each normal source page is treated as a 30-item batch; a short/empty final page ends loading naturally.
+- `categoryLoading` prevents concurrent duplicate requests.
+- `categoryRequestId` discards stale responses after navigation/search/home transitions.
+- `categorySeen` deduplicates repeated upstream items and prevents duplicate-page loops.
+- search resets category paging state.
+- the existing details/player/download flow is reused for appended cards exactly like the first batch.
 
-### B. Endless category loading in 30-item batches
-User requirement added during PR #57: movie and series categories must not stop at the first 30 items. When the user reaches the bottom after item 30, load the next page/batch and continue without a product-side page limit until the source itself ends.
+Regression coverage:
+- `scripts/category_infinite_scroll_test.mjs` statically protects page forwarding, observer setup, sequential paging, deduplication, stale-response handling and the 30-item UX.
+- `.github/workflows/content-runtime.yml` executes that regression.
+- `scripts/category_infinite_webkit_smoke.mjs` runs with an iPhone 13 WebKit profile, mocks 30 items for page 1 and 30 for page 2, scrolls to the category tail, requires 60 rendered cards, confirms `p=2`, confirms item 60 exists, and rejects duplicates.
+- `.github/workflows/mobile-webkit-smoke.yml` now runs this pagination smoke between the existing cinema-navigation and MPEG-TS player checks.
 
-Implemented on the same branch:
-- `web/core/api-client.js` now accepts `page` in `getCinemaCategory(...)` and forwards bounded positive `p` to the existing Al-Qahtani backend route.
-- `albasri-cinema.html` keeps the first category request as page 1 and uses `IntersectionObserver` at the category tail to load page 2, 3, 4, etc. as the user reaches the bottom.
-- UI text explicitly reports loading another 30 items.
-- one-page-at-a-time `categoryLoading` guard prevents concurrent duplicate page fetches.
-- `categoryRequestId` rejects stale responses after navigation/search/home changes.
-- `categorySeen` deduplicates repeated upstream items so a repeated page cannot create an endless duplicate loop.
-- pagination stops only when the source returns an empty/repeated page or a short final page; there is no fixed number-of-pages limit in the UI.
-- search resets category paging state so category infinite-scroll cannot leak into search results.
-- `scripts/category_infinite_scroll_test.mjs` protects the page parameter, viewport observer, sequential paging, deduplication, stale-response guard and 30-item UX.
-- `.github/workflows/content-runtime.yml` runs this regression test.
+## Recent failure evidence from PR #57
+An earlier PR #57 head failed Web smoke because its test source itself contained literal forbidden cross-project markers. The fix removed the forbidden literals from test code and kept generic secret/session-field assertions. The fixed head passed the repository boundary gate and the normal runtime/player/WebKit suite before #57 merged.
 
 ## Deployment / CI evidence
 PR #56 final head `1f511822203a0f3b4f3b91cf0c56d5327638e7ff` passed all required PR workflows.
-Post-merge main `2eff04b...` evidence:
-- GitHub Pages run `34663381231` build/deploy success.
-- Remote runtime run `34663383763` deployed-runtime job success after backend auto-deploy wait.
+Main after PR #57 is `53d70fae...`; post-merge workflows for this main state must be treated as the source of deployment evidence for the next run.
+
+For PR #58, an earlier documentation head `40c2248ce4caac4d722639271ef6c106f9800899` had Content runtime, Web smoke, CORS boundary, media expiry, trusted download filename, original player/download, Remote CORS green while Live provider, Mobile WebKit and Remote movie playback were still settling. The later WebKit pagination test commits changed the head again, so only fresh final-head checks count for merge.
 
 Render workspace ownership remains ambiguous because repository evidence does not identify one visible workspace unambiguously. Do not guess direct Render logs. External deployed runtime workflows remain the accepted evidence until ownership is proven.
 
 ## Security/runtime invariants
 - Search/Category → Details → Episodes → Watch/Download → Media remains intact.
 - Runtime migration is additive until live parity proves replacements safe.
-- Category paging must stay server-routed; the browser must not become an arbitrary upstream fetcher.
+- Category paging remains server-routed; the browser does not become an arbitrary upstream fetcher.
 - Upstream media URLs remain behind short-lived opaque references.
 - Source/media allowlists and SSRF protections stay mandatory.
 - No arbitrary browser-supplied proxy targets.
@@ -72,12 +72,12 @@ Render workspace ownership remains ambiguous because repository evidence does no
 ## 1.0.1 readiness
 Current readiness: Phase-1 runtime + category UX expansion, NOT release ready.
 
-Still required: final-head green gates for PR #57, merge and post-merge deployed-v1 proof, server-side category identifiers/mapping, unified home/title/episodes/play contracts, production health/circuit decisions, redesigned mobile-first UI, Live matches UX, Player 2.0 local history/favorites/continue-watching, unified search/library, installable PWA, diagnostics/observability, and the final 1.0.1 live release gate.
+Still required: final-head green gates for PR #58, merge and live verification of page 2+ category loading, server-side category identifiers/mapping, unified home/title/episodes/play contracts, production health/circuit decisions, redesigned mobile-first UI, Live matches UX, Player 2.0 local history/favorites/continue-watching, unified search/library, installable PWA, diagnostics/observability, and the final 1.0.1 live release gate.
 
 ## أهداف التشغيل التالي
-1. إغلاق PR #57 بأمان: افحص الرأس النهائي بعد هذا التوثيق، أصلح أي failure على نفس الفرع، ولا تدمج حتى خضرة كل البوابات المطلوبة.
-2. اختبر infinite scroll في Mobile WebKit: أول 30 ثم تحميل الدفعة الثانية تلقائيًا عند الوصول للأسفل مع عدم تكرار العناصر.
-3. بعد دمج #57 انتظر GitHub Pages/backend لنفس commit وتحقق أن `Remote runtime v1 smoke` ينجح على النسخة المنشورة.
+1. إغلاق PR #58 بأمان: افحص الرأس النهائي، أصلح أي failure على نفس الفرع، ولا تدمج حتى خضرة كل البوابات المطلوبة.
+2. بعد الدمج انتظر GitHub Pages/backend لنفس commit واختبر حيًا أن التصنيف يعرض 30 ثم 60 ثم 90 عند مواصلة النزول إذا كان المصدر يملك صفحات إضافية.
+3. راقب WebKit pagination smoke وتأكد أن الصفحة الثانية تُطلب مرة واحدة فقط ولا تظهر عناصر مكررة.
 4. أضف category IDs أو mapping server-side حتى لا تعرف واجهة 1.0.1 source URLs الأصلية.
 5. أنشئ `/api/home` بفشل جزئي آمن وbounded concurrency للمباريات وأقسام المحتوى.
 6. ابنِ title/episodes/play contracts موحدة مع فصل `episode_id` عن `episode_number` والحفاظ على opaque media refs.
