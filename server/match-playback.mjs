@@ -5,6 +5,7 @@ import net from "node:net";
 const REF_TTL_MS = 15 * 60_000;
 const MAX_HTML_BYTES = 2 * 1024 * 1024;
 const MAX_HLS_BYTES = 2 * 1024 * 1024;
+const PROBE_BYTES = 4096;
 
 function text(value) { return value == null ? "" : String(value).trim(); }
 
@@ -40,6 +41,7 @@ function inferType(url, rawType = '') {
   const type = text(rawType).toLowerCase();
   if (['m3u8', 'hls'].includes(type)) return 'm3u8';
   if (['mp4', 'video/mp4'].includes(type)) return 'mp4';
+  if (['mpeg-ts', 'mpegts', 'ts', 'video/mp2t'].includes(type)) return 'stream';
   const target = text(url).toLowerCase();
   if (/\.m3u8(?:$|\?)/.test(target)) return 'm3u8';
   if (/\.mp4(?:$|\?)/.test(target)) return 'mp4';
@@ -109,46 +111,49 @@ async function fetchTextSafe(value, { referer = '', maxBytes = MAX_HTML_BYTES, r
   return { html: new TextDecoder().decode(bytes), url: response.url || url.href };
 }
 
+function decodeCandidateValue(value) {
+  return text(value)
+    .replaceAll('\\/', '/')
+    .replaceAll('&amp;', '&')
+    .replaceAll('&#x2F;', '/')
+    .replaceAll('&#47;', '/');
+}
+
 function candidateUrls(html, baseUrl) {
   const direct = [];
   const nested = [];
   const seen = new Set();
+  const add = rawValue => {
+    const decoded = decodeCandidateValue(rawValue);
+    if (!decoded || decoded.startsWith('data:') || decoded.startsWith('javascript:')) return;
+    try {
+      const url = assertPublicHttpsUrl(new URL(decoded, baseUrl).href).href;
+      if (seen.has(url)) return;
+      seen.add(url);
+      if (inferType(url) === 'embed') nested.push(url); else direct.push(url);
+    } catch {}
+  };
+
   const patterns = [
     /<source[^>]+src=["']([^"']+)["']/gi,
     /<video[^>]+src=["']([^"']+)["']/gi,
-    /(?:file|src)\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi,
+    /<(?:iframe)[^>]+src=["']([^"']+)["']/gi,
+    /data-(?:src|url|file|hls|manifest|playlist)=["']([^"']+)["']/gi,
+    /(?:file|src|url|source|hls|manifest|playlist)\s*[:=]\s*["']([^"']+)["']/gi,
   ];
   for (const re of patterns) {
-    for (const match of String(html || '').matchAll(re)) {
-      try {
-        const url = assertPublicHttpsUrl(new URL(match[1], baseUrl).href).href;
-        if (seen.has(url)) continue;
-        seen.add(url);
-        if (inferType(url) === 'embed') nested.push(url); else direct.push(url);
-      } catch {}
-    }
+    for (const match of String(html || '').matchAll(re)) add(match[1]);
   }
-  for (const match of String(html || '').matchAll(/<iframe[^>]+src=["']([^"']+)["']/gi)) {
-    try {
-      const url = assertPublicHttpsUrl(new URL(match[1], baseUrl).href).href;
-      if (!seen.has(url)) { seen.add(url); nested.push(url); }
-    } catch {}
+
+  for (const match of String(html || '').matchAll(/https?:\\\/\\\/[^"'\s<]+/gi)) add(match[0]);
+  for (const match of String(html || '').matchAll(/atob\(\s*["']([A-Za-z0-9+/=]{12,})["']\s*\)/gi)) {
+    try { add(Buffer.from(match[1], 'base64').toString('utf8')); } catch {}
   }
   return { direct, nested };
 }
 
-async function resolveEmbed(url, depth = 0) {
-  if (depth > 2) return null;
-  const page = await fetchTextSafe(url, { referer: depth ? url : '' });
-  const candidates = candidateUrls(page.html, page.url);
-  if (candidates.direct.length) return { url: candidates.direct[0], referer: page.url, type: inferType(candidates.direct[0]) };
-  for (const nested of candidates.nested.slice(0, 3)) {
-    try {
-      const resolved = await resolveEmbed(nested, depth + 1);
-      if (resolved) return resolved;
-    } catch {}
-  }
-  return null;
+export function __candidateUrlsForTest(html, baseUrl = 'https://example.org/') {
+  return candidateUrls(html, baseUrl);
 }
 
 function requestExternal(target, headers, redirects = 0) {
@@ -168,10 +173,69 @@ function requestExternal(target, headers, redirects = 0) {
       }
       resolve(response);
     });
-    request.setTimeout(60_000, () => request.destroy(new Error('MATCH_MEDIA_TIMEOUT')));
+    request.setTimeout(25_000, () => request.destroy(new Error('MATCH_MEDIA_TIMEOUT')));
     request.on('error', reject);
     request.end();
   });
+}
+
+function classifyProbe(bytes, contentType = '') {
+  const type = text(contentType).toLowerCase();
+  const mp4 = bytes.length >= 12 && bytes.subarray(4, 8).toString('ascii') === 'ftyp';
+  const hls = bytes.subarray(0, 64).toString('utf8').trimStart().startsWith('#EXTM3U');
+  const ts = bytes.length >= 188 && bytes[0] === 0x47 && (bytes.length < 376 || bytes[188] === 0x47);
+  if (hls || type.includes('mpegurl')) return 'm3u8';
+  if (mp4 || type.includes('video/mp4')) return 'mp4';
+  if (ts || type.includes('video/mp2t')) return 'stream';
+  return '';
+}
+
+async function probeDirectMedia(value, referer = '') {
+  let upstream;
+  try {
+    upstream = await requestExternal(value, {
+      Accept: '*/*',
+      Range: `bytes=0-${PROBE_BYTES - 1}`,
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Version/18.6 Mobile/15E148 Safari/604.1',
+      ...(referer ? { Referer: referer } : {}),
+    });
+    const status = Number(upstream.statusCode || 0);
+    if (status < 200 || status >= 300) { upstream.resume(); return null; }
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of upstream) {
+      const remaining = PROBE_BYTES - size;
+      if (remaining <= 0) break;
+      const slice = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
+      chunks.push(slice); size += slice.length;
+      if (size >= PROBE_BYTES) { upstream.destroy(); break; }
+    }
+    const bytes = Buffer.concat(chunks, size);
+    const kind = classifyProbe(bytes, upstream.headers['content-type']);
+    return kind ? { type: kind } : null;
+  } catch {
+    try { upstream?.destroy(); } catch {}
+    return null;
+  }
+}
+
+async function resolveEmbed(url, depth = 0, parentReferer = '') {
+  if (depth > 3) return null;
+  const directProbe = await probeDirectMedia(url, parentReferer);
+  if (directProbe) return { url, referer: parentReferer, type: directProbe.type };
+
+  const page = await fetchTextSafe(url, { referer: parentReferer });
+  const candidates = candidateUrls(page.html, page.url);
+  if (candidates.direct.length) return { url: candidates.direct[0], referer: page.url, type: inferType(candidates.direct[0]) };
+  for (const nested of candidates.nested.slice(0, 6)) {
+    try {
+      const probe = await probeDirectMedia(nested, page.url);
+      if (probe) return { url: nested, referer: page.url, type: probe.type };
+      const resolved = await resolveEmbed(nested, depth + 1, page.url);
+      if (resolved) return resolved;
+    } catch {}
+  }
+  return null;
 }
 
 async function readTextStream(stream, maxBytes) {
@@ -225,7 +289,8 @@ export function createMatchPlaybackRuntime({ fetchServers, matchOrigin }) {
     const server = resolveRef(servers, serverRef, 'MATCH_SERVER_REFERENCE_EXPIRED');
     let resolved = null;
     if (server.type !== 'embed') {
-      resolved = { url: server.url, referer: '', type: server.type };
+      const probe = await probeDirectMedia(server.url, '');
+      resolved = { url: server.url, referer: '', type: probe?.type || server.type };
     } else {
       resolved = await resolveEmbed(server.url);
     }
@@ -272,7 +337,7 @@ export function createMatchPlaybackRuntime({ fetchServers, matchOrigin }) {
       'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Version/18.6 Mobile/15E148 Safari/604.1',
       ...(entry.referer ? { Referer: entry.referer } : {}),
     };
-    if (req.headers.range && !/\.m3u8(?:$|\?)/i.test(target.pathname + target.search)) headers.Range = req.headers.range;
+    if (req.headers.range && entry.type !== 'm3u8' && !/\.m3u8(?:$|\?)/i.test(target.pathname + target.search)) headers.Range = req.headers.range;
     const upstream = await requestExternal(target, headers);
     const status = Number(upstream.statusCode || 502);
     if (status < 200 || status >= 300) {
@@ -282,7 +347,7 @@ export function createMatchPlaybackRuntime({ fetchServers, matchOrigin }) {
       return res.end(JSON.stringify({ status: 'error', message: `MATCH_MEDIA_UPSTREAM_${status}` }));
     }
     const contentType = text(upstream.headers['content-type']);
-    const isHls = contentType.toLowerCase().includes('mpegurl') || /\.m3u8(?:$|\?)/i.test(target.pathname + target.search);
+    const isHls = entry.type === 'm3u8' || contentType.toLowerCase().includes('mpegurl') || /\.m3u8(?:$|\?)/i.test(target.pathname + target.search);
     if (isHls) {
       const manifest = await readTextStream(upstream, MAX_HLS_BYTES);
       if (!manifest.trimStart().startsWith('#EXTM3U')) throw new Error('INVALID_MATCH_HLS');
@@ -294,11 +359,14 @@ export function createMatchPlaybackRuntime({ fetchServers, matchOrigin }) {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       return res.end(body);
     }
-    for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
+    for (const name of ['content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
       const value = upstream.headers[name];
       if (value) res.setHeader(name, value);
     }
-    if (!upstream.headers['content-type']) res.setHeader('Content-Type', 'video/mp4');
+    const genericType = !contentType || /^(?:application|binary)\/(?:octet-stream|binary)$/i.test(contentType);
+    if (entry.type === 'mp4' && genericType) res.setHeader('Content-Type', 'video/mp4');
+    else if (entry.type === 'stream' && genericType) res.setHeader('Content-Type', 'video/mp2t');
+    else res.setHeader('Content-Type', contentType || 'video/mp4');
     res.setHeader('Cache-Control', 'no-store');
     res.statusCode = status;
     for await (const chunk of upstream) res.write(chunk);
