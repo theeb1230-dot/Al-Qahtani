@@ -111,7 +111,8 @@ assert.deepEqual(home.data.sections.map((section) => section.id), [
 ]);
 assert.ok(home.data.sections.every((section) => section.status === "ready"));
 assert.ok(home.data.sections.every((section) => section.data.length <= 8));
-assert.equal(categoryCalls, homeBeforeCalls + 4, "home must request only its four bounded catalog sections");
+assert.equal(categoryCalls, homeBeforeCalls + 3, "home must reuse the already-cached movie-arabic page while fetching only the three missing sections");
+assert.ok(home.data.sections.some((section) => section.cached === true), "home must preserve per-section cache evidence");
 
 let activeSections = 0;
 let peakSections = 0;
