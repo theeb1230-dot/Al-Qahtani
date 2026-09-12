@@ -24,8 +24,8 @@ const html = `
 const parsed = parseWatch(html, "https://akwam.ss/watch/1/2/example");
 assert(parsed.status === "success", "watch parser finds media candidates", parsed);
 assert(parsed.candidates.length === 3, "watch parser excludes page assets", { candidates: parsed.candidates });
-assert(parsed.candidates[0].endsWith("movie.m3u8"), "HLS is preferred when present", { first: parsed.candidates[0] });
-assert(parsed.candidates[1].endsWith("movie.mp4"), "MP4 is preferred before Matroska", { second: parsed.candidates[1] });
+assert(parsed.candidates[0].endsWith("movie.mp4"), "MP4 is preferred for native playback/download when present", { first: parsed.candidates[0] });
+assert(parsed.candidates[1].endsWith("movie.m3u8"), "HLS remains available as playback fallback", { second: parsed.candidates[1] });
 assert(parsed.candidates[2].endsWith("movie.mkv"), "Matroska remains visible for server-side classification", { third: parsed.candidates[2] });
 assert(!parsed.candidates.some(url => /\.(?:jpg|js)$/i.test(url)), "image/script assets never become media candidates");
 
