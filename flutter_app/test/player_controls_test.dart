@@ -10,9 +10,11 @@ void main() {
         body: PlayerControls(
           isPlaying: false,
           isTv: true,
+          playbackSpeed: 1.0,
           onRewind: () {},
           onTogglePlay: () {},
           onForward: () {},
+          onPlaybackSpeedChanged: (_) {},
         ),
       ),
     ));
@@ -37,15 +39,40 @@ void main() {
     expect(rewind.focusNode?.hasFocus, isTrue);
   });
 
+  testWidgets('playback speed menu emits selected supported speed', (tester) async {
+    double? selected;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: PlayerControls(
+          isPlaying: true,
+          isTv: false,
+          playbackSpeed: 1.0,
+          onRewind: () {},
+          onTogglePlay: () {},
+          onForward: () {},
+          onPlaybackSpeedChanged: (value) => selected = value,
+        ),
+      ),
+    ));
+
+    await tester.tap(find.byKey(const Key('player-speed')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('player-speed-1.5x')));
+    await tester.pumpAndSettle();
+    expect(selected, 1.5);
+  });
+
   testWidgets('mobile player controls do not steal autofocus', (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: PlayerControls(
           isPlaying: true,
           isTv: false,
+          playbackSpeed: 1.0,
           onRewind: () {},
           onTogglePlay: () {},
           onForward: () {},
+          onPlaybackSpeedChanged: (_) {},
         ),
       ),
     ));
