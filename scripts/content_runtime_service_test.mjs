@@ -47,7 +47,7 @@ const service = createContentRuntimeService({
 });
 
 const firstMatches = await service.matches();
-assert.equal(firstMatches.version, "1.0.1");
+assert.equal(firstMatches.version, "1.0.13");
 assert.equal(firstMatches.kind, "matches");
 assert.equal(firstMatches.cached, false);
 assert.equal(firstMatches.data.length, 1);
@@ -97,7 +97,7 @@ assert.equal(categoryCalls, 2, "unknown IDs must not reach upstream fetcher");
 
 const homeBeforeCalls = categoryCalls;
 const home = await service.home();
-assert.equal(home.version, "1.0.1");
+assert.equal(home.version, "1.0.13");
 assert.equal(home.kind, "home");
 assert.equal(home.source, "al-qahtani-runtime");
 assert.equal(home.data.partial, false);
@@ -144,7 +144,7 @@ assert.ok(peakSections <= 2, `home catalog aggregation must remain bounded to co
 
 const status = service.status();
 assert.equal(status.status, "ok");
-assert.equal(status.version, "1.0.1");
+assert.equal(status.version, "1.0.13");
 assert.ok(status.cache_entries >= 2);
 assert.ok(status.providers.some((provider) => provider.name === "basri-direct"));
 assert.ok(status.providers.some((provider) => provider.name === "basri-worker"));
