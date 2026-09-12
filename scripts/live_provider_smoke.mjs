@@ -84,7 +84,20 @@ function safeHtmlDiagnostics(text) {
       hrefs.push({ host: "invalid", path: String(m[1]).slice(0, 180) });
     }
   }
-  return { title, hrefs };
+  const scripts = [];
+  for (const m of text.matchAll(/<script\b[^>]*src=["']([^"']+)["'][^>]*>/gi)) {
+    if (scripts.length >= 20) break;
+    try {
+      const url = new URL(m[1], SOURCE + "/");
+      scripts.push({ host: url.hostname, path: url.pathname.slice(0, 180) });
+    } catch {
+      scripts.push({ host: "invalid", path: String(m[1]).slice(0, 180) });
+    }
+  }
+  const markers = [...text.matchAll(/(?:fetch|ajax|section|series|load|recent)[^\n<>]{0,120}/gi)]
+    .slice(0, 20)
+    .map((m) => String(m[0]).replace(/https?:\/\/[^\s"']+/g, "[url]").slice(0, 160));
+  return { title, hrefs, scripts, markers };
 }
 
 async function matchesSmoke() {
