@@ -6,6 +6,7 @@ import 'src/details_page.dart';
 import 'src/download_library_section.dart';
 import 'src/library_store.dart';
 import 'src/models.dart';
+import 'src/news_page.dart';
 
 void main() => runApp(const AlQahtaniApp());
 
@@ -60,7 +61,7 @@ class _ShellState extends State<Shell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      RuntimeHome(api: api), MatchesPage(api: api),
+      RuntimeHome(api: api), MatchesPage(api: api), NewsPage(api: api),
       CatalogPage(api: api, store: widget.store, title: 'الأفلام', categoryId: 'movie-foreign'),
       CatalogPage(api: api, store: widget.store, title: 'المسلسلات', categoryId: 'series-foreign'),
       SearchPage(api: api, store: widget.store),
@@ -81,6 +82,7 @@ class _ShellState extends State<Shell> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'الرئيسية'),
           NavigationDestination(icon: Icon(Icons.sports_soccer), label: 'المباريات'),
+          NavigationDestination(icon: Icon(Icons.newspaper_outlined), selectedIcon: Icon(Icons.newspaper), label: 'الأخبار'),
           NavigationDestination(icon: Icon(Icons.movie_outlined), label: 'الأفلام'),
           NavigationDestination(icon: Icon(Icons.live_tv_outlined), label: 'المسلسلات'),
           NavigationDestination(icon: Icon(Icons.search), label: 'البحث'),
@@ -100,6 +102,7 @@ class _TvNavigation extends StatelessWidget {
     destinations: const [
       NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('الرئيسية')),
       NavigationRailDestination(icon: Icon(Icons.sports_soccer), label: Text('المباريات')),
+      NavigationRailDestination(icon: Icon(Icons.newspaper_outlined), selectedIcon: Icon(Icons.newspaper), label: Text('الأخبار')),
       NavigationRailDestination(icon: Icon(Icons.movie_outlined), label: Text('الأفلام')),
       NavigationRailDestination(icon: Icon(Icons.live_tv_outlined), label: Text('المسلسلات')),
       NavigationRailDestination(icon: Icon(Icons.search), label: Text('البحث')),
