@@ -7,6 +7,13 @@ const MATCH_TIMEOUT_MS=25000;
 
 function installBrandTheme(){
   if(typeof document==='undefined'||document.getElementById('alqahtani-brand-v2'))return;
+  const themeMeta=document.querySelector('meta[name="theme-color"]');
+  if(themeMeta)themeMeta.setAttribute('content','#101827');
+  document.title=String(document.title||'').replace(/Al-Qahtani/gi,'القحطاني TV').replace(/^القحطاني$/,'القحطاني TV');
+  document.querySelectorAll('.brandmark strong,.brand strong').forEach(node=>{
+    const current=String(node.textContent||'').trim();
+    if(current==='القحطاني'||/Al-Qahtani/i.test(current))node.textContent='القحطاني TV';
+  });
   const style=document.createElement('style');
   style.id='alqahtani-brand-v2';
   style.textContent=`
