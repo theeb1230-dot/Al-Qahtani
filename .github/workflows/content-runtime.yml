@@ -14,8 +14,14 @@ jobs:
         with:
           node-version: 22
       - name: Validate runtime module syntax
-        run: node --check server/content-runtime.mjs
+        run: |
+          node --check server/content-runtime.mjs
+          node --check server/content-runtime-service.mjs
       - name: Validate runtime regression test syntax
-        run: node --check scripts/content_runtime_test.mjs
+        run: |
+          node --check scripts/content_runtime_test.mjs
+          node --check scripts/content_runtime_service_test.mjs
       - name: Run content runtime regressions
-        run: node scripts/content_runtime_test.mjs
+        run: |
+          node scripts/content_runtime_test.mjs
+          node scripts/content_runtime_service_test.mjs
