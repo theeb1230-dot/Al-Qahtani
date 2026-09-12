@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Generate deterministic Al-Qahtani native branding after `flutter create`.
 
-No bundled font or third-party image dependency is required. The mark is a simplified
-geometric Arabic qaf inspired by the user-approved black/gold identity.
+The canonical identity is the user-approved deep-navy / metallic-gold Q-play mark.
+No bundled font or third-party image dependency is required.
 """
 from __future__ import annotations
 
 import json
-import math
 import plistlib
 import re
 import struct
@@ -15,8 +14,9 @@ import sys
 import zlib
 from pathlib import Path
 
-BLACK = (9, 9, 11, 255)
-GOLD = (216, 170, 79, 255)
+NAVY = (16, 24, 39, 255)
+GOLD = (198, 151, 76, 255)
+GOLD_LIGHT = (226, 190, 121, 255)
 TRANSPARENT = (0, 0, 0, 0)
 
 
@@ -31,7 +31,7 @@ def mark(size: int, background: tuple[int, int, int, int]) -> bytes:
     w = h = max(16, int(size))
     px = bytearray(background * (w * h))
 
-    def blend(x: int, y: int, color=GOLD):
+    def put(x: int, y: int, color=GOLD):
         if 0 <= x < w and 0 <= y < h:
             i = (y * w + x) * 4
             px[i:i + 4] = bytes(color)
@@ -45,7 +45,7 @@ def mark(size: int, background: tuple[int, int, int, int]) -> bytes:
             for x in range(x0, x1 + 1):
                 dx = x - cx
                 if dx * dx + dy * dy <= r2:
-                    blend(x, y, color)
+                    put(x, y, color)
 
     def ring(cx: float, cy: float, outer: float, inner: float):
         x0, x1 = max(0, int(cx - outer)), min(w - 1, int(cx + outer))
@@ -57,30 +57,41 @@ def mark(size: int, background: tuple[int, int, int, int]) -> bytes:
                 dx = x - cx
                 d2 = dx * dx + dy * dy
                 if i2 <= d2 <= o2:
-                    blend(x, y)
+                    # subtle highlight toward top-left for the metallic feel
+                    put(x, y, GOLD_LIGHT if x + y < (cx + cy) * .91 else GOLD)
 
-    def thick_bezier(p0, p1, p2, radius):
-        steps = max(80, int(size * 0.8))
+    def thick_line(x0: float, y0: float, x1: float, y1: float, radius: float):
+        steps = max(2, int(max(abs(x1 - x0), abs(y1 - y0))))
         for n in range(steps + 1):
             t = n / steps
-            u = 1 - t
-            x = u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0]
-            y = u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]
-            disk(x, y, radius)
+            disk(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, radius)
 
-    # Isolated ق: compact bowl, two dots, then a long lower-left tail.
-    ring(w * .59, h * .44, w * .205, w * .125)
-    # Mask a small lower-left seam so the tail feels continuous rather than a Latin Q.
-    disk(w * .46, h * .57, w * .07, background)
-    thick_bezier((w * .55, h * .57), (w * .52, h * .75), (w * .22, h * .70), w * .035)
-    disk(w * .52, h * .18, w * .036)
-    disk(w * .65, h * .18, w * .036)
+    def triangle(a, b, c, color=GOLD_LIGHT):
+        min_x = max(0, int(min(a[0], b[0], c[0])))
+        max_x = min(w - 1, int(max(a[0], b[0], c[0])))
+        min_y = max(0, int(min(a[1], b[1], c[1])))
+        max_y = min(h - 1, int(max(a[1], b[1], c[1])))
+        def sign(p1, p2, p3):
+            return (p1[0] - p3[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p3[1])
+        for y in range(min_y, max_y + 1):
+            for x in range(min_x, max_x + 1):
+                p = (x + .5, y + .5)
+                d1, d2, d3 = sign(p, a, b), sign(p, b, c), sign(p, c, a)
+                if not ((d1 < 0 or d2 < 0 or d3 < 0) and (d1 > 0 or d2 > 0 or d3 > 0)):
+                    put(x, y, color)
+
+    # Circular Q with a lower-right tail, matching the reference icon.
+    cx, cy = w * .49, h * .46
+    ring(cx, cy, w * .285, w * .205)
+    thick_line(w * .61, h * .61, w * .76, h * .76, w * .038)
+    # Center play glyph.
+    triangle((w * .42, h * .34), (w * .42, h * .58), (w * .59, h * .46))
     return png_bytes(w, h, px)
 
 
 def write_icon(path: Path, size: int, transparent: bool = False):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(mark(size, TRANSPARENT if transparent else BLACK))
+    path.write_bytes(mark(size, TRANSPARENT if transparent else NAVY))
 
 
 def apply_android(root: Path):
@@ -100,7 +111,7 @@ def apply_android(root: Path):
     write_icon(res / "drawable" / "launch_qaf.png", 256, transparent=True)
     launch_xml = """<?xml version=\"1.0\" encoding=\"utf-8\"?>
 <layer-list xmlns:android=\"http://schemas.android.com/apk/res/android\">
-    <item android:drawable=\"@android:color/black\" />
+    <item android:drawable=\"#101827\" />
     <item><bitmap android:gravity=\"center\" android:src=\"@drawable/launch_qaf\" /></item>
 </layer-list>
 """
@@ -111,7 +122,7 @@ def apply_android(root: Path):
     manifest = android / "app/src/main/AndroidManifest.xml"
     if manifest.exists():
         text = manifest.read_text(encoding="utf-8")
-        text = re.sub(r'android:label="[^"]*"', 'android:label="القحطاني"', text, count=1)
+        text = re.sub(r'android:label="[^"]*"', 'android:label="القحطاني TV"', text, count=1)
         manifest.write_text(text, encoding="utf-8")
 
 
@@ -149,14 +160,15 @@ def apply_ios(root: Path):
     storyboard = ios / "Runner/Base.lproj/LaunchScreen.storyboard"
     if storyboard.exists():
         text = storyboard.read_text(encoding="utf-8")
-        text = text.replace('red="1" green="1" blue="1" alpha="1"', 'red="0.035" green="0.035" blue="0.043" alpha="1"')
+        text = text.replace('red="1" green="1" blue="1" alpha="1"', 'red="0.063" green="0.094" blue="0.153" alpha="1"')
+        text = text.replace('red="0.035" green="0.035" blue="0.043" alpha="1"', 'red="0.063" green="0.094" blue="0.153" alpha="1"')
         storyboard.write_text(text, encoding="utf-8")
     plist = ios / "Runner/Info.plist"
     if plist.exists():
         with plist.open("rb") as fh:
             data = plistlib.load(fh)
-        data["CFBundleDisplayName"] = "القحطاني"
-        data["CFBundleName"] = "القحطاني"
+        data["CFBundleDisplayName"] = "القحطاني TV"
+        data["CFBundleName"] = "القحطاني TV"
         with plist.open("wb") as fh:
             plistlib.dump(data, fh, sort_keys=False)
 
