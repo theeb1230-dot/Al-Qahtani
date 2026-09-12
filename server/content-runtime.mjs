@@ -1,4 +1,4 @@
-export const PRODUCT_VERSION = "1.0.1";
+export const PRODUCT_VERSION = "1.0.13";
 
 export class TtlCache {
   #entries = new Map();
@@ -113,8 +113,18 @@ export class ProviderHealthRegistry {
 
 function asText(value) { return value == null ? "" : String(value).trim(); }
 function asNumber(value, fallback = null) {
+  if (value == null) return fallback;
+  if (typeof value === "string" && !value.trim()) return fallback;
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function firstScore(...values) {
+  for (const value of values) {
+    const number = asNumber(value, null);
+    if (number !== null) return Math.max(0, Math.trunc(number));
+  }
+  return null;
 }
 
 export function normalizeCatalogItem(item = {}) {
@@ -142,17 +152,35 @@ export function normalizeEpisode(episode = {}, index = 0) {
 export function normalizeMatch(match = {}) {
   const team1 = match.team1 || match.home || {};
   const team2 = match.team2 || match.away || {};
+  const homeGoals = firstScore(
+    team1.goals,
+    team1.score,
+    match.home_score,
+    match.homeScore,
+    match.team1_goals,
+    match.team1Goals,
+    match.score1,
+  );
+  const awayGoals = firstScore(
+    team2.goals,
+    team2.score,
+    match.away_score,
+    match.awayScore,
+    match.team2_goals,
+    match.team2Goals,
+    match.score2,
+  );
   return {
     id: asText(match.id || match.link),
-    team1: { name: asText(team1.name), logo: asText(team1.logo || team1.image || team1.img), goals: asNumber(team1.goals, 0) },
-    team2: { name: asText(team2.name), logo: asText(team2.logo || team2.image || team2.img), goals: asNumber(team2.goals, 0) },
+    team1: { name: asText(team1.name), logo: asText(team1.logo || team1.image || team1.img), goals: homeGoals },
+    team2: { name: asText(team2.name), logo: asText(team2.logo || team2.image || team2.img), goals: awayGoals },
     time: asText(match.time),
     status: match.priority === 1 ? "live" : match.priority === 3 ? "ended" : "scheduled",
     priority: asNumber(match.priority, 2),
     competition: asText(match.competition || match.league),
     channel: asText(match.channel),
     commentator: asText(match.commentator),
-    ref: asText(match.link),
+    ref: asText(match.ref || match.link),
   };
 }
 
