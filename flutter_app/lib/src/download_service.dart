@@ -115,7 +115,6 @@ class DownloadService {
           final rangeStart = _contentRangeStart(response.headers['content-range']);
           if (rangeStart != bytes) throw const DownloadException('INCOMPLETE_DOWNLOAD');
         } else if (append && response.statusCode == 200) {
-          // The origin ignored Range. Restart safely instead of appending duplicate bytes.
           append = false;
           bytes = 0;
           total = null;
@@ -172,7 +171,7 @@ class DownloadService {
         }
 
         if (bytes == 0) throw const DownloadException('EMPTY_DOWNLOAD');
-        if (total != null && bytes < total!) {
+        if (total != null && bytes < total) {
           if (reconnectAttempt < _maxReconnectAttempts && bytes > 0) {
             reconnectAttempt += 1;
             await _reconnectDelay(reconnectAttempt, cancellationToken);
@@ -180,10 +179,10 @@ class DownloadService {
           }
           throw const DownloadException('INCOMPLETE_DOWNLOAD');
         }
-        if (total != null && bytes > total!) throw const DownloadException('INVALID_DOWNLOAD_LENGTH');
+        if (total != null && bytes > total) throw const DownloadException('INVALID_DOWNLOAD_LENGTH');
 
-        final completedFile = finalFile!;
-        final partialFile = tempFile!;
+        final completedFile = finalFile;
+        final partialFile = tempFile;
         if (await completedFile.exists()) await completedFile.delete();
         await partialFile.rename(completedFile.path);
         return DownloadResult(path: completedFile.path, bytes: bytes);
