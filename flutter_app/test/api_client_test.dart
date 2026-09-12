@@ -30,6 +30,27 @@ void main() {
     expect(api.mediaUri(resolved.mediaPath).host, 'runtime.example');
   });
 
+  test('catalog poster runtime paths are resolved against Al-Qahtani API', () async {
+    final client = MockClient((request) async => jsonResponse({
+          'status': 'success',
+          'kind': 'search',
+          'data': [
+            {
+              'id': 'work-1',
+              'title': 'عمل تجريبي',
+              'poster': '/api/cinema/media?id=opaque-poster',
+              'type': 'series',
+              'ref': 'legacy:opaque-work',
+              'year': 2026,
+            }
+          ],
+        }));
+    final api = AlQahtaniApi(client: client, baseUri: Uri.parse('https://runtime.example'));
+    final result = await api.search('عمل');
+    expect(result.single.poster, 'https://runtime.example/api/cinema/media?id=opaque-poster');
+    expect(result.single.year, 2026);
+  });
+
   test('news stays behind Al-Qahtani runtime and maps opaque refs', () async {
     final client = MockClient((request) async {
       expect(request.url.host, 'runtime.example');
