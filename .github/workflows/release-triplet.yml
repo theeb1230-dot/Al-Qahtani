@@ -1,0 +1,200 @@
+name: Release Flutter triplet
+
+on:
+  workflow_run:
+    workflows: ['Flutter foundation']
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Read and validate release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          RAW="$(awk '/^version:/{print $2}' flutter_app/pubspec.yaml)"
+          VERSION="${RAW%%+*}"
+          BUILD="${RAW##*+}"
+          test -n "$VERSION" && test -n "$BUILD" && test "$RAW" != "$VERSION"
+          TAG="v$VERSION"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; version/build must be bumped for every product-impacting merge." >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for protected Web and runtime gates on exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess, time
+          required = {
+              'Deploy GitHub Pages',
+              'Web smoke',
+              'Mobile WebKit smoke',
+              'Content runtime',
+              'Remote movie playback smoke',
+              'Live provider smoke',
+              'Original Basri download contract',
+              'Original Basri player contract',
+              'Remote CORS smoke',
+              'CORS boundary',
+              'Media reference expiry',
+              'Trusted download filename',
+          }
+          sha = os.environ['SOURCE_SHA']
+          repo = os.environ['GITHUB_REPOSITORY']
+          for _ in range(36):
+              raw = subprocess.check_output([
+                  'gh', 'run', 'list', '--repo', repo, '--commit', sha, '--limit', '100',
+                  '--json', 'name,status,conclusion,databaseId'
+              ], text=True)
+              runs = json.loads(raw)
+              by_name = {}
+              for run in runs:
+                  by_name.setdefault(run['name'], []).append(run)
+              missing = []
+              pending = []
+              failed = []
+              for name in sorted(required):
+                  candidates = by_name.get(name, [])
+                  if not candidates:
+                      missing.append(name)
+                      continue
+                  run = max(candidates, key=lambda item: item['databaseId'])
+                  if run['status'] != 'completed':
+                      pending.append(name)
+                  elif run['conclusion'] != 'success':
+                      failed.append(f"{name}:{run['conclusion']}")
+              if failed:
+                  raise SystemExit('Protected gate failure(s): ' + ', '.join(failed))
+              if not missing and not pending:
+                  print('All protected Web/runtime gates succeeded on', sha)
+                  break
+              print('Waiting for exact-commit gates. Missing:', missing, 'Pending:', pending)
+              time.sleep(10)
+          else:
+              raise SystemExit('Timed out waiting for protected exact-commit gates')
+          PY
+
+      - name: Download exact-run Mobile, TV and iOS artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-input/mobile release-input/tv release-input/ios release
+          gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name 'Al-Qahtani-Mobile-APK' --dir release-input/mobile
+          gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name 'Al-Qahtani-TV-APK' --dir release-input/tv
+          gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name 'Al-Qahtani-iOS-UNSIGNED-IPA' --dir release-input/ios
+          test -s release-input/mobile/Al-Qahtani-Mobile.apk
+          test -s release-input/tv/Al-Qahtani-TV.apk
+          test -s release-input/ios/Al-Qahtani-UNSIGNED.ipa
+          (cd release-input/mobile && sha256sum -c Al-Qahtani-Mobile.apk.sha256)
+          (cd release-input/tv && sha256sum -c Al-Qahtani-TV.apk.sha256)
+          (cd release-input/ios && sha256sum -c Al-Qahtani-UNSIGNED.ipa.sha256)
+
+      - name: Stage release assets and provenance
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD: ${{ steps.version.outputs.build }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp release-input/mobile/Al-Qahtani-Mobile.apk "release/Al-Qahtani-Mobile-v${VERSION}.apk"
+          cp release-input/tv/Al-Qahtani-TV.apk "release/Al-Qahtani-TV-v${VERSION}.apk"
+          cp release-input/ios/Al-Qahtani-UNSIGNED.ipa "release/Al-Qahtani-iOS-v${VERSION}-UNSIGNED.ipa"
+          (cd release && sha256sum *.apk *.ipa > SHA256SUMS.txt)
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = {
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'commit': os.environ['SOURCE_SHA'],
+              'source_workflow_run_id': int(os.environ['SOURCE_RUN_ID']),
+              'version': os.environ['VERSION'],
+              'build': os.environ['BUILD'],
+              'web': {'delivery': 'GitHub Pages', 'release_asset': False},
+              'android_mobile': {'asset': f"Al-Qahtani-Mobile-v{os.environ['VERSION']}.apk"},
+              'android_tv': {'asset': f"Al-Qahtani-TV-v{os.environ['VERSION']}.apk", 'leanback_required': True},
+              'ios': {'asset': f"Al-Qahtani-iOS-v{os.environ['VERSION']}-UNSIGNED.ipa", 'signed': False, 'install_note': 'External signing/provisioning is required.'},
+          }
+          Path('release/PROVENANCE.json').write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
+          PY
+          cat > release-notes.md <<EOF
+          ## Al-Qahtani v${VERSION} (${BUILD})
+
+          Four-surface product update from commit \`${SOURCE_SHA}\`.
+
+          - Web/PWA remains deployed on GitHub Pages and is not replaced by Flutter Web.
+          - Android Mobile APK is included below.
+          - Android TV APK is included below with LEANBACK/remote requirements verified by CI.
+          - iOS IPA is explicitly **UNSIGNED / no-codesign** and requires external signing/provisioning before installation.
+          - SHA-256 values are in \`SHA256SUMS.txt\`.
+          - Provenance is recorded in \`PROVENANCE.json\`.
+          EOF
+
+      - name: Publish complete GitHub Release
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "Al-Qahtani v${VERSION}" \
+            --notes-file release-notes.md \
+            release/Al-Qahtani-Mobile-v${VERSION}.apk \
+            release/Al-Qahtani-TV-v${VERSION}.apk \
+            release/Al-Qahtani-iOS-v${VERSION}-UNSIGNED.ipa \
+            release/SHA256SUMS.txt \
+            release/PROVENANCE.json
+
+      - name: Verify published Release is complete
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,targetCommitish,assets > release-view.json
+          python3 - <<'PY'
+          import json, os
+          data = json.load(open('release-view.json'))
+          expected = {
+              f"Al-Qahtani-Mobile-v{os.environ['VERSION']}.apk",
+              f"Al-Qahtani-TV-v{os.environ['VERSION']}.apk",
+              f"Al-Qahtani-iOS-v{os.environ['VERSION']}-UNSIGNED.ipa",
+              'SHA256SUMS.txt',
+              'PROVENANCE.json',
+          }
+          actual = {item['name'] for item in data['assets'] if item.get('size', 0) > 0}
+          missing = expected - actual
+          if missing:
+              raise SystemExit('Incomplete GitHub Release; missing/non-empty assets: ' + ', '.join(sorted(missing)))
+          print('Release assets verified:', ', '.join(sorted(expected)))
+          PY

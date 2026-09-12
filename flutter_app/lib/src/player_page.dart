@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import 'api_client.dart';
 import 'app_target.dart';
 import 'library_store.dart';
+import 'media_format_policy.dart';
 import 'models.dart';
 import 'player_controls.dart';
 
@@ -60,7 +61,10 @@ class _PlayerPageState extends State<PlayerPage> {
         mediaType = resolved.mediaType;
       }
       if (!mounted) return;
-      final controller = VideoPlayerController.networkUrl(widget.api.mediaUri(mediaPath));
+      final controller = VideoPlayerController.networkUrl(
+        widget.api.mediaUri(mediaPath),
+        formatHint: videoFormatHintForRuntimeMedia(mediaType),
+      );
       _controller = controller;
       await controller.initialize();
       await controller.setPlaybackSpeed(_playbackSpeed);
@@ -71,7 +75,7 @@ class _PlayerPageState extends State<PlayerPage> {
       }
       setState(() {
         _failed = false;
-        _status = mediaType.isEmpty ? 'جاهز للمشاهدة' : 'جاهز للمشاهدة • $mediaType';
+        _status = 'جاهز للمشاهدة • ${runtimeMediaLabel(mediaType)}';
       });
       _progressTimer?.cancel();
       _progressTimer = Timer.periodic(const Duration(seconds: 5), (_) => _saveProgress());

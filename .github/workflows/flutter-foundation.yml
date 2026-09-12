@@ -5,11 +5,13 @@ on:
     paths:
       - 'flutter_app/**'
       - '.github/workflows/flutter-foundation.yml'
+      - '.github/workflows/release-triplet.yml'
   push:
     branches: [main]
     paths:
       - 'flutter_app/**'
       - '.github/workflows/flutter-foundation.yml'
+      - '.github/workflows/release-triplet.yml'
   workflow_dispatch:
 
 permissions:
@@ -48,6 +50,17 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Read expected version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="$(awk '/^version:/{print $2}' flutter_app/pubspec.yaml)"
+          VERSION="${RAW%%+*}"
+          BUILD="${RAW##*+}"
+          test -n "$VERSION" && test -n "$BUILD" && test "$RAW" != "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
       - name: Create Android scaffold
         working-directory: flutter_app
         run: flutter create --platforms=android --org com.alqahtani --project-name al_qahtani .
@@ -55,6 +68,9 @@ jobs:
         working-directory: flutter_app
         run: flutter build apk --release --dart-define=AL_QAHTANI_TARGET=mobile
       - name: Verify mobile APK identity and signature
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+          EXPECTED_BUILD: ${{ steps.version.outputs.build }}
         run: |
           set -euo pipefail
           APK=flutter_app/build/app/outputs/flutter-apk/app-release.apk
@@ -67,8 +83,8 @@ jobs:
           "$APKSIGNER" verify --verbose "$APK"
           BADGING="$("$AAPT" dump badging "$APK")"
           printf '%s\n' "$BADGING" | grep -q "package: name='com.alqahtani.al_qahtani'"
-          printf '%s\n' "$BADGING" | grep -q "versionCode='1'"
-          printf '%s\n' "$BADGING" | grep -q "versionName='1.0.1'"
+          printf '%s\n' "$BADGING" | grep -q "versionCode='$EXPECTED_BUILD'"
+          printf '%s\n' "$BADGING" | grep -q "versionName='$EXPECTED_VERSION'"
       - name: Stage mobile APK and checksum
         run: |
           cp flutter_app/build/app/outputs/flutter-apk/app-release.apk Al-Qahtani-Mobile.apk
@@ -89,6 +105,17 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Read expected version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="$(awk '/^version:/{print $2}' flutter_app/pubspec.yaml)"
+          VERSION="${RAW%%+*}"
+          BUILD="${RAW##*+}"
+          test -n "$VERSION" && test -n "$BUILD" && test "$RAW" != "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
       - name: Create Android scaffold
         working-directory: flutter_app
         run: flutter create --platforms=android --org com.alqahtani --project-name al_qahtani .
@@ -112,6 +139,9 @@ jobs:
         working-directory: flutter_app
         run: flutter build apk --release --dart-define=AL_QAHTANI_TARGET=tv
       - name: Verify TV APK identity, signature and packaged features
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+          EXPECTED_BUILD: ${{ steps.version.outputs.build }}
         run: |
           set -euo pipefail
           APK=flutter_app/build/app/outputs/flutter-apk/app-release.apk
@@ -124,8 +154,8 @@ jobs:
           "$APKSIGNER" verify --verbose "$APK"
           BADGING="$("$AAPT" dump badging "$APK")"
           printf '%s\n' "$BADGING" | grep -q "package: name='com.alqahtani.al_qahtani'"
-          printf '%s\n' "$BADGING" | grep -q "versionCode='1'"
-          printf '%s\n' "$BADGING" | grep -q "versionName='1.0.1'"
+          printf '%s\n' "$BADGING" | grep -q "versionCode='$EXPECTED_BUILD'"
+          printf '%s\n' "$BADGING" | grep -q "versionName='$EXPECTED_VERSION'"
           printf '%s\n' "$BADGING" | grep -q "android.software.leanback"
           printf '%s\n' "$BADGING" | grep -q "android.hardware.touchscreen"
       - name: Stage TV APK and checksum
@@ -148,6 +178,17 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Read expected version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="$(awk '/^version:/{print $2}' flutter_app/pubspec.yaml)"
+          VERSION="${RAW%%+*}"
+          BUILD="${RAW##*+}"
+          test -n "$VERSION" && test -n "$BUILD" && test "$RAW" != "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
       - name: Create iOS scaffold
         working-directory: flutter_app
         run: flutter create --platforms=ios --org com.alqahtani --project-name al_qahtani .
@@ -155,6 +196,9 @@ jobs:
         working-directory: flutter_app
         run: flutter build ios --release --no-codesign --dart-define=AL_QAHTANI_TARGET=ios
       - name: Verify iOS bundle is explicitly unsigned
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+          EXPECTED_BUILD: ${{ steps.version.outputs.build }}
         run: |
           set -euo pipefail
           APP=flutter_app/build/ios/iphoneos/Runner.app
@@ -163,8 +207,8 @@ jobs:
           test ! -e "$APP/embedded.mobileprovision"
           test ! -d "$APP/_CodeSignature"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" = 'com.alqahtani.alQahtani'
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" = '1.0.1'
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")" = '1'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" = "$EXPECTED_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")" = "$EXPECTED_BUILD"
       - name: Package UNSIGNED IPA and checksum
         run: |
           mkdir -p Payload
