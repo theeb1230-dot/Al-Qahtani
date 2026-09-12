@@ -17,7 +17,7 @@ class DownloadProgress {
   final int receivedBytes;
   final int? totalBytes;
 
-  double? get fraction => totalBytes == null || totalBytes! <= 0 ? null : (receivedBytes / totalBytes!).clamp(0, 1);
+  double? get fraction => totalBytes == null || totalBytes! <= 0 ? null : (receivedBytes / totalBytes!).clamp(0.0, 1.0).toDouble();
 }
 
 class DownloadedFileInfo {
