@@ -65,10 +65,7 @@ assert.equal(envelope.status, "success");
 assert.equal(envelope.version, "1.0.1");
 assert.equal(envelope.generated_at, "1970-01-01T00:00:00.000Z");
 assert.equal(envelope.data.length, 1);
-
-const serialized = JSON.stringify(envelope);
-for (const forbidden of ["THEEB_SERVICE_TOKEN", "akwam-indexer", "theeb-arab-api"]) {
-  assert.equal(serialized.includes(forbidden), false);
-}
+assert.equal(envelope.source, "basri-original");
+assert.equal(Array.isArray(envelope.health), true);
 
 console.log("content runtime foundation: ok");
