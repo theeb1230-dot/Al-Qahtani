@@ -34,9 +34,15 @@ export function normalizeEpisode(episode={},index=0){const episodeNumber=asNumbe
 export function normalizeMatch(match={}){
   const team1=match.team1||match.home||{};
   const team2=match.team2||match.away||{};
-  const priority=asNumber(match.priority,2);
-  const homeGoals=firstScore(team1.goals,team1.score,match.home_score,match.homeScore,match.team1_goals,match.team1Goals,match.score1);
-  const awayGoals=firstScore(team2.goals,team2.score,match.away_score,match.awayScore,match.team2_goals,match.team2Goals,match.score2);
+  const rawStatus=asText(match.status).toLowerCase();
+  const inferredPriority=/(?:ended|finished|انته)/i.test(rawStatus)?3:/(?:live|جاري|مباشر)/i.test(rawStatus)?1:2;
+  const priority=asNumber(match.priority,inferredPriority);
+  let homeGoals=firstScore(team1.goals,team1.score,match.home_score,match.homeScore,match.team1_goals,match.team1Goals,match.score1);
+  let awayGoals=firstScore(team2.goals,team2.score,match.away_score,match.awayScore,match.team2_goals,match.team2Goals,match.score2);
+  // The inherited matches worker currently emits string "0"/"0" placeholders for most
+  // ended fixtures, including fixtures known to have non-zero final scores. Treat that
+  // pair as unavailable rather than manufacturing a false 0-0. Live 0-0 remains valid.
+  if(priority===3&&homeGoals===0&&awayGoals===0){homeGoals=null;awayGoals=null;}
   return {
     id:asText(match.id||match.link),
     team1:{name:asText(team1.name),logo:asText(team1.logo||team1.image||team1.img),goals:homeGoals},
