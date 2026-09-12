@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#09090b"><title>مشاهدة المباراة | القحطاني</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<style>
+:root{color-scheme:dark;--bg:#09090b;--panel:#151515;--gold:#d8aa4f;--gold2:#f1d38e;--muted:#a79e8d;--line:#d8aa4f32;--danger:#ff8089}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 80% -20%,#49351435,transparent 35%),var(--bg);color:#f8f3e9;font-family:Tahoma,Arial,sans-serif;padding:16px}.shell{width:min(1050px,100%);margin:auto}.brand{display:flex;align-items:center;justify-content:space-between;margin:4px 0 18px}.brand strong{color:var(--gold2);font-size:1.1rem}.brand a{color:var(--muted);text-decoration:none}.player{aspect-ratio:16/9;background:#000;border:1px solid var(--line);border-radius:20px;overflow:hidden;display:grid;place-items:center;box-shadow:0 20px 70px #0008}.player video{width:100%;height:100%;display:block;background:#000}.state{text-align:center;padding:24px;color:var(--muted)}.state strong{display:block;color:#fff;margin-bottom:7px}.spinner{width:38px;height:38px;border:4px solid #ffffff18;border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}@keyframes spin{to{transform:rotate(360deg)}}.panel{margin-top:12px;padding:13px;background:var(--panel);border:1px solid var(--line);border-radius:16px}.status{color:var(--muted);line-height:1.7}.servers{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.servers button,.retry{border:1px solid var(--line);background:#1b1812;color:#fff;border-radius:11px;padding:10px 13px;font-weight:700}.servers button.active{background:var(--gold);color:#171006}.retry{margin-top:12px;background:var(--gold);color:#171006}.error{color:#ffd1d4}
+</style>
+</head>
+<body>
+<main class="shell">
+  <div class="brand"><strong>ق · القحطاني</strong><a href="./">العودة للمباريات</a></div>
+  <div id="player" class="player"><div class="state"><div class="spinner"></div><strong>جارٍ تجهيز البث</strong>يتم فحص الخوادم دون كشف المصدر الأصلي.</div></div>
+  <div class="panel"><div id="status" class="status">جارٍ تحميل خوادم المباراة…</div><div id="servers" class="servers"></div></div>
+</main>
+<script type="module">
+import { getMatchServers, getMatchPlayback, ProviderEndpoints } from './web/core/api-client.js';
+const matchRef=new URLSearchParams(location.search).get('match')||'';
+const player=document.getElementById('player'),statusEl=document.getElementById('status'),serversEl=document.getElementById('servers');
+let hls=null,generation=0;
+function stop(){generation++;if(hls){hls.destroy();hls=null}player.innerHTML=''}
+function fail(message){stop();player.innerHTML='<div class="state error"><strong>تعذر تشغيل المباراة</strong>'+message+'<br><button id="retry" class="retry">إعادة المحاولة</button></div>';document.getElementById('retry')?.addEventListener('click',load);statusEl.textContent=message}
+function videoFor(url,type,name){
+ stop();const current=generation;const video=document.createElement('video');video.controls=true;video.autoplay=true;video.playsInline=true;video.preload='metadata';video.setAttribute('webkit-playsinline','');player.appendChild(video);
+ const onError=()=>{if(current!==generation)return;statusEl.textContent='فشل هذا السيرفر. جرّب سيرفرًا آخر.'};video.addEventListener('playing',()=>{statusEl.textContent='يعمل الآن: '+name},{once:true});video.addEventListener('error',onError);
+ if(type==='m3u8'){
+   if(video.canPlayType('application/vnd.apple.mpegurl'))video.src=url;
+   else if(window.Hls&&Hls.isSupported()){hls=new Hls({enableWorker:true});hls.loadSource(url);hls.attachMedia(video);hls.on(Hls.Events.ERROR,(_e,d)=>{if(d.fatal&&current===generation)statusEl.textContent='تعذر تشغيل بث HLS من هذا السيرفر.'})}
+   else video.src=url;
+ }else{video.src=url}
+ video.play().catch(()=>{statusEl.textContent='البث جاهز. اضغط تشغيل لبدء المشاهدة.'});
+}
+async function playServer(server,button){
+ document.querySelectorAll('.servers button').forEach(b=>b.classList.remove('active'));button?.classList.add('active');statusEl.textContent='جارٍ فحص '+server.name+'…';
+ try{const result=await getMatchPlayback(server.ref),data=result?.data?.data;if(!data?.media_path)throw new Error('media');const url=ProviderEndpoints.backend+data.media_path;videoFor(url,data.media_type||server.type||'stream',data.server_name||server.name)}catch{statusEl.textContent='تعذر تجهيز هذا السيرفر. جرّب سيرفرًا آخر.'}
+}
+async function load(){
+ if(!matchRef){fail('مرجع المباراة غير صالح.');return}
+ stop();player.innerHTML='<div class="state"><div class="spinner"></div><strong>جارٍ تجهيز البث</strong>يتم فحص الخوادم دون كشف المصدر الأصلي.</div>';serversEl.innerHTML='';statusEl.textContent='جارٍ تحميل خوادم المباراة…';
+ try{const result=await getMatchServers(matchRef),servers=result?.data?.data;if(!Array.isArray(servers)||!servers.length){fail('لا يوجد مصدر بث متاح لهذه المباراة حاليًا.');return}servers.forEach((server,i)=>{const b=document.createElement('button');b.textContent=server.name||('سيرفر '+(i+1));b.onclick=()=>playServer(server,b);serversEl.appendChild(b);if(i===0)playServer(server,b)})}catch{fail('تعذر الوصول إلى خوادم المباراة حاليًا.')}
+}
+load();
+</script>
+</body>
+</html>

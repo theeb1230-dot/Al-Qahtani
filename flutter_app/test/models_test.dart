@@ -2,17 +2,30 @@ import 'package:al_qahtani/src/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('catalog runtime mapping keeps opaque ref separate from display fields', () {
+  test('catalog runtime mapping keeps poster year and opaque ref', () {
     final item = CatalogItem.fromJson({
       'id': 'demo',
       'title': 'عمل تجريبي',
       'poster': 'https://cdn.example/poster.jpg',
       'type': 'series',
+      'year': 2026,
       'ref': 'opaque:demo',
     });
     expect(item.title, 'عمل تجريبي');
+    expect(item.poster, 'https://cdn.example/poster.jpg');
+    expect(item.year, 2026);
     expect(item.type, 'series');
     expect(item.ref, 'opaque:demo');
+  });
+
+  test('catalog poster accepts worker img alias', () {
+    final item = CatalogItem.fromJson({
+      'title': 'نتيجة بحث',
+      'img': 'https://cdn.example/search.jpg',
+      'type': 'movie',
+      'ref': 'opaque:search',
+    });
+    expect(item.poster, 'https://cdn.example/search.jpg');
   });
 
   test('episode mapping never uses internal id as the display number', () {
@@ -45,15 +58,39 @@ void main() {
     expect(details.mediaPath, '/api/cinema/media?id=opaque');
   });
 
-  test('match runtime mapping normalizes teams without source URLs', () {
+  test('match runtime maps real score, logos and opaque ref', () {
     final match = MatchItem.fromJson({
-      'team1': {'name': 'فريق أ'},
-      'team2': {'name': 'فريق ب'},
+      'team1': {'name': 'راسينج سانتاندير', 'logo': 'https://cdn.example/racing.png', 'goals': 2},
+      'team2': {'name': 'ألافيس', 'logo': 'https://cdn.example/alaves.png', 'goals': 1},
       'time': '03:00',
-      'status': 'scheduled',
+      'status': 'ended',
+      'ref': 'match:opaque',
     });
-    expect(match.home, 'فريق أ');
-    expect(match.away, 'فريق ب');
-    expect(match.status, 'scheduled');
+    expect(match.home, 'راسينج سانتاندير');
+    expect(match.away, 'ألافيس');
+    expect(match.homeGoals, 2);
+    expect(match.awayGoals, 1);
+    expect(match.hasScore, true);
+    expect(match.homeLogo, contains('racing.png'));
+    expect(match.ref, 'match:opaque');
+  });
+
+  test('missing match score stays absent instead of becoming 0-0', () {
+    final match = MatchItem.fromJson({
+      'team1': {'name': 'فريق أ', 'goals': ''},
+      'team2': {'name': 'فريق ب'},
+      'status': 'ended',
+      'ref': 'match:opaque2',
+    });
+    expect(match.homeGoals, isNull);
+    expect(match.awayGoals, isNull);
+    expect(match.hasScore, false);
+  });
+
+  test('match server and playback expose opaque references only', () {
+    final server = MatchServer.fromJson({'ref': 'server:opaque', 'name': 'Web Server 1', 'type': 'm3u8'});
+    final playback = MatchPlayback.fromJson({'media_path': '/api/matches/media?id=opaque', 'media_type': 'm3u8', 'server_name': 'Web Server 1'});
+    expect(server.ref, startsWith('server:'));
+    expect(playback.mediaPath, startsWith('/api/matches/media?'));
   });
 }

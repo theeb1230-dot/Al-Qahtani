@@ -1,0 +1,18 @@
+name: Match score probe
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/live_match_score_probe.mjs'
+      - '.github/workflows/match-score-probe.yml'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/live_match_score_probe.mjs

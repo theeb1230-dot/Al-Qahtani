@@ -72,6 +72,8 @@ jobs:
               'Live provider smoke',
               'Original Basri download contract',
               'Original Basri player contract',
+              'Independent download resolution',
+              'Match runtime',
               'Remote CORS smoke',
               'CORS boundary',
               'Media reference expiry',

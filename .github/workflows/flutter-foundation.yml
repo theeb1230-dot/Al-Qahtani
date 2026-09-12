@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - 'flutter_app/**'
+      - 'scripts/apply_native_branding.py'
       - '.github/workflows/flutter-foundation.yml'
       - '.github/workflows/release-triplet.yml'
   push:
     branches: [main]
     paths:
       - 'flutter_app/**'
+      - 'scripts/apply_native_branding.py'
       - '.github/workflows/flutter-foundation.yml'
       - '.github/workflows/release-triplet.yml'
   workflow_dispatch:
@@ -29,6 +31,8 @@ jobs:
       - name: Create platform scaffolding without touching existing web
         working-directory: flutter_app
         run: flutter create --platforms=android,ios --org com.alqahtani --project-name al_qahtani .
+      - name: Apply approved native branding
+        run: python3 scripts/apply_native_branding.py flutter_app
       - name: Dependencies
         working-directory: flutter_app
         run: flutter pub get
@@ -64,10 +68,12 @@ jobs:
       - name: Create Android scaffold
         working-directory: flutter_app
         run: flutter create --platforms=android --org com.alqahtani --project-name al_qahtani .
+      - name: Apply approved native branding
+        run: python3 scripts/apply_native_branding.py flutter_app
       - name: Build mobile APK
         working-directory: flutter_app
         run: flutter build apk --release --dart-define=AL_QAHTANI_TARGET=mobile
-      - name: Verify mobile APK identity and signature
+      - name: Verify mobile APK identity, brand and signature
         env:
           EXPECTED_VERSION: ${{ steps.version.outputs.version }}
           EXPECTED_BUILD: ${{ steps.version.outputs.build }}
@@ -85,6 +91,9 @@ jobs:
           printf '%s\n' "$BADGING" | grep -q "package: name='com.alqahtani.al_qahtani'"
           printf '%s\n' "$BADGING" | grep -q "versionCode='$EXPECTED_BUILD'"
           printf '%s\n' "$BADGING" | grep -q "versionName='$EXPECTED_VERSION'"
+          printf '%s\n' "$BADGING" | grep -q "application-label-ar:'القحطاني'\|application-label:'القحطاني'"
+          test -s flutter_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          test -s flutter_app/android/app/src/main/res/drawable/launch_qaf.png
       - name: Stage mobile APK and checksum
         run: |
           cp flutter_app/build/app/outputs/flutter-apk/app-release.apk Al-Qahtani-Mobile.apk
@@ -119,6 +128,8 @@ jobs:
       - name: Create Android scaffold
         working-directory: flutter_app
         run: flutter create --platforms=android --org com.alqahtani --project-name al_qahtani .
+      - name: Apply approved native branding
+        run: python3 scripts/apply_native_branding.py flutter_app
       - name: Configure Android TV manifest
         shell: python
         run: |
@@ -133,8 +144,10 @@ jobs:
           grep -q 'LEANBACK_LAUNCHER' flutter_app/android/app/src/main/AndroidManifest.xml
           grep -q 'android.software.leanback.*true' flutter_app/android/app/src/main/AndroidManifest.xml
           grep -q 'android.hardware.touchscreen.*false' flutter_app/android/app/src/main/AndroidManifest.xml
+          grep -q 'android:label="القحطاني"' flutter_app/android/app/src/main/AndroidManifest.xml
           grep -q 'NavigationRail' flutter_app/lib/main.dart
           grep -q 'AL_QAHTANI_TARGET' flutter_app/lib/src/app_target.dart
+          test -s flutter_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
       - name: Build TV APK
         working-directory: flutter_app
         run: flutter build apk --release --dart-define=AL_QAHTANI_TARGET=tv
@@ -192,10 +205,12 @@ jobs:
       - name: Create iOS scaffold
         working-directory: flutter_app
         run: flutter create --platforms=ios --org com.alqahtani --project-name al_qahtani .
+      - name: Apply approved native branding
+        run: python3 scripts/apply_native_branding.py flutter_app
       - name: Build iOS without codesign
         working-directory: flutter_app
         run: flutter build ios --release --no-codesign --dart-define=AL_QAHTANI_TARGET=ios
-      - name: Verify iOS bundle is explicitly unsigned
+      - name: Verify iOS bundle is explicitly unsigned and branded
         env:
           EXPECTED_VERSION: ${{ steps.version.outputs.version }}
           EXPECTED_BUILD: ${{ steps.version.outputs.build }}
@@ -209,6 +224,8 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" = 'com.alqahtani.alQahtani'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" = "$EXPECTED_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")" = "$EXPECTED_BUILD"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")" = 'القحطاني'
+          test -s flutter_app/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png
       - name: Package UNSIGNED IPA and checksum
         run: |
           mkdir -p Payload

@@ -7,8 +7,14 @@ import 'src/app_target.dart';
 import 'src/details_page.dart';
 import 'src/download_library_section.dart';
 import 'src/library_store.dart';
+import 'src/match_player_page.dart';
 import 'src/models.dart';
 import 'src/news_page.dart';
+
+const _brandBg = Color(0xFF09090B);
+const _brandPanel = Color(0xFF151515);
+const _brandGold = Color(0xFFD8AA4F);
+const _brandGoldMuted = Color(0xFF9C783A);
 
 void main() => runApp(const AlQahtaniApp());
 
@@ -21,14 +27,46 @@ class _AlQahtaniAppState extends State<AlQahtaniApp> {
   late final Future<LocalLibraryStore> storeFuture = LocalLibraryStore.create();
   @override
   Widget build(BuildContext context) {
+    final base = ThemeData.dark(useMaterial3: true);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      title: 'القحطاني',
       locale: const Locale('ar'),
       supportedLocales: const [Locale('ar')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      theme: ThemeData.dark(useMaterial3: true).copyWith(
-        scaffoldBackgroundColor: const Color(0xFF07111F),
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF22D3EE), brightness: Brightness.dark),
+      theme: base.copyWith(
+        scaffoldBackgroundColor: _brandBg,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: _brandBg,
+          foregroundColor: Color(0xFFF7E7BE),
+          centerTitle: true,
+          elevation: 0,
+        ),
+        cardTheme: CardThemeData(
+          color: _brandPanel,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: const BorderSide(color: Color(0x335E4820)),
+          ),
+        ),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: _brandGold,
+          primary: _brandGold,
+          secondary: const Color(0xFFF1D38E),
+          surface: _brandPanel,
+          brightness: Brightness.dark,
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: const Color(0xFF121212),
+          indicatorColor: const Color(0x553D2E13),
+          iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
+                color: states.contains(WidgetState.selected) ? _brandGold : const Color(0xFFC7C7C7),
+              )),
+          labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+                color: states.contains(WidgetState.selected) ? const Color(0xFFF4DC9E) : const Color(0xFFD0D0D0),
+                fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
+              )),
+        ),
         visualDensity: isTvTarget ? VisualDensity.comfortable : VisualDensity.standard,
       ),
       home: Directionality(
@@ -36,7 +74,9 @@ class _AlQahtaniAppState extends State<AlQahtaniApp> {
         child: FutureBuilder<LocalLibraryStore>(
           future: storeFuture,
           builder: (context, snapshot) {
-            if (!snapshot.hasData) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            if (!snapshot.hasData) {
+              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            }
             return Shell(store: snapshot.data!);
           },
         ),
@@ -47,6 +87,19 @@ class _AlQahtaniAppState extends State<AlQahtaniApp> {
 
 void openDetails(BuildContext context, AlQahtaniApi api, LocalLibraryStore store, CatalogItem item) {
   Navigator.of(context).push(MaterialPageRoute(builder: (_) => DetailsPage(api: api, store: store, item: item)));
+}
+
+class _BrandTitle extends StatelessWidget {
+  const _BrandTitle();
+  @override
+  Widget build(BuildContext context) => const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('ق', style: TextStyle(color: _brandGold, fontSize: 30, fontWeight: FontWeight.w800, height: 1)),
+          SizedBox(width: 10),
+          Text('القحطاني', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: .2)),
+        ],
+      );
 }
 
 class Shell extends StatefulWidget {
@@ -63,7 +116,8 @@ class _ShellState extends State<Shell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      RuntimeHome(api: api), MatchesPage(api: api), NewsPage(api: api),
+      MatchesPage(api: api),
+      NewsPage(api: api),
       CatalogPage(api: api, store: widget.store, title: 'الأفلام', categoryId: 'movie-foreign'),
       CatalogPage(api: api, store: widget.store, title: 'المسلسلات', categoryId: 'series-foreign'),
       SearchPage(api: api, store: widget.store),
@@ -71,7 +125,7 @@ class _ShellState extends State<Shell> {
     ];
     final content = IndexedStack(index: index, children: pages);
     return Scaffold(
-      appBar: AppBar(title: Text(isTvTarget ? 'Al-Qahtani TV' : 'Al-Qahtani')),
+      appBar: AppBar(title: const _BrandTitle()),
       body: isTvTarget
           ? FocusTraversalGroup(child: Row(children: [
               _TvNavigation(selectedIndex: index, onSelected: (value) => setState(() => index = value)),
@@ -82,7 +136,6 @@ class _ShellState extends State<Shell> {
         selectedIndex: index,
         onDestinationSelected: (value) => setState(() => index = value),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'الرئيسية'),
           NavigationDestination(icon: Icon(Icons.sports_soccer), label: 'المباريات'),
           NavigationDestination(icon: Icon(Icons.newspaper_outlined), selectedIcon: Icon(Icons.newspaper), label: 'الأخبار'),
           NavigationDestination(icon: Icon(Icons.movie_outlined), label: 'الأفلام'),
@@ -100,31 +153,18 @@ class _TvNavigation extends StatelessWidget {
   final int selectedIndex; final ValueChanged<int> onSelected;
   @override
   Widget build(BuildContext context) => NavigationRail(
-    extended: true, minExtendedWidth: 190, selectedIndex: selectedIndex, onDestinationSelected: onSelected,
+    extended: true,
+    minExtendedWidth: 190,
+    backgroundColor: const Color(0xFF111111),
+    selectedIndex: selectedIndex,
+    onDestinationSelected: onSelected,
     destinations: const [
-      NavigationRailDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: Text('الرئيسية')),
       NavigationRailDestination(icon: Icon(Icons.sports_soccer), label: Text('المباريات')),
       NavigationRailDestination(icon: Icon(Icons.newspaper_outlined), selectedIcon: Icon(Icons.newspaper), label: Text('الأخبار')),
       NavigationRailDestination(icon: Icon(Icons.movie_outlined), label: Text('الأفلام')),
       NavigationRailDestination(icon: Icon(Icons.live_tv_outlined), label: Text('المسلسلات')),
       NavigationRailDestination(icon: Icon(Icons.search), label: Text('البحث')),
       NavigationRailDestination(icon: Icon(Icons.bookmark_outline), selectedIcon: Icon(Icons.bookmark), label: Text('مكتبتي')),
-    ],
-  );
-}
-
-class RuntimeHome extends StatelessWidget {
-  const RuntimeHome({super.key, required this.api}); final AlQahtaniApi api;
-  @override
-  Widget build(BuildContext context) => ListView(
-    padding: EdgeInsets.all(isTvTarget ? 28 : 16),
-    children: const [
-      Text('ذيب القحطاني', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-      SizedBox(height: 8),
-      Text('نسخة Flutter الجديدة متصلة بطبقة Al-Qahtani Runtime دون كشف مصادر البصري الأصلية.'),
-      SizedBox(height: 20),
-      _InfoCard(icon: Icons.shield_outlined, title: 'المصادر خلف الـAPI', body: 'التطبيق لا يتعامل مباشرة مع روابط المصادر الأصلية أو Workers أو session URLs.'),
-      _InfoCard(icon: Icons.all_inclusive, title: 'تصنيفات بلا حد ثابت', body: 'كل تصنيف يحمل 30 عنصرًا ثم الصفحة التالية تلقائيًا عند الاقتراب من النهاية.'),
     ],
   );
 }
@@ -138,10 +178,56 @@ String _matchStatusLabel(String status) {
   }
 }
 
-String _localizedMatchTime(String time) => time.replaceAll(RegExp(r'\bPM\b', caseSensitive: false), 'م').replaceAll(RegExp(r'\bAM\b', caseSensitive: false), 'ص');
+String _localizedMatchTime(String time) => time
+    .replaceAll(RegExp(r'\bPM\b', caseSensitive: false), 'م')
+    .replaceAll(RegExp(r'\bAM\b', caseSensitive: false), 'ص');
+
+class _TeamBadge extends StatelessWidget {
+  const _TeamBadge({required this.name, required this.logo});
+  final String name;
+  final String logo;
+  @override
+  Widget build(BuildContext context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: isTvTarget ? 82 : 62,
+            height: isTvTarget ? 82 : 62,
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF1C1C1C),
+              border: Border.all(color: const Color(0x335E4820)),
+            ),
+            child: logo.isEmpty
+                ? const Icon(Icons.shield_outlined, color: _brandGoldMuted)
+                : Image.network(
+                    logo,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.shield_outlined, color: _brandGoldMuted),
+                  ),
+          ),
+          const SizedBox(height: 7),
+          Text(name, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
+        ],
+      );
+}
 
 class MatchesPage extends StatelessWidget {
   const MatchesPage({super.key, required this.api}); final AlQahtaniApi api;
+
+  void _open(BuildContext context, MatchItem match) {
+    if (match.status == 'ended') {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('المباراة انتهت ولا يوجد بث مباشر الآن.')));
+      return;
+    }
+    if (match.ref.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('مرجع تشغيل المباراة غير متاح حاليًا.')));
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => MatchPlayerPage(api: api, match: match)));
+  }
+
   @override
   Widget build(BuildContext context) => FutureBuilder<List<MatchItem>>(
     future: api.matches(),
@@ -151,16 +237,46 @@ class MatchesPage extends StatelessWidget {
       final items = snapshot.data ?? const [];
       if (items.isEmpty) return const _ErrorState('لا توجد مباريات متاحة الآن');
       return ListView.builder(
-        padding: EdgeInsets.all(isTvTarget ? 24 : 12), itemCount: items.length,
+        padding: EdgeInsets.all(isTvTarget ? 24 : 12),
+        itemCount: items.length,
         itemBuilder: (context, i) {
           final m = items[i];
           final time = _localizedMatchTime(m.time);
           final status = _matchStatusLabel(m.status);
-          return Card(child: ListTile(
-            onTap: () {},
-            title: Text('${m.home} × ${m.away}'),
-            subtitle: Text([if (time.isNotEmpty) time, if (status.isNotEmpty) status].join(' • ')),
-          ));
+          final score = m.hasScore ? '${m.homeGoals} - ${m.awayGoals}' : null;
+          final center = m.status == 'scheduled'
+              ? (time.isEmpty ? 'موعد غير متاح' : time)
+              : (score ?? 'النتيجة غير متاحة');
+          return Card(
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => _open(context, m),
+              canRequestFocus: true,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: isTvTarget ? 24 : 14, vertical: isTvTarget ? 22 : 16),
+                child: Row(
+                  children: [
+                    Expanded(child: _TeamBadge(name: m.home, logo: m.homeLogo)),
+                    SizedBox(
+                      width: isTvTarget ? 180 : 110,
+                      child: Column(
+                        children: [
+                          Text(status, style: TextStyle(color: m.status == 'live' ? Colors.redAccent : const Color(0xFFBEB7A7))),
+                          const SizedBox(height: 8),
+                          Text(center, style: TextStyle(fontSize: isTvTarget ? 28 : 20, fontWeight: FontWeight.w800)),
+                          if (m.competition.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(m.competition, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF9E9686), fontSize: 12)),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Expanded(child: _TeamBadge(name: m.away, logo: m.awayLogo)),
+                  ],
+                ),
+              ),
+            ),
+          );
         },
       );
     },
@@ -206,19 +322,43 @@ class _CatalogPageState extends State<CatalogPage> {
       itemBuilder: (context, i) {
         if (i == items.length) return Center(child: loading ? const CircularProgressIndicator() : Text(error ?? (done ? 'تم عرض كل الأعمال المتاحة' : '')));
         final item = items[i];
-        return Card(
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => openDetails(context, widget.api, widget.store, item), canRequestFocus: true,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Expanded(child: item.poster.isEmpty ? const ColoredBox(color: Color(0xFF132238)) : Image.network(item.poster, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFF132238)))),
-              Padding(padding: EdgeInsets.all(isTvTarget ? 12 : 8), child: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis)),
-            ]),
-          ),
-        );
+        return _CatalogCard(item: item, onTap: () => openDetails(context, widget.api, widget.store, item));
       },
     ),
   );
+}
+
+class _CatalogCard extends StatelessWidget {
+  const _CatalogCard({required this.item, required this.onTap});
+  final CatalogItem item;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          canRequestFocus: true,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(
+              child: item.poster.isEmpty
+                  ? const ColoredBox(color: Color(0xFF1A1A1A), child: Center(child: Icon(Icons.movie_outlined, color: _brandGoldMuted, size: 42)))
+                  : Image.network(
+                      item.poster,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFF1A1A1A), child: Center(child: Icon(Icons.broken_image_outlined, color: _brandGoldMuted, size: 38))),
+                    ),
+            ),
+            Padding(
+              padding: EdgeInsets.all(isTvTarget ? 12 : 8),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 3),
+                Text([item.type == 'movie' ? 'فيلم' : 'مسلسل', if (item.year != null) '${item.year}'].join(' • '), style: const TextStyle(color: Color(0xFFB0A998), fontSize: 12)),
+              ]),
+            ),
+          ]),
+        ),
+      );
 }
 
 class SearchPage extends StatefulWidget {
@@ -285,7 +425,7 @@ class _SearchPageState extends State<SearchPage> {
         ),
       ),
       if (loading) const LinearProgressIndicator(),
-      const SizedBox(height: 8),
+      const SizedBox(height: 10),
       Expanded(
         child: error != null
             ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -297,12 +437,17 @@ class _SearchPageState extends State<SearchPage> {
                 ? const Center(child: Text('لا توجد نتائج لهذا البحث حاليًا'))
                 : !submitted
                     ? const Center(child: Text('اكتب اسم فيلم أو مسلسل للبحث'))
-                    : ListView.builder(
+                    : GridView.builder(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: isTvTarget ? 5 : 2,
+                          childAspectRatio: isTvTarget ? .68 : .62,
+                          crossAxisSpacing: isTvTarget ? 18 : 10,
+                          mainAxisSpacing: isTvTarget ? 18 : 10,
+                        ),
                         itemCount: items.length,
-                        itemBuilder: (context, i) => ListTile(
+                        itemBuilder: (context, i) => _CatalogCard(
+                          item: items[i],
                           onTap: () => openDetails(context, widget.api, widget.store, items[i]),
-                          title: Text(items[i].title),
-                          subtitle: Text(items[i].type == 'movie' ? 'فيلم' : 'مسلسل'),
                         ),
                       ),
       ),
@@ -359,13 +504,6 @@ class LibraryPage extends StatelessWidget {
   );
 }
 
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.icon, required this.title, required this.body}); final IconData icon; final String title; final String body;
-  @override Widget build(BuildContext context) => Card(child: Padding(
-    padding: EdgeInsets.all(isTvTarget ? 22 : 16),
-    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 4), Text(body)]))]),
-  ));
-}
 class _ErrorState extends StatelessWidget {
   const _ErrorState(this.message); final String message;
   @override Widget build(BuildContext context) => Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(message, textAlign: TextAlign.center)));

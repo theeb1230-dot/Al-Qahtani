@@ -9,7 +9,7 @@ import {
   buildRuntimeEnvelope,
 } from "../server/content-runtime.mjs";
 
-assert.equal(PRODUCT_VERSION, "1.0.1");
+assert.equal(PRODUCT_VERSION, "1.0.13");
 
 const cache = new TtlCache({ maxEntries: 2 });
 cache.set("matches", { ok: true }, 1000, 10_000);
@@ -48,21 +48,66 @@ assert.equal(episode.watch_available, true);
 
 const match = normalizeMatch({
   id: "m1",
-  team1: { name: "راسينج سانتاندير", logo: "logo1.png", goals: "1" },
-  team2: { name: "ألافيس", image: "logo2.png", goals: 0 },
+  team1: { name: "راسينج سانتاندير", logo: "logo1.png", goals: "2" },
+  team2: { name: "ألافيس", image: "logo2.png", goals: 1 },
   time: "03:00",
-  priority: 1,
+  priority: 3,
   competition: "لا ليغا",
   channel: "beIN Sports",
+  link: "match-ref",
 });
-assert.equal(match.status, "live");
-assert.equal(match.team1.goals, 1);
+assert.equal(match.status, "ended");
+assert.equal(match.team1.goals, 2);
+assert.equal(match.team2.goals, 1);
 assert.equal(match.team2.logo, "logo2.png");
 assert.equal(match.competition, "لا ليغا");
+assert.equal(match.ref, "match-ref");
+
+const absentScore = normalizeMatch({
+  id: "m2",
+  team1: { name: "فريق أ", goals: "" },
+  team2: { name: "فريق ب" },
+  priority: 3,
+});
+assert.equal(absentScore.team1.goals, null);
+assert.equal(absentScore.team2.goals, null);
+
+const placeholderEndedScore = normalizeMatch({
+  id: "m-placeholder",
+  team1: { name: "راسينج سانتاندير", goals: "0" },
+  team2: { name: "ألافيس", goals: "0" },
+  status: "انتهت",
+  priority: 3,
+});
+assert.equal(placeholderEndedScore.status, "ended");
+assert.equal(placeholderEndedScore.team1.goals, null);
+assert.equal(placeholderEndedScore.team2.goals, null);
+
+const topLevelScore = normalizeMatch({
+  id: "m3",
+  team1: { name: "الزمالك" },
+  team2: { name: "إيه إس بورت" },
+  home_score: "2",
+  away_score: "0",
+  priority: 1,
+});
+assert.equal(topLevelScore.status, "live");
+assert.equal(topLevelScore.team1.goals, 2);
+assert.equal(topLevelScore.team2.goals, 0);
+
+const liveZeroScore = normalizeMatch({
+  id: "m4",
+  team1: { name: "فريق حي 1", goals: "0" },
+  team2: { name: "فريق حي 2", goals: "0" },
+  status: "live",
+  priority: 1,
+});
+assert.equal(liveZeroScore.team1.goals, 0);
+assert.equal(liveZeroScore.team2.goals, 0);
 
 const envelope = buildRuntimeEnvelope({ kind: "matches", data: [match], source: "basri-original", health: health.summary(3000), generatedAt: 0 });
 assert.equal(envelope.status, "success");
-assert.equal(envelope.version, "1.0.1");
+assert.equal(envelope.version, "1.0.13");
 assert.equal(envelope.generated_at, "1970-01-01T00:00:00.000Z");
 assert.equal(envelope.data.length, 1);
 assert.equal(envelope.source, "basri-original");
