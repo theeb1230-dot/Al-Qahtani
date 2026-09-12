@@ -51,6 +51,17 @@ async function liveServerState() {
   return { available: false, liveCount: liveIndexes.length };
 }
 
+async function fetchPlayableMedia(url) {
+  const originHeaders = { Origin: 'https://theeb1230-dot.github.io' };
+  let response = await fetch(url, {
+    headers: { ...originHeaders, Range: 'bytes=0-4095' },
+  });
+  if (response.status === 400 || response.status === 416) {
+    response = await fetch(url, { headers: originHeaders });
+  }
+  return response;
+}
+
 try {
   await waitForHealth();
   const matchesRes = await fetch(base + '/api/v1/matches');
@@ -105,9 +116,8 @@ try {
     const playSerialized = JSON.stringify(play);
     if (/https?:\/\//i.test(playSerialized) || /workers\.dev/i.test(playSerialized)) throw new Error('MATCH_PLAYBACK_LEAKED_UPSTREAM_URL');
 
-    const mediaRes = await fetch(new URL(play.data.media_path, base), {
-      headers: { Origin: 'https://theeb1230-dot.github.io', Range: 'bytes=0-4095' },
-    });
+    const mediaUrl = new URL(play.data.media_path, base);
+    const mediaRes = await fetchPlayableMedia(mediaUrl);
     const mediaType = (mediaRes.headers.get('content-type') || '').toLowerCase();
     const mediaBytes = new Uint8Array(await mediaRes.arrayBuffer());
     if (!mediaRes.ok || !mediaBytes.length || mediaType.includes('application/json')) {
