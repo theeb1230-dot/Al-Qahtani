@@ -1,120 +1,121 @@
 # Autonomous Development State
 
 ## Source of truth
-GitHub is authoritative when this file disagrees with the repository. The preserved original `albasritv.github.io-main.zip` archive remains the behavioral baseline. Live deployment evidence is required before claiming Web/PWA parity.
+GitHub is authoritative when this file disagrees with the repository. The preserved original `albasritv.github.io-main.zip` archive remains the behavioral baseline. Live deployment and artifact evidence are required before claiming parity or release readiness.
 
 ## Current state
-- Main: `c11147a6a65ae72726c6be261f5da874f3e24513` (`Hide cinema source URLs behind category IDs`).
-- PR #60 merged after all 11 exact-head pull-request workflows passed. It moved browser category navigation to stable product IDs while keeping the Basri source URL mapping server-side.
-- Active PR: #61 `Add resilient unified home runtime contract`.
-- Branch: `feat/runtime-home-61`.
-- Code head before this documentation commit: `2335ed8dd3b0a3d51a6e1c4d334ad9b217bd5cdd`.
-- Target: Web/PWA `1.0.1`.
-- Flutter remains blocked until Web/PWA 1.0.1 is proven live across every required release gate.
+- Main: `d0e258015770045bbfb0f8aef017e49ecedc1788` (`Add resilient unified home runtime contract`).
+- PR #61 merged after all 11 exact-head pull-request workflows passed.
+- Active PR: #62 `Start Flutter multi-platform foundation`.
+- Branch: `feat/flutter-foundation-62`.
+- Flutter product version: `1.0.1+1`.
+- Web/PWA remains preserved on GitHub Pages; main Pages run `34667237764` completed successfully for `d0e258...`.
 
 ## Product boundary
-Al-Qahtani is fully independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and all Theeb-specific APIs/providers. `https://akwam.ss/...` is allowed only as part of the preserved original Basri source contract. No Theeb fallback or cross-project runtime dependency is allowed.
+Al-Qahtani is fully independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and all Theeb-specific APIs/providers. `https://akwam.ss/...` is allowed only as part of the preserved original Basri source contract. Flutter consumes Al-Qahtani runtime contracts only and does not implement scraping or expose upstream hosts itself.
 
-## Protected live behavior
-Real iPhone Safari testing has already proven playback across multiple movie/series/anime samples after the MPEG-TS/HLS path. Safari Range/206, MIME/magic container detection, opaque media references, explicit Download behavior, measured-duration logic, real match logos, Saudi match times, separated episode display numbering, and the current direct/worker Basri fallback chain remain protected regressions.
+## Protected Web behavior
+The current web remains the production fallback and stays on GitHub Pages. Protected regressions include iPhone Safari playback, Range/206, MPEG-TS/HLS handling, measured duration, real match logos, Saudi match times, separated episode display numbering, endless 30-item category pagination, explicit Download behavior, CORS, SSRF/allowlists, no ads/popups/unneeded tracking, and no legacy Android Intent/deep-link handoff.
 
-## 1.0.1 Phase 1 progress merged to main
-- `server/content-runtime.mjs`: product version `1.0.1`, bounded TTL cache, provider-health/circuit primitives and normalization helpers.
-- `server/content-runtime-service.mjs`: normalized matches/search/category service, bounded metadata cache and health accounting.
-- additive runtime HTTP contracts currently merged: `/api/runtime/status`, `/api/v1/matches`, `/api/v1/search?q=...`, `/api/v1/category?ref=...&p=...`.
-- deployed runtime contract smoke covers version, matches, Arabic/English search semantics, category, cache and sanitized health.
-- endless movie/series category pagination: page 1 then page 2+ when the viewport reaches the tail, no fixed page count, stale-response rejection, concurrency guard and deduplication.
-- category navigation now uses opaque IDs such as `series-foreign` and `movie-anime`; original `akwam.ss` category mappings remain backend-only except temporary server-side legacy compatibility.
+## Runtime foundation merged
+- normalized `/api/v1/matches`, `/api/v1/search`, `/api/v1/category` contracts;
+- product-level category IDs with server-side Basri mappings;
+- endless category pagination on web;
+- provider health/cache primitives;
+- unified bounded home aggregation service merged in PR #61 with partial-failure isolation and catalog concurrency capped at 2.
 
-## PR #61 — unified home runtime aggregation
-Goal: create the next additive runtime layer for a modern 1.0.1 home screen without coupling the browser to Workers or original source URLs.
+## PR #62 — Flutter foundation
+Implemented without deleting or replacing the web root:
+- `flutter_app/pubspec.yaml`, Arabic localization, tests and lints;
+- Arabic RTL Material 3 shell and mobile bottom navigation;
+- initial Home, Matches, Movies, Series and Search screens;
+- runtime-only client for `https://al-qahtani-api.onrender.com` using `/api/v1/matches`, `/api/v1/category`, `/api/v1/search`;
+- normalized Flutter models with opaque/product refs separate from display fields;
+- category infinite scroll with 30-item pages, dedup, loading guard, mounted/stale safety and pull-to-refresh;
+- unit/model regressions plus a committed root-widget regression so `flutter create` cannot regenerate the obsolete `MyApp` smoke test;
+- `.github/workflows/flutter-foundation.yml` with analyze/test, Android Mobile APK, Android TV APK, and iOS UNSIGNED IPA jobs.
 
-Implemented on the active branch:
-- `contentRuntime.home()` aggregates matches plus four bounded catalog sections: foreign/Arabic series and foreign/Arabic movies;
-- matches are capped to 12 items and each catalog section to 8 items;
-- catalog section fan-out uses bounded concurrency of 2;
-- one failed dependency returns a partial home envelope instead of collapsing the entire response;
-- the result uses the existing normalized runtime items and existing short TTL caches rather than inventing a parallel cache;
-- per-section cache evidence is preserved and already-cached category data is reused;
-- no new upstream/source URL is exposed to the browser and no Theeb/akwam-indexer dependency is introduced.
+### Failure found and fixed
+Flutter foundation run `34667369427` on head `26f44665...` initially failed only in `analyze-test`: `flutter create` generated `test/widget_test.dart` referencing nonexistent `MyApp`. The branch now owns a valid `widget_test.dart` referencing `AlQahtaniApp`; the fresh run on head `f624c2b1...` passed analyze and tests.
 
-### CI failures found and fixed on PR #61
-1. Head `2fa7f3968635826e96dbd06e446e8ea5041257a9`, Content runtime run `34667052357`, job `103480973615` failed because the new test expected four fresh category fetches. The runtime correctly reused an already-cached `movie-arabic` page, so the test was wrong. The regression now explicitly requires that cache reuse.
-2. Head `d16c41533ea262a91d9ad7a607b404690c615dca`, Content runtime run `34667109720`, job `103481143732` failed because the partial-failure fixture targeted nonexistent `section=34`; therefore no home section actually failed. The fixture now targets the real `series-arabic` source URL (`series?section=29`).
-3. Head `2335ed8dd3b0a3d51a6e1c4d334ad9b217bd5cdd`, Content runtime run `34667142277`, job `103481239816` completed successfully, proving home aggregation, cache reuse, partial response behavior and concurrency bound.
+### Proven artifact evidence before verification hardening
+Flutter foundation run `34667474077` on exact head `f624c2b154031e1b20d85c04a85eebcf7a3c249c` completed successfully across all four jobs:
+- `analyze-test`: success;
+- `android-mobile`: success;
+- `android-tv`: success, including LEANBACK/touchscreen source-manifest checks;
+- `ios-unsigned`: success using `flutter build ios --release --no-codesign`.
 
-## PR #61 current gate evidence before this documentation commit
-For head `2335ed8dd3b0a3d51a6e1c4d334ad9b217bd5cdd`:
-- Content runtime `34667142277`: success.
-- Web smoke `34667142249`: success.
-- CORS boundary `34667142315`: success.
-- Trusted download filename `34667142295`: success.
-- Original Basri player contract `34667142254`: success.
-- Original Basri download contract `34667142251`: success.
-- Remote CORS smoke `34667142275`: success.
-- Media reference expiry `34667142282`: success.
-- Mobile WebKit, Remote movie playback and Live provider smoke were still running when this state snapshot was written.
-- this documentation commit moves the PR head, therefore a fresh exact-head green set is mandatory before merge.
+Artifacts from that same commit/version were present and non-empty:
+- `Al-Qahtani-Mobile-APK`, artifact `10289254352`, archive size 23,503,456 bytes;
+- `Al-Qahtani-TV-APK`, artifact `10289334422`, archive size 23,503,554 bytes;
+- `Al-Qahtani-iOS-UNSIGNED-IPA`, artifact `10289668661`, archive size 7,019,359 bytes.
 
-## Render evidence / blocker
-The connected Render account exposes two workspaces, `My Workspace` and `بيانات`. Repository evidence still does not prove which workspace owns Al-Qahtani. Do not guess direct Render logs. External deployed HTTP and GitHub Actions runtime evidence remain authoritative until workspace ownership is proven.
+Downloaded payload inspection also proved inner files were non-empty: Mobile APK 50,673,262 bytes, TV APK 50,673,370 bytes, IPA 7,042,066 bytes. The IPA contains `Payload/Runner.app`, bundle `com.alqahtani.alQahtani`, version `1.0.1`, build `1`, no `embedded.mobileprovision`, and no app-level `_CodeSignature` directory. It is therefore intentionally UNSIGNED and is not claimed directly installable without external signing/provisioning.
 
-## Security/runtime invariants
-- Search/Category → Details → Episodes → Watch/Download → Media remains intact.
-- Runtime migration stays additive until live parity proves replacements safe.
-- The browser must not become an arbitrary upstream fetcher.
-- UI category navigation uses product IDs, not Basri category URLs.
-- Source/media allowlists and SSRF/DNS/host protections stay mandatory.
-- Upstream media URLs remain behind short-lived opaque references.
-- Worker/session material remains server-side.
-- Referer values remain ASCII/URL-safe.
-- Metadata cache never caches video streams, media references, sessions or Download responses.
-- Normal playback never inherits upstream attachment semantics; explicit Download keeps trusted attachment behavior.
-- Ads/popups/unneeded tracking and legacy Android Intent/deep-link handoff remain prohibited.
+### Verification hardening now pending on the final PR head
+The workflow has been strengthened further so the next exact-head run must fail closed unless:
+- Android APKs are non-empty and pass `apksigner verify`;
+- applicationId is `com.alqahtani.al_qahtani`, versionName is `1.0.1`, versionCode is `1`;
+- TV packaged metadata contains LEANBACK/touchscreen requirements;
+- APK SHA-256 sidecars are emitted;
+- iOS bundle/version/build are exact, `embedded.mobileprovision` and app-level `_CodeSignature` are absent;
+- IPA SHA-256 sidecar is emitted.
+This hardening commit moves the PR head, so the entire exact-head matrix must pass again before merge.
 
-## 1.0.1 readiness
-Current readiness: **Phase 1 matches/search/category runtime + endless category UX + category IDs are merged; unified home service is in PR #61; NOT release ready.**
+## Release policy for Flutter
+Required triplet from the same commit/version:
+1. `Al-Qahtani-Mobile.apk`
+2. `Al-Qahtani-TV.apk`
+3. `Al-Qahtani-UNSIGNED.ipa`
 
-Still required before `1.0.1` can be called ready: close #61 with final-head green gates and deployed proof; expose and prove the home HTTP contract; unified title/episodes/play contracts; production health/circuit decisions; full mobile-first RTL UI; live matches UX; Player 2.0 history/favorites/continue-watching; unified search/library UX; installable PWA; diagnostics/observability; and the complete Safari/security/live release matrix.
+AAB is not a substitute. Do not publish a GitHub Release until all three artifacts succeed from the same main commit/version, SHA-256 is recorded, Android identity/signature and TV requirements are verified, and iOS Payload/bundle/version/no-codesign state is validated. IPA remains explicitly UNSIGNED/no-codesign.
+
+## Current blockers / gaps
+- PR #62 still requires the fresh exact-head CI after artifact-verification hardening.
+- Flutter details/episodes/play/download are not implemented yet.
+- Native playback for MP4/HLS/MPEG-TS is not implemented yet.
+- TV has build/manifest separation but not yet a complete TV-specific Focus/D-Pad UX test suite.
+- Favorites/history/continue-watching are not implemented yet.
+- No Flutter GitHub Release has been published yet.
 
 ## أهداف التشغيل التالي
-1. **إغلاق PR #61 بأمان.**
-   - انتظار جميع checks على الرأس النهائي بعد تحديث هذه الوثيقة.
-   - جلب logs لأي failure وإصلاح السبب على نفس الفرع فقط.
-   - الدمج فقط بعد نجاح كل البوابات المطلوبة.
-2. **إثبات PR #61 بعد الدمج.**
-   - انتظار GitHub Pages وbackend evidence لنفس main commit قدر ما تسمح الأدوات.
-   - تشغيل regressions الحالية للمباريات والسينما وSafari للتأكد أن aggregation لم يكسر المسارات القديمة.
-   - تسجيل أي عائق نشر خارجي بدل افتراض نجاحه.
-3. **تعريض عقد Home عبر HTTP بشكل additive.**
-   - إضافة `/api/v1/home` إلى `server/app.mjs`.
-   - إضافة route regression يثبت `kind=home`, partial semantics و`Cache-Control: no-store`.
-   - إضافة deployed smoke للعقد بعد دمجه.
-4. **إنشاء عقد title/details موحد.**
-   - استخدام opaque refs بدل upstream URLs في الواجهة.
-   - تطبيع poster/title/type/year والحقول المتاحة فقط.
-   - إبقاء `/api/cinema/details` كمسار توافق حتى تثبت النسخة الجديدة حيًا.
-5. **إنشاء عقد episodes موحد.**
-   - فصل `episode_id` عن `episode_number` صراحة.
-   - الحفاظ على ordering والموسم إن توفر وعدم عرض IDs الداخلية كأرقام حلقات.
-   - توسيع regression على الفئات الست للمسلسلات.
-6. **إنشاء عقد play موحد وآمن.**
-   - الإبقاء على media refs opaque وقصيرة العمر.
-   - تصنيف MP4/HLS/MPEG-TS قبل العرض وترتيب المصادر حسب التوافق.
-   - عدم كسر Range/206/measured duration/Download.
-7. **ربط health/circuit-breaker بطلبات production تدريجيًا.**
-   - cooldown + recovery probe bounded.
-   - latency/failure accounting بلا secrets أو upstream URLs.
-   - منع retry storms وإعادة المحاولات غير المفيدة.
-8. **بدء هيكل واجهة 1.0.1 Mobile-first بعد العقود الأساسية.**
-   - Bottom Navigation RTL على الجوال وresponsive header للشاشات الكبيرة.
-   - Skeleton/empty/error/retry states واضحة.
-   - إبقاء واجهة البصري الحالية كمسار رجوع حتى تثبت الواجهة الجديدة حيًا.
-9. **توسيع regression الحي وإغلاق فجوات UX.**
-   - WebKit/playback/Range/CORS/Download/matches/news تبقى إلزامية.
-   - اختبار pagination page 2+ فعليًا حيث المصدر يقدم أكثر من صفحة.
-   - استمرار SSRF/allowlist/secrets/Referer/download-only guards.
-10. **تهيئة PWA وDiagnostics والبوابة النهائية للإصدار.**
-   - manifest/service worker للـstatic shell والmetadata فقط دون video/media-ref caching.
-   - diagnostics منقحة تعرض version/commit/readiness/health بلا أسرار.
-   - عدم إنشاء Tag/Release `1.0.1` وعدم بدء Flutter قبل اكتمال كل البوابات الحية.
+1. **إغلاق PR #62 بأمان.**
+   - انتظار كل exact-head web/backend وFlutter checks بعد verification hardening.
+   - إصلاح أي failure من logs على نفس الفرع فقط.
+   - الدمج فقط بعد الخضرة الكاملة.
+2. **إثبات triplet بعد الدمج على main.**
+   - تشغيل Mobile APK وTV APK وIPA UNSIGNED من main نفسه.
+   - التحقق من SHA-256 والهوية/النسخة والبنية.
+   - عدم نشر Release إذا غاب أصل واحد.
+3. **إضافة TV runtime mode حقيقي.**
+   - كشف target=tv داخل Flutter.
+   - واجهة TV مخصصة ومسافات/focus مناسبة.
+   - اختبارات D-Pad/Focus traversal.
+4. **إنشاء عقود Flutter للتفاصيل والحلقات.**
+   - استخدام Al-Qahtani API فقط.
+   - فصل `episode_id` عن `episode_number`.
+   - إضافة ordering/numbering tests.
+5. **إضافة مسار التفاصيل والتنقل.**
+   - Poster/title/type/year/episodes/actions.
+   - حالات loading/empty/error/retry عربية.
+   - حفظ حالة القائمة عند الرجوع.
+6. **إنشاء مسار المشاهدة الأصلي.**
+   - opaque media refs فقط.
+   - MP4/HLS ثم MPEG-TS وفق توافق المنصة.
+   - الحفاظ على Range/206 وDownload semantics.
+7. **إضافة التحميل الآمن.**
+   - استخدام endpoint التحميل الحالي بلا upstream URLs.
+   - filename موثوق وحالات تقدم/فشل واضحة.
+   - اختبارات عدم تسريب source URLs.
+8. **إضافة التخزين المحلي.**
+   - مفضلة، History، Continue Watching.
+   - حفظ position دون تخزين media refs منتهية.
+   - migration/versioning بسيط للتخزين.
+9. **الحفاظ على الويب حيًا.**
+   - GitHub Pages يبقى كما هو.
+   - WebKit/CORS/Range/Download regressions تظل بوابات دمج.
+   - لا Flutter Web replacement قبل parity فعلية.
+10. **تهيئة GitHub Release الثلاثي.**
+   - fail-closed release workflow بعد اكتمال الوظائف الأساسية.
+   - SHA256SUMS + provenance/manifest + notes.
+   - نشر APK Mobile + APK TV + IPA UNSIGNED فقط من نفس commit/version.
