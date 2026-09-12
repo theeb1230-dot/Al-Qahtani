@@ -32,7 +32,7 @@ function pageItems(pageNumber) {
     const n = ((pageNumber - 1) * 30) + index + 1;
     return {
       title: `عمل ${n}`,
-      image: poster,
+      poster,
       type: "series",
       ref: `legacy:${encodeURIComponent(`https://akwam.ss/series/infinite-${n}`)}`,
     };
