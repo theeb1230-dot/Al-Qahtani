@@ -32,9 +32,9 @@ function pageItems(pageNumber) {
     const n = ((pageNumber - 1) * 30) + index + 1;
     return {
       title: `عمل ${n}`,
-      img: poster,
-      is_series: true,
-      href: `legacy:${encodeURIComponent(`https://akwam.ss/series/infinite-${n}`)}`,
+      poster,
+      type: "series",
+      ref: `legacy:${encodeURIComponent(`https://akwam.ss/series/infinite-${n}`)}`,
     };
   });
 }
@@ -46,16 +46,18 @@ try {
   const context = await browser.newContext({ ...devices["iPhone 13"] });
   const page = await context.newPage();
   const requestedPages = [];
+  const requestedRefs = [];
 
   await page.route(`${BACKEND}/**`, async route => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/cinema/category") {
+    if (url.pathname === "/api/v1/category") {
       const p = Math.max(1, Number(url.searchParams.get("p") || 1));
       requestedPages.push(p);
+      requestedRefs.push(url.searchParams.get("ref") || "");
       return route.fulfill({
         status: 200,
         contentType: "application/json; charset=utf-8",
-        body: JSON.stringify({ status: "success", source: "basri-direct", data: pageItems(p) }),
+        body: JSON.stringify({ status: "success", version: "1.0.1", kind: "category", source: "basri-direct", data: pageItems(p) }),
       });
     }
     return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ status: "error" }) });
@@ -66,11 +68,13 @@ try {
   await page.waitForFunction(() => document.querySelectorAll("#mediaGrid .item").length === 30);
   assert(await page.locator("#mediaGrid .item").count() === 30, "first category batch renders exactly 30 items");
   assert(requestedPages[0] === 1, "first category request uses page 1", { requestedPages });
+  assert(requestedRefs[0] === "series-foreign", "browser sends opaque category ID instead of upstream URL", { requestedRefs });
 
   await page.locator("#categoryLoadState").scrollIntoViewIfNeeded();
   await page.waitForFunction(() => document.querySelectorAll("#mediaGrid .item").length >= 60);
   assert(await page.locator("#mediaGrid .item").count() === 60, "reaching item 30 appends the next 30 items");
   assert(requestedPages.includes(2), "infinite scroll requests page 2", { requestedPages });
+  assert(requestedRefs.every(ref => ref === "series-foreign"), "all infinite-scroll requests keep the same opaque category ID", { requestedRefs });
 
   const titles = await page.locator("#mediaGrid .item b").allTextContents();
   assert(new Set(titles).size === titles.length, "appended category cards contain no duplicates", { count: titles.length });
