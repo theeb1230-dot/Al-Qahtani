@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'src/api_client.dart';
@@ -127,6 +129,17 @@ class RuntimeHome extends StatelessWidget {
   );
 }
 
+String _matchStatusLabel(String status) {
+  switch (status.trim().toLowerCase()) {
+    case 'live': return 'جاري الآن';
+    case 'ended': return 'انتهت';
+    case 'scheduled': return 'لم تبدأ';
+    default: return status;
+  }
+}
+
+String _localizedMatchTime(String time) => time.replaceAll(RegExp(r'\bPM\b', caseSensitive: false), 'م').replaceAll(RegExp(r'\bAM\b', caseSensitive: false), 'ص');
+
 class MatchesPage extends StatelessWidget {
   const MatchesPage({super.key, required this.api}); final AlQahtaniApi api;
   @override
@@ -139,7 +152,16 @@ class MatchesPage extends StatelessWidget {
       if (items.isEmpty) return const _ErrorState('لا توجد مباريات متاحة الآن');
       return ListView.builder(
         padding: EdgeInsets.all(isTvTarget ? 24 : 12), itemCount: items.length,
-        itemBuilder: (context, i) { final m = items[i]; return Card(child: ListTile(onTap: () {}, title: Text('${m.home} × ${m.away}'), subtitle: Text('${m.time} • ${m.status}'))); },
+        itemBuilder: (context, i) {
+          final m = items[i];
+          final time = _localizedMatchTime(m.time);
+          final status = _matchStatusLabel(m.status);
+          return Card(child: ListTile(
+            onTap: () {},
+            title: Text('${m.home} × ${m.away}'),
+            subtitle: Text([if (time.isNotEmpty) time, if (status.isNotEmpty) status].join(' • ')),
+          ));
+        },
       );
     },
   );
@@ -203,21 +225,87 @@ class SearchPage extends StatefulWidget {
   const SearchPage({super.key, required this.api, required this.store}); final AlQahtaniApi api; final LocalLibraryStore store;
   @override State<SearchPage> createState() => _SearchPageState();
 }
+
 class _SearchPageState extends State<SearchPage> {
-  final query = TextEditingController(); List<CatalogItem> items = const []; bool loading = false;
-  @override void dispose() { query.dispose(); super.dispose(); }
-  Future<void> run() async {
-    final q = query.text.trim(); if (q.isEmpty) return; setState(() => loading = true);
-    try { final result = await widget.api.search(q); if (mounted) setState(() => items = result); }
-    finally { if (mounted) setState(() => loading = false); }
+  final query = TextEditingController();
+  List<CatalogItem> items = const [];
+  bool loading = false;
+  bool submitted = false;
+  String? error;
+  Timer? debounce;
+  int generation = 0;
+
+  @override
+  void dispose() {
+    generation += 1;
+    debounce?.cancel();
+    query.dispose();
+    super.dispose();
   }
+
+  void onQueryChanged(String value) {
+    debounce?.cancel();
+    final q = value.trim();
+    if (q.isEmpty) {
+      generation += 1;
+      setState(() { items = const []; loading = false; submitted = false; error = null; });
+      return;
+    }
+    if (q.length < 2) return;
+    debounce = Timer(const Duration(milliseconds: 450), () => run(q));
+  }
+
+  Future<void> run([String? requested]) async {
+    final q = (requested ?? query.text).trim();
+    if (q.isEmpty) return;
+    final request = ++generation;
+    setState(() { loading = true; submitted = true; error = null; });
+    try {
+      final result = await widget.api.search(q);
+      if (!mounted || request != generation || q != query.text.trim()) return;
+      setState(() { items = result; loading = false; });
+    } catch (_) {
+      if (!mounted || request != generation) return;
+      setState(() { items = const []; loading = false; error = 'تعذر البحث حاليًا. أعد المحاولة.'; });
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Padding(
     padding: EdgeInsets.all(isTvTarget ? 24 : 12),
     child: Column(children: [
-      TextField(controller: query, textInputAction: TextInputAction.search, onSubmitted: (_) => run(), decoration: InputDecoration(hintText: 'ابحث عن فيلم أو مسلسل', suffixIcon: IconButton(onPressed: run, icon: const Icon(Icons.search)))),
+      TextField(
+        controller: query,
+        textInputAction: TextInputAction.search,
+        onChanged: onQueryChanged,
+        onSubmitted: (_) => run(),
+        decoration: InputDecoration(
+          hintText: 'ابحث عن فيلم أو مسلسل',
+          suffixIcon: IconButton(onPressed: loading ? null : () => run(), icon: const Icon(Icons.search)),
+        ),
+      ),
       if (loading) const LinearProgressIndicator(),
-      Expanded(child: ListView.builder(itemCount: items.length, itemBuilder: (context, i) => ListTile(onTap: () => openDetails(context, widget.api, widget.store, items[i]), title: Text(items[i].title), subtitle: Text(items[i].type)))),
+      const SizedBox(height: 8),
+      Expanded(
+        child: error != null
+            ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text(error!, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                FilledButton.tonal(onPressed: () => run(), child: const Text('إعادة المحاولة')),
+              ]))
+            : submitted && !loading && items.isEmpty
+                ? const Center(child: Text('لا توجد نتائج لهذا البحث حاليًا'))
+                : !submitted
+                    ? const Center(child: Text('اكتب اسم فيلم أو مسلسل للبحث'))
+                    : ListView.builder(
+                        itemCount: items.length,
+                        itemBuilder: (context, i) => ListTile(
+                          onTap: () => openDetails(context, widget.api, widget.store, items[i]),
+                          title: Text(items[i].title),
+                          subtitle: Text(items[i].type == 'movie' ? 'فيلم' : 'مسلسل'),
+                        ),
+                      ),
+      ),
     ]),
   );
 }

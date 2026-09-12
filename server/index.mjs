@@ -1,11 +1,8 @@
+import { pathToFileURL } from "node:url";
 import { createServer } from "./app.mjs";
 import { createNewsRuntime } from "./news-runtime.mjs";
 
-const port = Number(process.env.PORT || 3000);
-const server = createServer();
-const [appHandler] = server.listeners("request");
 const MATCH_LOGO_HOSTS = new Set(["kooorracity.com", "www.kooorracity.com"]);
-const newsRuntime = createNewsRuntime();
 
 function applyLogoCors(req, res) {
   const origin = String(req.headers.origin || "");
@@ -88,7 +85,7 @@ function sendRuntimeJson(req, res, status, payload) {
   return res.end(JSON.stringify(payload));
 }
 
-async function handleNewsRuntime(req, res, url) {
+async function handleNewsRuntime(req, res, url, newsRuntime) {
   applyLogoCors(req, res);
   if (req.method === "OPTIONS") {
     res.writeHead(204, { "Access-Control-Allow-Methods": "GET,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" });
@@ -109,45 +106,59 @@ async function handleNewsRuntime(req, res, url) {
   }
 }
 
-server.removeAllListeners("request");
-server.on("request", async (req, res) => {
-  let wantsDownload = false;
-  try {
-    const url = new URL(req.url || "/", "http://localhost");
-    if (url.pathname === "/api/matches/logo") return await proxyMatchLogo(req, res, url);
-    if (url.pathname === "/api/v1/news" || url.pathname === "/api/v1/news/article") return await handleNewsRuntime(req, res, url);
-    wantsDownload = url.pathname === "/api/cinema/media" && url.searchParams.get("download") === "1";
-  } catch {}
+export function createProductionServer({ appServer = createServer(), newsRuntime = createNewsRuntime() } = {}) {
+  const [appHandler] = appServer.listeners("request");
+  if (typeof appHandler !== "function") throw new Error("APP_REQUEST_HANDLER_MISSING");
 
-  if (wantsDownload) {
-    const originalWrite = res.write.bind(res);
-    const originalEnd = res.end.bind(res);
-    let decorated = false;
-
-    const decorateValidatedMedia = () => {
-      if (decorated || res.statusCode < 200 || res.statusCode >= 300) return;
-      const contentType = String(res.getHeader("Content-Type") || "").toLowerCase();
-      if (contentType.includes("application/json")) return;
-      if (!res.hasHeader("Content-Disposition")) {
-        res.setHeader("Content-Disposition", 'attachment; filename="al-qahtani-media"');
+  appServer.removeAllListeners("request");
+  appServer.on("request", async (req, res) => {
+    let wantsDownload = false;
+    try {
+      const url = new URL(req.url || "/", "http://localhost");
+      if (url.pathname === "/api/matches/logo") return await proxyMatchLogo(req, res, url);
+      if (url.pathname === "/api/v1/news" || url.pathname === "/api/v1/news/article") {
+        return await handleNewsRuntime(req, res, url, newsRuntime);
       }
-      res.setHeader("X-Content-Type-Options", "nosniff");
-      decorated = true;
-    };
+      wantsDownload = url.pathname === "/api/cinema/media" && url.searchParams.get("download") === "1";
+    } catch {}
 
-    res.write = (...args) => {
-      decorateValidatedMedia();
-      return originalWrite(...args);
-    };
-    res.end = (...args) => {
-      decorateValidatedMedia();
-      return originalEnd(...args);
-    };
-  }
+    if (wantsDownload) {
+      const originalWrite = res.write.bind(res);
+      const originalEnd = res.end.bind(res);
+      let decorated = false;
 
-  return appHandler(req, res);
-});
+      const decorateValidatedMedia = () => {
+        if (decorated || res.statusCode < 200 || res.statusCode >= 300) return;
+        const contentType = String(res.getHeader("Content-Type") || "").toLowerCase();
+        if (contentType.includes("application/json")) return;
+        if (!res.hasHeader("Content-Disposition")) {
+          res.setHeader("Content-Disposition", 'attachment; filename="al-qahtani-media"');
+        }
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        decorated = true;
+      };
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`Al-Qahtani backend listening on ${port}`);
-});
+      res.write = (...args) => {
+        decorateValidatedMedia();
+        return originalWrite(...args);
+      };
+      res.end = (...args) => {
+        decorateValidatedMedia();
+        return originalEnd(...args);
+      };
+    }
+
+    return appHandler(req, res);
+  });
+  return appServer;
+}
+
+export function startProductionServer({ port = Number(process.env.PORT || 3000) } = {}) {
+  const server = createProductionServer();
+  return server.listen(port, "0.0.0.0", () => {
+    console.log(`Al-Qahtani backend listening on ${port}`);
+  });
+}
+
+const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+if (invokedPath === import.meta.url) startProductionServer();

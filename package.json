@@ -1,0 +1,12 @@
+{
+  "name": "al-qahtani-runtime",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "check": "node --check server/app.mjs && node --check server/index.mjs && node --check server/news-runtime.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
