@@ -273,6 +273,11 @@ function isMediaCandidate(value = "") {
   }
 }
 
+export function rankMediaCandidates(candidates = []) {
+  const rank = kind => ({ mp4: 0, hls: 1, "mpeg-ts": 2, webm: 3, matroska: 4, unknown: 5 }[kind] ?? 9);
+  return [...candidates].sort((a, b) => rank(mediaKindFromUrl(a)) - rank(mediaKindFromUrl(b)));
+}
+
 export function parseWatch(html = "", pageUrl = "") {
   const candidates = [];
   for (const re of [
@@ -286,10 +291,7 @@ export function parseWatch(html = "", pageUrl = "") {
       try { assertSourceUrl(url, { allowMedia: true }); candidates.push(url); } catch {}
     }
   }
-  const preferred = [...candidates].sort((a, b) => {
-    const rank = kind => ({ hls: 0, mp4: 1, "mpeg-ts": 2, webm: 3, matroska: 4, unknown: 5 }[kind] ?? 9);
-    return rank(mediaKindFromUrl(a)) - rank(mediaKindFromUrl(b));
-  });
+  const preferred = rankMediaCandidates(candidates);
   return {
     status: preferred.length ? "success" : "error",
     source: "basri-direct",
