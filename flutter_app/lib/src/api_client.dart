@@ -15,6 +15,19 @@ class AlQahtaniApi {
     return _list(json['data']).map(MatchItem.fromJson).toList(growable: false);
   }
 
+  Future<List<NewsItem>> news() async {
+    final json = await _getJson('/api/v1/news');
+    return _list(json['data']).map(NewsItem.fromJson).where((item) => item.ref.isNotEmpty).toList(growable: false);
+  }
+
+  Future<NewsArticle> newsArticle(String ref) async {
+    if (ref.trim().isEmpty) throw const ApiException('MISSING_NEWS_REFERENCE');
+    final json = await _getJson('/api/v1/news/article', {'ref': ref});
+    final data = json['data'];
+    if (data is! Map) throw const ApiException('INVALID_NEWS_ARTICLE');
+    return NewsArticle.fromJson(data.cast<String, dynamic>());
+  }
+
   Future<List<CatalogItem>> category(String categoryId, {int page = 1}) async {
     final json = await _getJson('/api/v1/category', {'ref': categoryId, 'p': '$page'});
     return _list(json['data']).map(CatalogItem.fromJson).toList(growable: false);
