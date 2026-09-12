@@ -22,6 +22,34 @@ async function waitForHealth() {
   throw new Error('BACKEND_START_TIMEOUT');
 }
 
+async function sanitizedServerDiagnostics() {
+  try {
+    const rawRes = await fetch(base + '/api/matches');
+    const raw = await rawRes.json();
+    const liveRaw = Array.isArray(raw?.data) ? raw.data.find(item => item?.priority === 1 && item?.link) : null;
+    if (!liveRaw) return { liveRaw: false };
+    const serversRes = await fetch(base + '/api/matches/servers?url=' + encodeURIComponent(String(liveRaw.link)));
+    const payload = await serversRes.json();
+    const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.servers) ? payload.servers : [];
+    const protocols = [];
+    for (const row of rows.slice(0, 8)) {
+      const value = typeof row === 'string' ? row : row?.url || row?.src || row?.link || row?.file || row?.embed || row?.iframe || row?.player || '';
+      try { protocols.push(new URL(String(value), 'https://api.albasritv1.workers.dev/').protocol); } catch { protocols.push('invalid'); }
+    }
+    return {
+      liveRaw: true,
+      status: serversRes.status,
+      topKeys: payload && typeof payload === 'object' && !Array.isArray(payload) ? Object.keys(payload).sort() : [],
+      count: rows.length,
+      firstRowKeys: rows[0] && typeof rows[0] === 'object' ? Object.keys(rows[0]).sort() : [],
+      types: [...new Set(rows.map(row => typeof row === 'object' ? String(row?.type || '') : '').filter(Boolean))],
+      protocols: [...new Set(protocols)],
+    };
+  } catch (error) {
+    return { diagnosticsFailed: String(error?.message || error).replace(/https?:\/\/\S+/g, '[redacted]') };
+  }
+}
+
 try {
   await waitForHealth();
   const matchesRes = await fetch(base + '/api/v1/matches');
@@ -55,6 +83,7 @@ try {
     const playRes = await fetch(base + '/api/v1/matches/play?ref=' + encodeURIComponent(live.ref));
     const play = await playRes.json();
     if (!playRes.ok || play?.status !== 'success' || !play?.data?.media_path?.startsWith('/api/v1/matches/media?id=')) {
+      console.log('INFO sanitized live match server diagnostics', await sanitizedServerDiagnostics());
       throw new Error(`LIVE_MATCH_PLAYBACK_RESOLUTION_FAILED_${playRes.status}`);
     }
     const playSerialized = JSON.stringify(play);
