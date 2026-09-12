@@ -4,97 +4,87 @@
 GitHub is authoritative when this file disagrees with repository state. The preserved original `albasritv.github.io-main.zip`, live Runtime/provider evidence, and the user's iPhone screenshots are behavioral references. CI alone does not prove a physical-device issue fixed.
 
 ## Current state
-- Current `main`: `4d1aded879cf40f2506bd53c4d86a7a8299b9e1f`.
-- Exactly one product PR is open: PR #85 `Unify Arabic identity and repair match/search playback UX`, branch `fix/identity-matches-player-84`.
-- PR #84 was closed unmerged as a duplicate after the stronger PR #85 implementation became the canonical branch. Its useful catalog-poster Runtime-path fix/regression was ported to PR #85 before closure.
+- Product merge commit: `dc1103bf7b10be75902201ca63feeef2b0da07c9` from merged PR #85 `Unify Arabic identity and repair match/search playback UX`.
+- PR #84 was closed unmerged as superseded by #85 to restore the one-PR-only rule.
+- No product PR remains open at this snapshot.
 - Product version/build: `1.0.13+13`.
-- Product head before this state-only commit: `866afaf724ebadf2e2152e2fe79df63a83f3d373`.
 - Web/PWA remains GitHub Pages at `https://theeb1230-dot.github.io/Al-Qahtani/` and is not replaced by Flutter Web.
 - Product boundary remains Al-Qahtani/Basri only. No akwam-indexer, Theeb Engine, THEEB_SERVICE_TOKEN, or other Theeb providers were introduced.
 
-## RELEASE VERIFIED v1.0.12
-- Release URL: `https://github.com/theeb1230-dot/Al-Qahtani/releases/tag/v1.0.12`.
-- Target commit: `a0fceeead547a370f5c8a50243c008a99b3b6a86`.
-- `Al-Qahtani-Mobile-v1.0.12.apk`: 54,342,654 bytes; SHA-256 `e05364b6b23ec65ca8cdc1b30af7f7795df7b5c19689256de0248af3fb716eb9`.
-- `Al-Qahtani-TV-v1.0.12.apk`: 54,342,770 bytes; SHA-256 `778b69f1005c74704b40d2f8311791fab068444850b8b98585be93814819f9b8`.
-- `Al-Qahtani-iOS-v1.0.12-UNSIGNED.ipa`: 7,463,582 bytes; SHA-256 `d3d643660a5123a15f83cf2f3b99224fa25d3dc48b05684ef5f1ec265bd4057`; explicitly UNSIGNED/no-codesign and requires external signing/provisioning before installation.
-- `SHA256SUMS.txt`: 290 bytes.
-- `PROVENANCE.json`: 580 bytes.
+## RELEASE VERIFIED v1.0.13
+- Release URL: `https://github.com/theeb1230-dot/Al-Qahtani/releases/tag/v1.0.13`.
+- Release ID: `387682267`.
+- Target commit: `dc1103bf7b10be75902201ca63feeef2b0da07c9`.
+- Published at: `2026-09-12T19:36:52Z`.
+- `Al-Qahtani-Mobile-v1.0.13.apk`: 54,570,786 bytes; SHA-256 `dcaafb6cf84d6481b9beafd77588e023d05253810bc279e66e898a44d2b5503a`.
+- `Al-Qahtani-TV-v1.0.13.apk`: 54,570,898 bytes; SHA-256 `c27495e8c7e96bf7f2313c82edc47f393fa2cf22808b3bb595819932c36ebf8b`.
+- `Al-Qahtani-iOS-v1.0.13-UNSIGNED.ipa`: 7,487,909 bytes; SHA-256 `db1b9cad1e9a650b02b4c766d0ce5ae57877a1c4686ae002c59a129945e2bd74`; explicitly UNSIGNED/no-codesign and requires external signing/provisioning before installation.
+- `SHA256SUMS.txt`: 290 bytes; SHA-256 `30b06e380fb68184bdf34da1f8bef99054fb6c2f24a82fe9ca664f12b210bc2d`.
+- `PROVENANCE.json`: 580 bytes; SHA-256 `c0442a67f1c98aaec3f49a4324df12ec33a86294bd6c2fe82bf7748af6de6181`.
+- Release workflow run `34714668353`: SUCCESS. Its internal release verification step also completed SUCCESS.
+- Main Flutter foundation run `34714279893`: SUCCESS on the exact product merge commit. Analyze/tests, Android Mobile APK, Android TV APK and iOS UNSIGNED IPA jobs all completed SUCCESS.
+- Release workflow waited for the exact-commit protected gates, including Deploy GitHub Pages, Web smoke, Mobile WebKit, Content runtime, Remote movie playback, Remote news, Live provider, Basri player/download, independent download, Match runtime, CORS, media-reference expiry and trusted filename, before publishing.
+- Historical v1.0.5 remains RELEASE NOT PUBLISHED and must never be represented otherwise.
 
-## RELEASE NOT PUBLISHED v1.0.13
-- PR #85 is not merged yet, therefore no v1.0.13 GitHub Release is claimed.
-- Release is blocked until exact-final-head CI is green, the PR is merged to `main`, Pages is checked from that merge commit, and the release workflow produces and publishes all three artifacts from the same commit/version.
+## v1.0.13 implemented scope
+1. Arabic black/gold identity using `القحطاني` across current Flutter/Web surfaces and native branding automation.
+2. Technical RuntimeHome/navigation entry removed; app opens into user content sections.
+3. Match score normalization no longer invents missing 0-0 values; broken ended 0-0 feed values are suppressed rather than presented as factual results.
+4. Search uses poster cards, dedupe and year metadata where available.
+5. Dedicated opaque Match runtime and Match→Player path for Web/Flutter, including HLS child rewriting and Range passthrough without exposing upstream URLs.
+6. Independent Watch/Download resolution from v1.0.12 remains protected, including fail-closed HLS-only download behavior.
+7. Android TV package is built and checked for LEANBACK/remote requirements; iOS package is built unsigned/no-codesign.
 
-## Seven-problem batch status
-1. **Arabic black/gold identity:** **FIX IN PR / NOT DEVICE VERIFIED.** Flutter and Web use the Arabic `القحطاني` identity and gold/black base. Native branding automation and release workflow hooks exist; final APK/TV/IPA inspection is required after merge.
-2. **Incorrect match scores / fake 0-0:** **MISLEADING 0-0 SUPPRESSED / TRUE FINAL SCORE SOURCE STILL WRONG / NOT DEVICE VERIFIED.** A live probe against the inherited Basri matches Worker showed 23 ended matches, 22 of them returned literal `0`/`0`, including Racing Santander × Alavés, while one ended fixture returned a real 2-0. Runtime now treats ended 0-0 pairs from this broken feed as unavailable rather than presenting them as factual results, while preserving live 0-0 and non-zero ended/live scores. The true Racing 2-1 cannot be reconstructed from the current Worker payload and is not hard-coded.
-3. **Remove technical home screen/menu:** **FIX IN CODE / NOT DEVICE VERIFIED.** Flutter starts on content sections and no RuntimeHome/navigation item is intended for users.
-4. **Downloads:** **SERVER CONTRACT FIXED / DEVICE STILL FAILED-UNTIL-PROVEN.** Independent Watch/Download resolution remains in force, HLS-only download is fail-closed, and trusted filename/Range semantics are regression-protected. Progress/cancel/retry/persistence/file existence still require live-device proof.
-5. **Playback:** **CONTRACT PARTIAL / DEVICE STILL FAILED-UNTIL-PROVEN.** Existing HLS/MP4/MPEG-TS proxy paths remain protected, but Reacher and real iPhone/Android start/seek/pause/resume/duration/retry are not physical-device verified.
-6. **Search posters/dedupe:** **FIX IN PR + REGRESSION / NOT DEVICE VERIFIED.** Search/category catalog items resolve Runtime-relative poster paths against the Al-Qahtani API base and preserve dedupe/year. Placeholder remains only when poster is actually absent or fails. Upstream-image opacity/allowlist remains a security verification item and must not be claimed complete until the Runtime image contract is proven not to expose raw upstream URLs.
-7. **Match→Player Web/Flutter:** **FIX IN PR + MATCH RUNTIME CONTRACT / NOT DEVICE VERIFIED.** PR #85 adds opaque match/server/media refs, a Web match player path, Flutter internal match player/server switching, HLS child proxying and Range passthrough. A real iPhone Safari/Flutter playback session is still required.
-
-## Additional issue matrix
-- Reacher season 4: **NOT PHYSICAL-DEVICE VERIFIED**.
-- Movies Details→Watch/Download variants: **NOT DEVICE VERIFIED** despite generic remote movie smoke coverage.
-- News parity: **LIVE CONTRACT BASELINE / DEVICE RECHECK PENDING**.
-- Search state machine: **FIX IN CODE / DEVICE RECHECK PENDING**.
-- `episode_id` vs `episode_number`: **REGRESSION PROTECTED** and must remain distinct.
-- Favorites: **WORKING BASELINE / REGRESSION PROTECTED / DEVICE RECHECK PENDING**.
-- Continue Watching/history: **NOT VERIFIED** until successful playback proves persistence semantics.
-- Downloads library: **NOT VERIFIED** for local file existence/progress/cancel/retry/persistence.
-- Web player lifecycle / old white `Web Server 1` panel: **CODE PATH REPLACED IN PR / PHYSICAL SAFARI NOT VERIFIED**.
-- Explicit loading/content/empty/retryable states: **PARTIAL**.
-- Web↔Flutter Runtime parity: **PARTIAL**.
-- Four-surface E2E: **OPEN**.
-
-## CI snapshot
-- Exact-final-head CI must always be re-read from the current PR head immediately before merge. Previous heads are evidence only, never merge authority.
-- Recent exact-head predecessors have passed Match runtime, Content runtime, Web smoke, WebKit, CORS, media-reference expiry, independent download resolution, Basri player/download and live-provider contracts except for failures already corrected on the same PR branch (Flutter const analysis, native-brand mask generation, and the iOS icon filename verification gate).
-- The current head must independently pass the same set plus the live match-score probe and all four Flutter jobs before merge.
-- No CI success alone is treated as physical-device proof.
+## Device-verification status
+- Real iPhone Safari/Flutter Match→Player: **NOT PHYSICAL-DEVICE VERIFIED**.
+- Reacher season 4 and representative HLS playback start/seek/pause/resume/duration/retry: **NOT PHYSICAL-DEVICE VERIFIED**.
+- Download local file progress/cancel/retry/persistence/file existence: **NOT PHYSICAL-DEVICE VERIFIED**.
+- Movie Watch/Download title variants: **CI/contract covered, device recheck pending**.
+- Search posters/dedupe: **CI/code verified, device recheck pending**.
+- News parity: **contract baseline verified, device recheck pending**.
+- Favorites/Continue Watching/history/download library: **regression/device verification remains**.
 
 ## Protected regressions
 Protect iPhone Safari/Web playback, Range/206, Content-Range/Accept-Ranges, MP4/HLS/MPEG-TS classification, HLS child/key/init opaque refs, measured duration, independent Watch/Download semantics, trusted filenames, News non-empty/opaque refs, match logos/Saudi time/score correctness, `episode_id` versus `episode_number`, endless 30+30 pagination with dedupe/concurrency/stale guards, CORS/SSRF/allowlists, no ads/popups/unneeded tracking, no Android Intent/deep-links for playback, favorites persistence, TV D-Pad/focus + LEANBACK, and UNSIGNED/no-codesign iOS labeling.
 
 ## أهداف التشغيل التالي
-1. **إغلاق PR #85 بأمان.**
-   - إعادة فحص كل CI على الرأس النهائي الفعلي.
-   - إصلاح أي failure على نفس الفرع فقط.
-   - الدمج فقط عندما تصبح البوابات المطلوبة خضراء.
-2. **إتمام دورة v1.0.13 بعد الدمج.**
-   - بناء APK Mobile وAPK TV وIPA UNSIGNED من نفس merge commit/version.
-   - التحقق من manifest/applicationId/version/LEANBACK/no-codesign/SHA-256.
-   - إنشاء GitHub Release فعلي والتحقق من الأصول والأحجام والتنزيل.
-3. **التحقق من GitHub Pages من merge commit.**
-   - فحص Pages/Web smoke/WebKit/CORS/Range/Download.
-   - التحقق من مسار Match→Player الجديد في Safari.
-   - إبقاء Web/PWA الحالي بدل Flutter Web حتى parity كاملة.
-4. **إثبات Match→Player حيًا وعلى الجهاز.**
-   - اختبار click/tap/loading/server switching/timeout.
-   - اختبار HLS/MP4 source classification وRange.
-   - توثيق Safari وFlutter دون كشف upstream.
-5. **إثبات التشغيل العام على الأجهزة.**
+1. **إثبات Match→Player على iPhone الحقيقي.**
+   - اختبار مباراة لها خوادم فعلية من Basri وعدم اعتبار metadata وحدها نجاحًا.
+   - اختبار loading/server switching/error/retry داخل Safari وFlutter.
+   - توثيق HLS/MP4/Range دون كشف upstream URLs.
+2. **إثبات تشغيل المسلسلات على الجهاز.**
    - اختبار Reacher الموسم الرابع وعمل HLS ثانٍ.
-   - start/seek/pause/resume/duration/retry على iPhone وAndroid.
-   - منع كتابة history/progress عند الفشل.
-6. **إثبات التنزيل على الأجهزة.**
-   - اختبار download resolution→opaque ref→local file write.
+   - اختبار start/seek/pause/resume/duration/retry على iPhone وAndroid.
+   - منع history/progress من التسجيل عند فشل التشغيل.
+3. **إثبات Download end-to-end.**
+   - resolve→opaque ref→local file write.
    - progress/cancel/retry/persistence/file existence/trusted filename.
    - إبقاء HLS-only بلا ملف مستقل fail-closed.
-7. **إكمال Search/Poster parity وأمان الصور.**
-   - إثبات posters الحقيقية عبر Runtime مع opaque/allowlisted image contract دون raw upstream URL.
-   - اختبار dedupe للمواسم المتشابهة مع توضيح الموسم.
-   - حماية category/search pagination من stale responses.
-8. **إكمال Movies/News/Library regressions.**
+4. **توسيع اختبارات نتائج المباريات.**
+   - مقارنة ended/live score fields من المصدر مع العرض.
+   - عدم عرض 0-0 مكسور كحقيقة.
+   - الاحتفاظ بنتائج حية/نهائية صحيحة عندما تكون موثقة من المصدر.
+5. **إكمال Search/Poster image contract.**
+   - إثبات posters الحقيقية عبر Runtime آمن دون raw upstream URL في UI/logs.
+   - اختبار dedupe للمواسم المتشابهة والسنة.
+   - حماية pagination من stale responses.
+6. **إكمال Movies/News regressions.**
    - اختبار عدة أفلام بمسارات Watch/Download مختلفة.
    - إعادة فحص News article/images/date/back.
-   - التحقق من Favorites/Continue Watching/Downloads library.
-9. **بدء providers.js v2 بعد إغلاق دورة الوسائط.**
+   - حماية WebKit/CORS/Range بعد أي تعديل.
+7. **إكمال Library semantics.**
+   - Favorites persistence.
+   - Continue Watching/resume/completed/history بعد playback حقيقي فقط.
+   - Downloads library يعكس الملفات الموجودة فعليًا.
+8. **تحسين حالات الواجهة دون تغيير العقد.**
+   - loading/content/empty/retryable-error موحدة.
+   - cancellation/stale-response guards في الشاشات المتبقية.
+   - RTL/typography/focus consistency عبر Mobile/TV/iOS/Web.
+9. **بدء providers.js v2 بعد بوابات الجهاز.**
    - health/retry/circuit-breaker/cache باختبارات deterministic.
-   - الحفاظ على sweeper/rate limits/gzip/Vary/Content-Length.
-   - إبقاء Cloudflare mirror مؤجلًا بلا صلاحيات/بنية مثبتة.
-10. **توسيع four-surface E2E والصيانة المستمرة.**
-   - Web/PWA + Android Mobile + Android TV + iOS contract matrix.
-   - TV focus/D-Pad/LEANBACK وiOS unsigned checks في كل إصدار.
-   - بعد الاستقرار الانتقال إلى maintenance دون حذف ميزات مطلوبة.
+   - الحفاظ على sweeper/rate limits/gzip/Vary/Content-Length وRange/HLS.
+   - لا Cloudflare mirror أو مزود خارجي قبل صلاحيات وبنية موثقة داخل حدود Al-Qahtani/Basri.
+10. **الصيانة المستمرة والانضباط الإصدارى.**
+   - فحص GitHub/PR/CI/Releases/Pages في بداية كل تشغيل.
+   - أي تعديل منتج جديد يرفع version/build ويصدر Mobile APK + TV APK + IPA UNSIGNED من نفس commit.
+   - لا اعتبار أي حزمة منشورة قبل GitHub Release فعلي وإعادة التحقق من الأصول والأحجام والـSHA/provenance.
