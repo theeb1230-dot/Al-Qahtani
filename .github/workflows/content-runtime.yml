@@ -1,0 +1,29 @@
+name: Content runtime
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  runtime-foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate runtime module syntax
+        run: node --check server/content-runtime.mjs
+      - name: Validate runtime regression test syntax
+        run: node --check scripts/content_runtime_test.mjs
+      - name: Run content runtime regressions
+        run: node scripts/content_runtime_test.mjs
+      - name: Reject cross-project integration in runtime layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -nE 'THEEB_SERVICE_TOKEN|akwam-indexer|theeb-arab-api|theeb:canonical:|theeb:discover:' server/content-runtime.mjs; then
+            echo "Content runtime must stay independent from Theeb/Akwam project integration"
+            exit 1
+          fi
