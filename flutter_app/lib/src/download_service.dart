@@ -45,14 +45,20 @@ class DownloadCancellationToken {
 
 typedef DownloadDirectoryProvider = Future<Directory> Function();
 typedef DownloadProgressCallback = void Function(DownloadProgress progress);
+typedef DownloadReconnectDelay = Future<void> Function(int attempt, DownloadCancellationToken? token);
 
 class DownloadService {
-  DownloadService({http.Client? client, DownloadDirectoryProvider? directoryProvider})
-      : _client = client ?? http.Client(),
-        _directoryProvider = directoryProvider ?? _defaultDirectory;
+  DownloadService({
+    http.Client? client,
+    DownloadDirectoryProvider? directoryProvider,
+    DownloadReconnectDelay? reconnectDelay,
+  })  : _client = client ?? http.Client(),
+        _directoryProvider = directoryProvider ?? _defaultDirectory,
+        _reconnectDelayOverride = reconnectDelay;
 
   final http.Client _client;
   final DownloadDirectoryProvider _directoryProvider;
+  final DownloadReconnectDelay? _reconnectDelayOverride;
 
   static const int _maxReconnectAttempts = 4;
 
@@ -64,6 +70,7 @@ class DownloadService {
   Future<DownloadResult> download(
     Uri uri, {
     String fallbackName = 'al-qahtani-media',
+    String? resumeKey,
     DownloadProgressCallback? onProgress,
     DownloadCancellationToken? cancellationToken,
   }) async {
@@ -72,16 +79,17 @@ class DownloadService {
     }
     _throwIfCancelled(cancellationToken);
 
-    var bytes = 0;
+    final directory = await _downloadDirectory(create: true);
+    final partialName = _resumeFileName(resumeKey ?? fallbackName);
+    final tempFile = File('${directory.path}${Platform.pathSeparator}$partialName');
+    var bytes = await tempFile.exists() ? await tempFile.length() : 0;
     int? total;
     var reconnectAttempt = 0;
     File? finalFile;
-    File? tempFile;
 
     Future<void> cleanupPartial() async {
-      final partial = tempFile;
-      if (partial != null && await partial.exists()) {
-        await partial.delete();
+      if (await tempFile.exists()) {
+        await tempFile.delete();
       }
     }
 
@@ -113,7 +121,7 @@ class DownloadService {
         var append = bytes > 0;
         if (append && response.statusCode == 206) {
           final rangeStart = _contentRangeStart(response.headers['content-range']);
-          if (rangeStart != bytes) throw const DownloadException('INCOMPLETE_DOWNLOAD');
+          if (rangeStart != bytes) throw const DownloadException('INVALID_RESUME_RANGE');
         } else if (append && response.statusCode == 200) {
           append = false;
           bytes = 0;
@@ -124,19 +132,15 @@ class DownloadService {
 
         total = _mergeTotal(total, _responseLength(response.headers));
 
-        if (finalFile == null || tempFile == null) {
-          final directory = await _downloadDirectory(create: true);
-          final fileName = _trustedFileName(response.headers['content-disposition']) ?? _sanitizeFileName(fallbackName);
-          finalFile = File('${directory.path}${Platform.pathSeparator}$fileName');
-          tempFile = File('${finalFile.path}.part');
-        }
+        final fileName = _trustedFileName(response.headers['content-disposition']) ?? _sanitizeFileName(fallbackName);
+        finalFile ??= File('${directory.path}${Platform.pathSeparator}$fileName');
 
         IOSink? sink;
         StreamIterator<List<int>>? iterator;
         Object? streamError;
         try {
           sink = tempFile.openWrite(mode: append ? FileMode.append : FileMode.writeOnly);
-          if (!append) onProgress?.call(DownloadProgress(receivedBytes: 0, totalBytes: total));
+          onProgress?.call(DownloadProgress(receivedBytes: bytes, totalBytes: total));
           final stream = response.stream.timeout(
             const Duration(seconds: 30),
             onTimeout: (eventSink) => eventSink.addError(const DownloadException('DOWNLOAD_STALLED')),
@@ -182,13 +186,14 @@ class DownloadService {
         if (total != null && bytes > total) throw const DownloadException('INVALID_DOWNLOAD_LENGTH');
 
         final completedFile = finalFile;
-        final partialFile = tempFile;
         if (await completedFile.exists()) await completedFile.delete();
-        await partialFile.rename(completedFile.path);
+        await tempFile.rename(completedFile.path);
         return DownloadResult(path: completedFile.path, bytes: bytes);
       }
-    } catch (_) {
-      await cleanupPartial();
+    } catch (error) {
+      if (!_preservePartial(error, bytes)) {
+        await cleanupPartial();
+      }
       rethrow;
     }
   }
@@ -219,7 +224,19 @@ class DownloadService {
     return error is SocketException || error is TimeoutException || error is http.ClientException;
   }
 
-  static Future<void> _reconnectDelay(int attempt, DownloadCancellationToken? token) {
+  static bool _preservePartial(Object error, int bytes) {
+    if (bytes <= 0) return false;
+    if (error is DownloadException) {
+      if (error.code == 'DOWNLOAD_STALLED' || error.code == 'INCOMPLETE_DOWNLOAD') return true;
+      if (error.code.startsWith('HTTP_5') || error.code == 'HTTP_408' || error.code == 'HTTP_429') return true;
+      return false;
+    }
+    return error is SocketException || error is TimeoutException || error is http.ClientException;
+  }
+
+  Future<void> _reconnectDelay(int attempt, DownloadCancellationToken? token) {
+    final override = _reconnectDelayOverride;
+    if (override != null) return override(attempt, token);
     final milliseconds = (500 * attempt.clamp(1, _maxReconnectAttempts)).toInt();
     return _awaitOrCancel(Future<void>.delayed(Duration(milliseconds: milliseconds)), token);
   }
@@ -320,6 +337,12 @@ class DownloadService {
     if (value.isEmpty || value == '.' || value == '..') return false;
     if (value.contains('/') || value.contains('\\')) return false;
     return _sanitizeFileName(value) == value && !value.endsWith('.part');
+  }
+
+  static String _resumeFileName(String value) {
+    var safe = _sanitizeFileName(value).replaceAll(' ', '_');
+    if (safe.length > 96) safe = safe.substring(0, 96);
+    return '.qahtani-$safe.part';
   }
 
   static String _baseName(String path) {
