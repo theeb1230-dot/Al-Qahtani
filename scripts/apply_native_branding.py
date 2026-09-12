@@ -36,7 +36,7 @@ def mark(size: int, background: tuple[int, int, int, int]) -> bytes:
             i = (y * w + x) * 4
             px[i:i + 4] = bytes(color)
 
-    def disk(cx: float, cy: float, radius: float):
+    def disk(cx: float, cy: float, radius: float, color=GOLD):
         x0, x1 = max(0, int(cx - radius)), min(w - 1, int(cx + radius))
         y0, y1 = max(0, int(cy - radius)), min(h - 1, int(cy + radius))
         r2 = radius * radius
@@ -45,7 +45,7 @@ def mark(size: int, background: tuple[int, int, int, int]) -> bytes:
             for x in range(x0, x1 + 1):
                 dx = x - cx
                 if dx * dx + dy * dy <= r2:
-                    blend(x, y)
+                    blend(x, y, color)
 
     def ring(cx: float, cy: float, outer: float, inner: float):
         x0, x1 = max(0, int(cx - outer)), min(w - 1, int(cx + outer))
