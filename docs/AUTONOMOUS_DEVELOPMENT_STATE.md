@@ -4,14 +4,12 @@
 GitHub is authoritative when this file disagrees with the repository. The preserved original `albasritv.github.io-main.zip` remains the behavioral baseline. Live deployment and artifact evidence are required before claiming parity or release readiness.
 
 ## Current state
-- Main: `817b43fab91b88073de8fe9a51b86278e80b58f8` (PR #76 merged: opaque news parity, version `1.0.5+5`).
-- Last verified GitHub Release: `v1.0.4` build `4`, target `5c92a94c110590434eb384e0ed49f597ee66faf3`.
-- `v1.0.5` is **RELEASE NOT PUBLISHED** and must not be represented as a Release from Actions artifacts.
-- Active branch: `fix/server-hardening-77`.
-- Active PR: #77 `Activate server hardening in runtime`.
-- Current branch version: `1.0.6+6`.
-- Current head: `fcbc38d5eb6cf9ddc320af55573dc8c4604a918a`.
+- Product main merge commit: `b35e6754b8c2d14b31e73e43b85b80a0958cdc29` (PR #77: runtime hardening, version `1.0.6+6`).
+- PR #77 is merged. There is no open product PR at the time of this update.
 - Web/PWA remains the GitHub Pages product root and is not replaced by Flutter Web.
+- GitHub Pages deployment for the product merge commit succeeded.
+- `v1.0.6` is **RELEASE VERIFIED** and targets the exact product merge commit above.
+- Historical `v1.0.5` remains **RELEASE NOT PUBLISHED**; do not represent Actions artifacts from that version as a GitHub Release.
 
 ## Four-surface policy
 Every product-impacting change is one product on four surfaces: Web/PWA on GitHub Pages, Android Mobile APK, Android TV APK with LEANBACK/D-Pad/focus, and iOS IPA explicitly UNSIGNED/no-codesign. Native packages must come from the same commit/version and be published together only after fail-closed verification. Actions artifacts alone never count as a Release.
@@ -19,110 +17,100 @@ Every product-impacting change is one product on four surfaces: Web/PWA on GitHu
 ## Product boundary
 Al-Qahtani stays independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and Theeb-specific providers. Flutter consumes Al-Qahtani contracts only. The inherited Basri/Akwam source contract remains server-side only. Upstream hosts, Worker/session data and raw media URLs must not leak to UI or logs.
 
-## Last verified Release: v1.0.4
-- URL: `https://github.com/theeb1230-dot/Al-Qahtani/releases/tag/v1.0.4`.
-- Target commit: `5c92a94c110590434eb384e0ed49f597ee66faf3`.
-- `Al-Qahtani-Mobile-v1.0.4.apk`: 54,178,478 bytes, SHA-256 `1d85169261967b1b47b08150f2efb4413e7d45869b710fe6b338ed4608edc1ef`.
-- `Al-Qahtani-TV-v1.0.4.apk`: 54,178,590 bytes, SHA-256 `e9d81d864e822e8e8946eeb3ae2ec5c9eb7111510d95f1ae16754ec9b00b4abd`.
-- `Al-Qahtani-iOS-v1.0.4-UNSIGNED.ipa`: 7,450,163 bytes, SHA-256 `22ab1c8c203c5a689be9fdabd6b5d6fca1e6c53ff3eb5c0ecbd3a565779b6e18`.
-- `SHA256SUMS.txt` and `PROVENANCE.json` are present and non-empty.
+## Verified Release: v1.0.6
+- URL: `https://github.com/theeb1230-dot/Al-Qahtani/releases/tag/v1.0.6`.
+- Target commit: `b35e6754b8c2d14b31e73e43b85b80a0958cdc29`.
+- Version/build: `1.0.6+6`.
+- `Al-Qahtani-Mobile-v1.0.6.apk`: 54,260,734 bytes, SHA-256 `018983603a374cd318696b1925f99988f56413694e46fac41db71613dd9a0f99`.
+- `Al-Qahtani-TV-v1.0.6.apk`: 54,260,850 bytes, SHA-256 `5fc49919a1270d553623f87ac3a69dfeab559fe9ea1ed956ac67c7cfd14a5965`.
+- `Al-Qahtani-iOS-v1.0.6-UNSIGNED.ipa`: 7,460,417 bytes, SHA-256 `b80a3965d7e189d2c34b390f8240917e3254a6d430c662d7c10d126159f1db5c`.
+- `SHA256SUMS.txt`: 287 bytes, SHA-256 `7f7e0f73970d6de5257ae494487e753485cc6b585e0f53f845e863e49ca2e02c`.
+- `PROVENANCE.json`: 575 bytes, SHA-256 `4707a6493c7c600ebb431da7ced515a09b9ead01bbab7f9e38eefa24fc957262`.
+- iOS is explicitly UNSIGNED/no-codesign and requires external signing/provisioning before installation.
 
-## PR #77 scope
-PR #77 activates backend hardening without changing the provider boundary:
+## PR #77 delivered
+PR #77 activated backend hardening without changing the provider boundary:
 - expired opaque media-ref sweeping;
 - per-client/per-route fixed-window rate limits;
 - JSON gzip/deflate with correct `Vary` and `Content-Length` handling;
 - a higher media-route ceiling so Range/HLS traffic is not throttled like normal API traffic;
 - `scripts/server_hardening_test.mjs` plus Web smoke coverage;
-- product version `1.0.6+6`.
+- safe Basri/Akwam URL canonicalization while retaining the strict source allowlist.
 
-## Current Basri/Akwam blocker
-The exact-head blocking gates remain `Live provider smoke` and `Remote movie playback smoke`.
+## Transient Basri/Akwam incident resolved
+The earlier `Live provider smoke` and `Remote movie playback smoke` failures on PR #77 were rerun on the exact same final head before merge. Both succeeded without a parser workaround. This demonstrated that the shell-only Akwam response was transient/upstream rather than a proven permanent parser contract change. No speculative scraper expansion was merged.
 
-Evidence from GitHub Actions:
-- Cinema Worker session returns `403 FORBIDDEN_ORIGIN`, so the backend correctly enters the direct Basri/Akwam fallback path rather than bypassing origin policy.
-- `https://akwam.ss/series?section=30` returns HTTP 200 with about 19.8 KB and the real category title, but the initial HTML contains navigation/assets and no `/series/<id>/...` catalog anchors.
-- The current direct parser has already been hardened to canonicalize relative/absolute Akwam links through `new URL(..., SOURCE_ORIGIN)` and then reapply the strict `akwam.ss` allowlist. That fixes brittle URL assumptions but cannot invent item cards that are absent from the initial HTML.
-- A bounded diagnostic commit `fcbc38d5...` added safe inspection of hidden inputs, forms, `data-*` attributes and relevant inline loader lines. It found no catalog endpoint in hidden/form/data attributes and only the inline statement `$('.widget-3 .loader').remove();` around the category widget.
-- `akwam.js` exposes generic AJAX used for app/version/forms/favorites/likes but still does not reveal the category-list loader contract.
-- Therefore the remaining blocker is the actual current category fragment/loading contract or an execution-context response difference, not merely an anchor regex.
+Exact-final-head evidence before merge:
+- Flutter foundation: success.
+- Live provider smoke: success after rerun on unchanged final head.
+- Remote movie playback smoke: success after rerun on unchanged final head.
+- Web smoke, Mobile WebKit, Content runtime, CORS, Basri player/download, media-ref expiry and trusted filename checks: success.
 
-## Exact-head CI evidence
-Previous head `f9fca584...`:
-- Flutter foundation `34691106245`: success.
-- Web smoke `34691106265`: success.
-- Content runtime `34691106250`: success.
-- Original Basri player `34691106255`: success.
-- Original Basri download `34691106258`: success.
-- CORS boundary `34691106229`: success.
-- Remote CORS `34691106234`: success.
-- Media reference expiry `34691106231`: success.
-- Trusted download filename `34691106238`: success.
-- Live provider `34691106299`: failure at category discovery.
-- Remote movie playback `34691106246`: failure because category samples do not resolve to a real playable movie/series path.
-
-Current diagnostic head `fcbc38d5...`:
-- Live provider `34691735994`: failure by design after collecting bounded dynamic diagnostics.
-- Other exact-head checks were triggered and remain subject to final-head revalidation before merge.
+## Main / release evidence
+- Product merge commit: `b35e6754b8c2d14b31e73e43b85b80a0958cdc29`.
+- Main Flutter foundation run: `34694725716`: success.
+- Main Release Flutter triplet run: `34694981935`: success.
+- Release workflow verified the triggering run was a main push, waited for protected exact-commit Web/runtime gates, downloaded the exact-run native artifacts, verified checksums, created the Release, and verified all required assets were present and non-empty.
+- GitHub Pages run for the product merge commit succeeded.
+- Main Live provider smoke succeeded on the product merge commit.
 
 ## Release state
 - `v1.0.4`: **RELEASE VERIFIED**.
-- `v1.0.5`: **RELEASE NOT PUBLISHED**.
-- `v1.0.6`: **RELEASE NOT PUBLISHED** because PR #77 is intentionally unmerged while the live cinema gates are red.
-- No new feature work may supersede this blocker. The next allowed product change is one required to restore the existing Basri/Akwam path or release integrity.
+- `v1.0.5`: **RELEASE NOT PUBLISHED** (historical release gap).
+- `v1.0.6`: **RELEASE VERIFIED**.
+- No new product work should reuse version `1.0.6+6`; the next product-impacting merge must bump version/build and complete a new four-surface release cycle.
 
 ## Protected regressions
-Protect iPhone Safari playback, Range/206, Content-Range/Accept-Ranges, HLS/MP4/MPEG-TS behavior, measured duration, real match logos, Saudi match times, separated episode numbering, endless 30+30 pagination, Download semantics, CORS, SSRF/allowlists, zero ads/popups/unneeded tracking, and no legacy Android Intent/deep-links.
+Protect iPhone Safari playback, Range/206, Content-Range/Accept-Ranges, HLS/MP4/MPEG-TS behavior, measured duration, real match logos, Saudi match times, separated episode numbering, endless 30+30 pagination, Download semantics, CORS, SSRF/allowlists, zero ads/popups/unneeded tracking, no legacy Android Intent/deep-links, opaque media refs, and Mobile/TV/iOS identity parity.
 
 ## Repository Website / Pages URL
 - GitHub Pages project URL: `https://theeb1230-dot.github.io/Al-Qahtani/`.
 - The current connector still does not expose a repository Website/Homepage mutation action. Do not emulate that field by modifying product files.
 
 ## Current blockers / gaps
-- Extract the real category-loading contract around the current Akwam `widget-3` shell without leaking page bodies/media/session data.
-- Restore real category item discovery in GitHub Runner while keeping the request constrained to the original Basri/Akwam source only.
-- Restore `Category/Search → Details → Episodes → Watch/Download → Media` end-to-end.
-- Return `Live provider smoke` and `Remote movie playback smoke` to green on the exact final PR head.
-- Keep #77 unmerged until every required gate including Flutter foundation is green.
+- Historical `v1.0.5` cannot be retroactively called released; keep the gap documented rather than manufacturing a false Release.
+- Standalone MPEG-TS evidence on physical Android TV/iOS remains deeper parity work.
+- Full physical-device matrix for D-Pad/focus and Safari playback remains stronger evidence than CI-only coverage.
+- Website/Homepage repository metadata cannot currently be written through the available connector.
 
 ## أهداف التشغيل التالي
-1. **تحديد عقد `widget-3` الحالي.**
-   - طباعة سياق محدود حول `widget-3` و`loader` من inline script فقط.
-   - استخراج أي endpoint/method/params مثبتة بدل التخمين.
-   - إبقاء التشخيص منقحًا بلا media/session secrets.
-2. **استعادة category discovery.**
-   - تطبيق endpoint/fragment contract فقط إذا ثبت أنه من Akwam الأصلي.
-   - إبقاء `akwam.ss` allowlist وSSRF protections.
-   - إضافة regression لـinitial shell + loaded fragment.
-3. **استعادة details/episodes.**
-   - إثبات أن العنصر المكتشف صفحة عمل حقيقية وليس navigation shell.
-   - فصل `episode_id` عن `episode_number`.
-   - منع duplicate/stale entries.
-4. **استعادة watch/download/media.**
-   - refs opaque فقط للواجهة.
-   - HLS/MP4/MPEG-TS normalization.
-   - Range/206 وContent-Range/Accept-Ranges بلا تسريب upstream.
-5. **إغلاق #77 بأمان.**
-   - Live provider أخضر على exact-final-head.
-   - Remote movie playback أخضر على exact-final-head.
-   - كل بقية required checks خضراء قبل الدمج.
-6. **إصدار v1.0.6 كامل بعد الدمج.**
-   - Mobile APK + TV APK + IPA UNSIGNED من نفس main SHA/version.
-   - SHA-256/identity/LEANBACK/no-codesign checks.
-   - GitHub Release فعلي مع `SHA256SUMS.txt` و`PROVENANCE.json`.
-7. **حماية الويب/Pages.**
-   - Pages/WebKit/Web smoke على merge commit.
-   - CORS/Range/Download regressions.
-   - عدم استبدال الويب الحالي بـFlutter Web قبل parity كاملة.
-8. **إثبات hardening.**
-   - rate-limit API مقابل media.
+1. **إعادة فحص GitHub قبل أي تغيير.**
+   - main/branches/PRs/commits/CI/Releases.
+   - مقارنة هذا الملف مع الحالة الفعلية.
+   - عدم الوثوق بأي run قديم إذا تحرك الرأس.
+2. **حماية دورة الإصدار.**
+   - version/build جديد لكل merge مؤثر.
+   - منع artifact-only أو Release ناقص.
+   - التحقق من tag/target/assets بعد كل إصدار.
+3. **تعميق Web/PWA regressions.**
+   - iPhone Safari/WebKit playback.
+   - CORS/Range/206/Download.
+   - Pages على exact product commit.
+4. **تعميق Android TV parity.**
+   - D-Pad traversal والفوكس بعد player/back/retry.
+   - منع touch-only dead ends.
+   - إبقاء LEANBACK/touchscreen manifest checks.
+5. **تعميق media parity.**
+   - HLS play/seek/resume.
+   - MP4 Range/206 وduration.
+   - MPEG-TS على ExoPlayer/AVPlayer حيث يمكن إثباته.
+6. **تقوية Download parity.**
+   - list/refresh/delete على Mobile/TV.
+   - export/share عبر APIs عامة فقط.
+   - عدم كشف filesystem/upstream paths.
+7. **تقوية hardening.**
+   - اختبارات rate limits للـAPI مقابل media.
    - gzip/deflate و`Vary`/`Content-Length`.
-   - sweeper بدون كسر refs الصالحة.
-9. **تعميق TV/media parity بعد فك blocker.**
-   - D-Pad/focus بعد player/retry/back.
-   - HLS/MP4/MPEG-TS play/seek/resume حيث يمكن إثباته.
-   - Download list/refresh/delete بلا filesystem leakage.
-10. **صيانة الإصدار والmetadata.**
-   - إبقاء `v1.0.5` موثقًا كـRELEASE NOT PUBLISHED.
-   - version/build جديد لكل merge مؤثر لاحق.
-   - وضع Pages URL في Website/Homepage فقط عند توفر write API رسمي.
+   - sweeper دون حذف refs الصالحة.
+8. **حماية Basri/Akwam من flakiness.**
+   - عدم تعديل parser بسبب failure منفرد transient.
+   - إعادة failed live jobs على نفس SHA قبل تغيير الكود.
+   - توثيق contract change فقط عند دليل متكرر قابل للإعادة.
+9. **مراجعة الأمن والأداء.**
+   - SSRF/allowlists وopaque refs.
+   - timeouts/cancellation/error handling.
+   - عدم تسريب upstream/session data في logs/UI.
+10. **Metadata والصيانة المستمرة.**
+   - استخدام Pages URL الرسمي في Website/Homepage عند توفر write API.
+   - إبقاء `v1.0.5` موثقًا كفجوة تاريخية فقط.
+   - بعد استقرار المنتج، الاستمرار في regressions/security/performance بدل التوقف.
