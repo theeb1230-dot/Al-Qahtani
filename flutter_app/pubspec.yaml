@@ -1,7 +1,7 @@
 name: al_qahtani
 publish_to: none
 description: Al-Qahtani Flutter client consuming the Al-Qahtani Content Runtime.
-version: 1.0.19+19
+version: 1.0.20+20
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
