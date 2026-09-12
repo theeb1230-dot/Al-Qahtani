@@ -125,7 +125,7 @@ class _ShellState extends State<Shell> {
     ];
     final content = IndexedStack(index: index, children: pages);
     return Scaffold(
-      appBar: const AppBar(title: _BrandTitle()),
+      appBar: AppBar(title: const _BrandTitle()),
       body: isTvTarget
           ? FocusTraversalGroup(child: Row(children: [
               _TvNavigation(selectedIndex: index, onSelected: (value) => setState(() => index = value)),
