@@ -1,0 +1,16 @@
+name: News source diagnostic
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Inspect inherited news bridge without logging upstream URLs
+        run: node scripts/news_source_diagnostic.mjs
