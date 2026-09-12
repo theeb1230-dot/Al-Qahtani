@@ -1,24 +1,35 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import 'api_client.dart';
+import 'library_store.dart';
 import 'models.dart';
 
 class PlayerPage extends StatefulWidget {
   const PlayerPage({
     super.key,
     required this.api,
+    required this.store,
+    required this.item,
     required this.title,
     this.sourceRef = '',
     this.mediaPath = '',
     this.mediaType = '',
+    this.episodeId = '',
+    this.episodeNumber,
   });
 
   final AlQahtaniApi api;
+  final LocalLibraryStore store;
+  final CatalogItem item;
   final String title;
   final String sourceRef;
   final String mediaPath;
   final String mediaType;
+  final String episodeId;
+  final int? episodeNumber;
 
   @override
   State<PlayerPage> createState() => _PlayerPageState();
@@ -26,6 +37,7 @@ class PlayerPage extends StatefulWidget {
 
 class _PlayerPageState extends State<PlayerPage> {
   VideoPlayerController? _controller;
+  Timer? _progressTimer;
   String _status = 'جاري تجهيز المشاهدة…';
   bool _failed = false;
 
@@ -49,10 +61,16 @@ class _PlayerPageState extends State<PlayerPage> {
       _controller = controller;
       await controller.initialize();
       if (!mounted) return;
+      final resume = widget.store.resumePosition(widget.item.ref, episodeId: widget.episodeId);
+      if (resume >= const Duration(seconds: 5) && (controller.value.duration <= Duration.zero || resume < controller.value.duration)) {
+        await controller.seekTo(resume);
+      }
       setState(() {
         _failed = false;
         _status = mediaType.isEmpty ? 'جاهز للمشاهدة' : 'جاهز للمشاهدة • $mediaType';
       });
+      _progressTimer?.cancel();
+      _progressTimer = Timer.periodic(const Duration(seconds: 5), (_) => _saveProgress());
       await controller.play();
     } catch (_) {
       if (!mounted) return;
@@ -61,6 +79,18 @@ class _PlayerPageState extends State<PlayerPage> {
         _status = 'تعذر تشغيل هذا المصدر داخل التطبيق حاليًا';
       });
     }
+  }
+
+  Future<void> _saveProgress() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    await widget.store.recordProgress(
+      item: widget.item,
+      position: controller.value.position,
+      duration: controller.value.duration,
+      episodeId: widget.episodeId,
+      episodeNumber: widget.episodeNumber,
+    );
   }
 
   Future<void> _seekBy(Duration delta) async {
@@ -75,6 +105,8 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   void dispose() {
+    _progressTimer?.cancel();
+    _saveProgress();
     _controller?.dispose();
     super.dispose();
   }
@@ -96,9 +128,7 @@ class _PlayerPageState extends State<PlayerPage> {
                 children: [
                   if (activeController != null)
                     AspectRatio(
-                      aspectRatio: activeController.value.aspectRatio > 0
-                          ? activeController.value.aspectRatio
-                          : 16 / 9,
+                      aspectRatio: activeController.value.aspectRatio > 0 ? activeController.value.aspectRatio : 16 / 9,
                       child: VideoPlayer(activeController),
                     )
                   else if (_failed)
@@ -109,35 +139,21 @@ class _PlayerPageState extends State<PlayerPage> {
                   Text(_status, textAlign: TextAlign.center),
                   if (activeController != null) ...[
                     const SizedBox(height: 12),
-                    VideoProgressIndicator(
-                      activeController,
-                      allowScrubbing: true,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                    ),
+                    VideoProgressIndicator(activeController, allowScrubbing: true, padding: const EdgeInsets.symmetric(vertical: 8)),
                     Wrap(
                       alignment: WrapAlignment.center,
                       spacing: 12,
                       children: [
-                        IconButton.filledTonal(
-                          tooltip: 'رجوع 10 ثوانٍ',
-                          onPressed: () => _seekBy(const Duration(seconds: -10)),
-                          icon: const Icon(Icons.replay_10),
-                        ),
+                        IconButton.filledTonal(tooltip: 'رجوع 10 ثوانٍ', onPressed: () => _seekBy(const Duration(seconds: -10)), icon: const Icon(Icons.replay_10)),
                         ValueListenableBuilder<VideoPlayerValue>(
                           valueListenable: activeController,
                           builder: (context, value, _) => IconButton.filled(
                             tooltip: value.isPlaying ? 'إيقاف مؤقت' : 'تشغيل',
-                            onPressed: () => value.isPlaying
-                                ? activeController.pause()
-                                : activeController.play(),
+                            onPressed: () => value.isPlaying ? activeController.pause() : activeController.play(),
                             icon: Icon(value.isPlaying ? Icons.pause : Icons.play_arrow),
                           ),
                         ),
-                        IconButton.filledTonal(
-                          tooltip: 'تقديم 10 ثوانٍ',
-                          onPressed: () => _seekBy(const Duration(seconds: 10)),
-                          icon: const Icon(Icons.forward_10),
-                        ),
+                        IconButton.filledTonal(tooltip: 'تقديم 10 ثوانٍ', onPressed: () => _seekBy(const Duration(seconds: 10)), icon: const Icon(Icons.forward_10)),
                       ],
                     ),
                   ],
@@ -147,20 +163,14 @@ class _PlayerPageState extends State<PlayerPage> {
                       onPressed: () {
                         _controller?.dispose();
                         _controller = null;
-                        setState(() {
-                          _failed = false;
-                          _status = 'جاري إعادة المحاولة…';
-                        });
+                        setState(() { _failed = false; _status = 'جاري إعادة المحاولة…'; });
                         _initialize();
                       },
                       icon: const Icon(Icons.refresh),
                       label: const Text('إعادة المحاولة'),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'لا يتم فتح تطبيق خارجي أو كشف عنوان المصدر الحقيقي عند الفشل.',
-                      textAlign: TextAlign.center,
-                    ),
+                    const Text('لا يتم فتح تطبيق خارجي أو كشف عنوان المصدر الحقيقي عند الفشل.', textAlign: TextAlign.center),
                   ],
                 ],
               ),
