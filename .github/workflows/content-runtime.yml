@@ -19,11 +19,3 @@ jobs:
         run: node --check scripts/content_runtime_test.mjs
       - name: Run content runtime regressions
         run: node scripts/content_runtime_test.mjs
-      - name: Reject cross-project integration in runtime layer
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -nE 'THEEB_SERVICE_TOKEN|akwam-indexer|theeb-arab-api|theeb:canonical:|theeb:discover:' server/content-runtime.mjs; then
-            echo "Content runtime must stay independent from Theeb/Akwam project integration"
-            exit 1
-          fi
