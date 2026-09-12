@@ -124,7 +124,7 @@ const partialService = createContentRuntimeService({
     peakSections = Math.max(peakSections, activeSections);
     await new Promise((resolve) => setTimeout(resolve, 5));
     activeSections -= 1;
-    if (ref.includes("section=34")) throw new Error("ONE_SECTION_DOWN");
+    if (ref === "https://akwam.ss/series?section=29") throw new Error("ONE_SECTION_DOWN");
     return {
       status: "success",
       source: "basri-direct",
