@@ -15,6 +15,18 @@ class AlQahtaniApi {
     return _list(json['data']).map(MatchItem.fromJson).toList(growable: false);
   }
 
+  Future<MatchPlayback> resolveMatchPlayback(String ref) async {
+    if (ref.trim().isEmpty) throw const ApiException('MISSING_MATCH_REFERENCE');
+    final json = await _getJson('/api/v1/matches/play', {'ref': ref});
+    final data = json['data'];
+    if (data is! Map) throw const ApiException('INVALID_MATCH_PLAYBACK');
+    final resolved = MatchPlayback.fromJson(data.cast<String, dynamic>());
+    if (resolved.mediaPath.isEmpty) throw const ApiException('NO_MATCH_MEDIA');
+    return resolved;
+  }
+
+  Uri runtimeUri(String path) => _baseUri.resolve(path);
+
   Future<List<NewsItem>> news() async {
     final json = await _getJson('/api/v1/news');
     return _list(json['data']).map(NewsItem.fromJson).where((item) => item.ref.isNotEmpty).toList(growable: false);
@@ -35,7 +47,13 @@ class AlQahtaniApi {
 
   Future<List<CatalogItem>> search(String query) async {
     final json = await _getJson('/api/v1/search', {'q': query.trim()});
-    return _list(json['data']).map(CatalogItem.fromJson).toList(growable: false);
+    final seen = <String>{};
+    final out = <CatalogItem>[];
+    for (final item in _list(json['data']).map(CatalogItem.fromJson)) {
+      final key = '${item.ref}|${item.title}|${item.year ?? ''}';
+      if (item.ref.isNotEmpty && seen.add(key)) out.add(item);
+    }
+    return out;
   }
 
   Future<TitleDetails> details(String ref) async {
@@ -54,7 +72,7 @@ class AlQahtaniApi {
   }
 
   Uri mediaUri(String mediaPath, {bool download = false}) {
-    if (!mediaPath.startsWith('/api/cinema/media?')) {
+    if (!mediaPath.startsWith('/api/cinema/media?') && !mediaPath.startsWith('/api/v1/matches/media?')) {
       throw const ApiException('INVALID_MEDIA_REFERENCE');
     }
     final uri = _baseUri.resolve(mediaPath);
@@ -66,9 +84,7 @@ class AlQahtaniApi {
   Future<Map<String, dynamic>> _getJson(String path, [Map<String, String>? query]) async {
     final uri = _baseUri.replace(path: path, queryParameters: query);
     final response = await _client.get(uri, headers: const {'accept': 'application/json'}).timeout(const Duration(seconds: 30));
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException('HTTP ${response.statusCode}');
-    }
+    if (response.statusCode < 200 || response.statusCode >= 300) throw ApiException('HTTP ${response.statusCode}');
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) throw const ApiException('INVALID_JSON');
     if (decoded['status'] != 'success') throw ApiException('${decoded['message'] ?? 'RUNTIME_ERROR'}');
@@ -85,6 +101,5 @@ class AlQahtaniApi {
 class ApiException implements Exception {
   const ApiException(this.code);
   final String code;
-  @override
-  String toString() => 'ApiException($code)';
+  @override String toString() => 'ApiException($code)';
 }
