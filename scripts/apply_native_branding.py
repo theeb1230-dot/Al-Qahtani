@@ -106,13 +106,19 @@ def apply_android(root: Path):
     for folder, size in sizes.items():
         write_icon(res / folder / "ic_launcher.png", size)
     write_icon(res / "drawable" / "launch_qaf.png", 256, transparent=True)
+
+    # Android's layer-list item `android:drawable` requires a drawable resource
+    # reference. Keep the splash background in a named color resource rather than
+    # embedding a raw #RRGGBB value, which fails aapt2 resource linking on API 21+.
+    values = res / "values"
+    values.mkdir(parents=True, exist_ok=True)
+    (values / "colors.xml").write_text(
+        """<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n    <color name=\"alqahtani_splash_bg\">#101827</color>\n</resources>\n""",
+        encoding="utf-8",
+    )
     launch_xml = """<?xml version=\"1.0\" encoding=\"utf-8\"?>
 <layer-list xmlns:android=\"http://schemas.android.com/apk/res/android\">
-    <item>
-        <shape android:shape=\"rectangle\">
-            <solid android:color=\"#101827\" />
-        </shape>
-    </item>
+    <item android:drawable=\"@color/alqahtani_splash_bg\" />
     <item><bitmap android:gravity=\"center\" android:src=\"@drawable/launch_qaf\" /></item>
 </layer-list>
 """
