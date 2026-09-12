@@ -42,6 +42,7 @@ class _PlayerPageState extends State<PlayerPage> {
   Timer? _progressTimer;
   String _status = 'جاري تجهيز المشاهدة…';
   bool _failed = false;
+  double _playbackSpeed = 1.0;
 
   @override
   void initState() {
@@ -62,6 +63,7 @@ class _PlayerPageState extends State<PlayerPage> {
       final controller = VideoPlayerController.networkUrl(widget.api.mediaUri(mediaPath));
       _controller = controller;
       await controller.initialize();
+      await controller.setPlaybackSpeed(_playbackSpeed);
       if (!mounted) return;
       final resume = widget.store.resumePosition(widget.item.ref, episodeId: widget.episodeId);
       if (resume >= const Duration(seconds: 5) && (controller.value.duration <= Duration.zero || resume < controller.value.duration)) {
@@ -111,6 +113,14 @@ class _PlayerPageState extends State<PlayerPage> {
     } else {
       await controller.play();
     }
+  }
+
+  Future<void> _setPlaybackSpeed(double speed) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    await controller.setPlaybackSpeed(speed);
+    if (!mounted) return;
+    setState(() => _playbackSpeed = speed);
   }
 
   @override
@@ -164,9 +174,11 @@ class _PlayerPageState extends State<PlayerPage> {
                       builder: (context, value, _) => PlayerControls(
                         isPlaying: value.isPlaying,
                         isTv: isTvTarget,
+                        playbackSpeed: _playbackSpeed,
                         onRewind: () => _seekBy(const Duration(seconds: -10)),
                         onTogglePlay: () => _togglePlay(activeController),
                         onForward: () => _seekBy(const Duration(seconds: 10)),
+                        onPlaybackSpeedChanged: _setPlaybackSpeed,
                       ),
                     ),
                   ],
