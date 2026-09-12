@@ -126,10 +126,11 @@ function pagePoster(html = "") {
 function episodeIdentity(href = "", label = "", fallback = 0) {
   let decoded = String(href || "");
   try { decoded = decodeURIComponent(decoded); } catch {}
+  const cleanLabel = String(label || "");
   const explicit = [
+    cleanLabel.match(/(?:الحلقة|episode)[\s\-_/:]*(\d{1,4})(?:\D|$)/i),
+    cleanLabel.trim().match(/^(\d{1,4})$/),
     decoded.match(/(?:الحلقة|episode)[\s\-_/:]*(\d{1,4})(?:\D|$)/i),
-    String(label || "").match(/(?:الحلقة|episode)[\s\-_/:]*(\d{1,4})(?:\D|$)/i),
-    String(label || "").trim().match(/^(\d{1,4})$/),
   ].find(Boolean);
   const idMatch = decoded.match(/\/episode\/(\d+)(?:\/|$)/i);
   const number = Number(explicit?.[1] || fallback || 0);
@@ -137,6 +138,37 @@ function episodeIdentity(href = "", label = "", fallback = 0) {
     episode_number: Number.isFinite(number) && number > 0 ? number : null,
     episode_id: idMatch?.[1] || null,
   };
+}
+
+function normalizeEpisodes(entries = []) {
+  if (!entries.length) return [];
+  const ordered = [...entries].sort((a, b) => Number(a.episode_number || 0) - Number(b.episode_number || 0));
+  const seenNumbers = new Set();
+  const deduped = [];
+  let suspicious = false;
+
+  for (const entry of ordered) {
+    const n = Number(entry.episode_number || 0);
+    if (!Number.isFinite(n) || n <= 0 || n > 1000) {
+      suspicious = true;
+      deduped.push(entry);
+      continue;
+    }
+    if (seenNumbers.has(n)) {
+      suspicious = true;
+      continue;
+    }
+    seenNumbers.add(n);
+    deduped.push(entry);
+  }
+
+  const nums = deduped.map(ep => Number(ep.episode_number || 0)).filter(n => Number.isFinite(n) && n > 0);
+  if (nums.length && (nums[0] !== 1 || nums.some((n, i) => i > 0 && n !== nums[i - 1] + 1))) suspicious = true;
+
+  return deduped.map((episode, index) => {
+    const display = suspicious ? index + 1 : Number(episode.episode_number || index + 1);
+    return { ...episode, num: display, episode_number: display };
+  });
 }
 
 export function parseDetails(html = "", pageUrl = "") {
@@ -174,13 +206,13 @@ export function parseDetails(html = "", pageUrl = "") {
       });
     }
   }
-  episodes.sort((a, b) => Number(a.episode_number || a.num) - Number(b.episode_number || b.num));
+  const normalizedEpisodes = normalizeEpisodes(episodes);
   return {
     status: "success",
     source: "basri-direct",
     movie_title: pageTitle(html),
     poster: pagePoster(html),
-    episodes,
+    episodes: normalizedEpisodes,
     page_url: pageUrl,
   };
 }
