@@ -57,7 +57,6 @@ def mark(size: int, background: tuple[int, int, int, int]) -> bytes:
                 dx = x - cx
                 d2 = dx * dx + dy * dy
                 if i2 <= d2 <= o2:
-                    # subtle highlight toward top-left for the metallic feel
                     put(x, y, GOLD_LIGHT if x + y < (cx + cy) * .91 else GOLD)
 
     def thick_line(x0: float, y0: float, x1: float, y1: float, radius: float):
@@ -80,11 +79,9 @@ def mark(size: int, background: tuple[int, int, int, int]) -> bytes:
                 if not ((d1 < 0 or d2 < 0 or d3 < 0) and (d1 > 0 or d2 > 0 or d3 > 0)):
                     put(x, y, color)
 
-    # Circular Q with a lower-right tail, matching the reference icon.
     cx, cy = w * .49, h * .46
     ring(cx, cy, w * .285, w * .205)
     thick_line(w * .61, h * .61, w * .76, h * .76, w * .038)
-    # Center play glyph.
     triangle((w * .42, h * .34), (w * .42, h * .58), (w * .59, h * .46))
     return png_bytes(w, h, px)
 
@@ -111,7 +108,11 @@ def apply_android(root: Path):
     write_icon(res / "drawable" / "launch_qaf.png", 256, transparent=True)
     launch_xml = """<?xml version=\"1.0\" encoding=\"utf-8\"?>
 <layer-list xmlns:android=\"http://schemas.android.com/apk/res/android\">
-    <item android:drawable=\"#101827\" />
+    <item>
+        <shape android:shape=\"rectangle\">
+            <solid android:color=\"#101827\" />
+        </shape>
+    </item>
     <item><bitmap android:gravity=\"center\" android:src=\"@drawable/launch_qaf\" /></item>
 </layer-list>
 """
