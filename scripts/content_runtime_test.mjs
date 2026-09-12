@@ -9,7 +9,7 @@ import {
   buildRuntimeEnvelope,
 } from "../server/content-runtime.mjs";
 
-assert.equal(PRODUCT_VERSION, "1.0.14");
+assert.equal(PRODUCT_VERSION, "1.0.15");
 
 const cache = new TtlCache({ maxEntries: 2 });
 cache.set("matches", { ok: true }, 1000, 10_000);
@@ -111,7 +111,7 @@ assert.equal(liveZeroScore.team2.goals, 0);
 
 const envelope = buildRuntimeEnvelope({ kind: "matches", data: [match], source: "basri-original", health: health.summary(3000), generatedAt: 0 });
 assert.equal(envelope.status, "success");
-assert.equal(envelope.version, "1.0.14");
+assert.equal(envelope.version, "1.0.15");
 assert.equal(envelope.cached, false);
 assert.equal(envelope.stale, false);
 assert.equal(envelope.generated_at, "1970-01-01T00:00:00.000Z");

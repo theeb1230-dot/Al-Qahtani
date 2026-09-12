@@ -15,5 +15,5 @@ jobs:
           node-version: 22
       - name: Wait briefly for backend auto-deploy
         run: sleep 35
-      - name: Probe deployed 1.0.1 runtime contracts
+      - name: Probe deployed current Runtime contracts
         run: node scripts/remote_runtime_v1_smoke.mjs

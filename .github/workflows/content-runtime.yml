@@ -24,6 +24,7 @@ jobs:
         run: |
           node --check scripts/content_runtime_test.mjs
           node --check scripts/content_runtime_service_test.mjs
+          node --check scripts/runtime_version_contract_test.mjs
           node --check scripts/runtime_http_test.mjs
           node --check scripts/remote_runtime_v1_smoke.mjs
           node --check scripts/category_infinite_scroll_test.mjs
@@ -33,6 +34,7 @@ jobs:
         run: |
           node scripts/content_runtime_test.mjs
           node scripts/content_runtime_service_test.mjs
+          node scripts/runtime_version_contract_test.mjs
           node scripts/runtime_http_test.mjs
           node scripts/category_infinite_scroll_test.mjs
           node scripts/news_runtime_test.mjs
