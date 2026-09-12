@@ -72,6 +72,17 @@ const absentScore = normalizeMatch({
 assert.equal(absentScore.team1.goals, null);
 assert.equal(absentScore.team2.goals, null);
 
+const placeholderEndedScore = normalizeMatch({
+  id: "m-placeholder",
+  team1: { name: "راسينج سانتاندير", goals: "0" },
+  team2: { name: "ألافيس", goals: "0" },
+  status: "انتهت",
+  priority: 3,
+});
+assert.equal(placeholderEndedScore.status, "ended");
+assert.equal(placeholderEndedScore.team1.goals, null);
+assert.equal(placeholderEndedScore.team2.goals, null);
+
 const topLevelScore = normalizeMatch({
   id: "m3",
   team1: { name: "الزمالك" },
@@ -83,6 +94,16 @@ const topLevelScore = normalizeMatch({
 assert.equal(topLevelScore.status, "live");
 assert.equal(topLevelScore.team1.goals, 2);
 assert.equal(topLevelScore.team2.goals, 0);
+
+const liveZeroScore = normalizeMatch({
+  id: "m4",
+  team1: { name: "فريق حي 1", goals: "0" },
+  team2: { name: "فريق حي 2", goals: "0" },
+  status: "live",
+  priority: 1,
+});
+assert.equal(liveZeroScore.team1.goals, 0);
+assert.equal(liveZeroScore.team2.goals, 0);
 
 const envelope = buildRuntimeEnvelope({ kind: "matches", data: [match], source: "basri-original", health: health.summary(3000), generatedAt: 0 });
 assert.equal(envelope.status, "success");
