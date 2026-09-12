@@ -11,6 +11,7 @@ import {
 } from "./basri-source.mjs";
 import { buildDownloadContentDisposition, sanitizeDownloadFilename } from "./download-filename.mjs";
 import { createContentRuntimeService } from "./content-runtime-service.mjs";
+import { createRateLimiter, getClientAddress, maybeCompress, startMediaRefSweeper } from "./hardening.mjs";
 
 const MATCHES = "https://api.albasritv1.workers.dev/";
 const CINEMA = "https://albas.albesriali03.workers.dev/";
@@ -25,6 +26,9 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 
 const mediaRefs = new Map();
+const apiRateLimit = createRateLimiter({ windowMs: 60_000, max: 120 });
+const mediaRateLimit = createRateLimiter({ windowMs: 60_000, max: 600 });
+startMediaRefSweeper(mediaRefs);
 let mediaRefTtlMs = DEFAULT_MEDIA_REF_TTL_MS;
 let cinemaToken = "";
 let cinemaTokenExpiresAt = 0;
@@ -56,9 +60,26 @@ function applyCors(req, res) {
   res.setHeader("Access-Control-Expose-Headers", "Content-Type,Content-Length,Content-Range,Accept-Ranges,Content-Disposition");
 }
 
-function sendJson(res, status, data) {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
-  res.end(JSON.stringify(data));
+function appendVary(res, value) {
+  const current = String(res.getHeader("Vary") || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!current.some((item) => item.toLowerCase() === value.toLowerCase())) current.push(value);
+  res.setHeader("Vary", current.join(", "));
+}
+
+function sendJson(req, res, status, data) {
+  const payload = JSON.stringify(data);
+  const compressed = maybeCompress(req, payload);
+  appendVary(res, "Accept-Encoding");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  if (compressed) res.setHeader("Content-Encoding", compressed.encoding);
+  const body = compressed?.body || Buffer.from(payload);
+  res.setHeader("Content-Length", String(body.byteLength));
+  res.writeHead(status);
+  res.end(body);
 }
 
 function log(event, data = {}) {
@@ -410,7 +431,7 @@ async function proxyMedia(req, res, id) {
   const entry = mediaRefs.get(id);
   if (!entry || entry.expiresAt <= Date.now()) {
     mediaRefs.delete(id);
-    return sendJson(res, 404, { status: "error", message: "MEDIA_REFERENCE_EXPIRED" });
+    return sendJson(req, res, 404, { status: "error", message: "MEDIA_REFERENCE_EXPIRED" });
   }
   const target = assertSourceUrl(entry.url, { allowMedia: true });
   const headers = {
@@ -424,7 +445,7 @@ async function proxyMedia(req, res, id) {
     const status = Number(upstream.statusCode || 502);
     if (status < 200 || status >= 300) {
       upstream.resume();
-      return sendJson(res, status, { status: "error", message: `MEDIA_UPSTREAM_${status}` });
+      return sendJson(req, res, status, { status: "error", message: `MEDIA_UPSTREAM_${status}` });
     }
     applyCors(req, res);
     for (const name of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
@@ -443,7 +464,7 @@ async function proxyMedia(req, res, id) {
     res.end();
   } catch (error) {
     log("media_proxy_failed", { host: target.hostname, code: String(error?.code || ""), error: String(error?.message || error) });
-    if (!res.headersSent) return sendJson(res, 502, { status: "error", message: "MEDIA_PROXY_FAILED" });
+    if (!res.headersSent) return sendJson(req, res, 502, { status: "error", message: "MEDIA_PROXY_FAILED" });
     res.destroy(error);
   }
 }
@@ -454,22 +475,31 @@ export function createServer({ runtimeService = contentRuntime } = {}) {
     if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
     const url = new URL(req.url, "http://localhost");
     const started = Date.now();
+    const client = getClientAddress(req);
+    const limiter = url.pathname === "/api/cinema/media" ? mediaRateLimit : apiRateLimit;
+    const rate = limiter(`${client}:${url.pathname}`);
+    if (!rate.ok) {
+      res.setHeader("Retry-After", String(rate.retryAfterSec));
+      res.setHeader("X-RateLimit-Remaining", "0");
+      return sendJson(req, res, 429, { status: "error", message: "RATE_LIMITED" });
+    }
+    res.setHeader("X-RateLimit-Remaining", String(rate.remaining));
     try {
-      if (url.pathname === "/health") return sendJson(res, 200, { status: "ok", cinema_source: "basri-original" });
-      if (url.pathname === "/api/runtime/status") return sendJson(res, 200, runtimeService.status());
-      if (url.pathname === "/api/v1/matches") return sendJson(res, 200, await runtimeService.matches());
-      if (url.pathname === "/api/v1/search") return sendJson(res, 200, await runtimeService.search((url.searchParams.get("q") || "").trim()));
-      if (url.pathname === "/api/v1/category") return sendJson(res, 200, await runtimeService.category(url.searchParams.get("ref") || "", Number(url.searchParams.get("p") || 1)));
-      if (url.pathname === "/api/matches") return sendJson(res, 200, await getMatches());
-      if (url.pathname === "/api/matches/servers") return sendJson(res, 200, await getMatchServers(url.searchParams.get("url") || ""));
-      if (url.pathname === "/api/cinema/search") return sendJson(res, 200, await cinemaSearch((url.searchParams.get("q") || "").trim()));
-      if (url.pathname === "/api/cinema/category") return sendJson(res, 200, await cinemaCategory(url.searchParams.get("url") || "", Number(url.searchParams.get("p") || 1)));
-      if (url.pathname === "/api/cinema/details") return sendJson(res, 200, await cinemaDetails(url.searchParams.get("ref") || ""));
+      if (url.pathname === "/health") return sendJson(req, res, 200, { status: "ok", cinema_source: "basri-original" });
+      if (url.pathname === "/api/runtime/status") return sendJson(req, res, 200, runtimeService.status());
+      if (url.pathname === "/api/v1/matches") return sendJson(req, res, 200, await runtimeService.matches());
+      if (url.pathname === "/api/v1/search") return sendJson(req, res, 200, await runtimeService.search((url.searchParams.get("q") || "").trim()));
+      if (url.pathname === "/api/v1/category") return sendJson(req, res, 200, await runtimeService.category(url.searchParams.get("ref") || "", Number(url.searchParams.get("p") || 1)));
+      if (url.pathname === "/api/matches") return sendJson(req, res, 200, await getMatches());
+      if (url.pathname === "/api/matches/servers") return sendJson(req, res, 200, await getMatchServers(url.searchParams.get("url") || ""));
+      if (url.pathname === "/api/cinema/search") return sendJson(req, res, 200, await cinemaSearch((url.searchParams.get("q") || "").trim()));
+      if (url.pathname === "/api/cinema/category") return sendJson(req, res, 200, await cinemaCategory(url.searchParams.get("url") || "", Number(url.searchParams.get("p") || 1)));
+      if (url.pathname === "/api/cinema/details") return sendJson(req, res, 200, await cinemaDetails(url.searchParams.get("ref") || ""));
       if (url.pathname === "/api/cinema/media") return proxyMedia(req, res, url.searchParams.get("id") || "");
-      return sendJson(res, 404, { error: "NOT_FOUND" });
+      return sendJson(req, res, 404, { error: "NOT_FOUND" });
     } catch (error) {
       log("request_failed", { path: url.pathname, ms: Date.now() - started, error: String(error?.message || error) });
-      return sendJson(res, 502, { status: "error", message: String(error?.message || "UPSTREAM_FAILED") });
+      return sendJson(req, res, 502, { status: "error", message: String(error?.message || "UPSTREAM_FAILED") });
     }
   });
 }
