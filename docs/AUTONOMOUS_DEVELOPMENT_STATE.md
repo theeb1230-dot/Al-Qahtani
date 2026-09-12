@@ -6,7 +6,8 @@ GitHub is authoritative when this file disagrees with the repository. The preser
 ## Current state
 - Main: `7fbe83f4137301c2201d1f58b112c0e1d1aa85b2` (merged PR #67: native Flutter downloads + Android TV remote-first player controls).
 - Active branch: `feat/flutter-player-speed-68`.
-- Active PR: to be opened for playback-speed tranche.
+- Active PR: #68 `Add native Flutter playback speed controls`.
+- PR #68 head: `ce2bd926e6270787498d5df088dc098e714ecbdd`.
 - Flutter product version: `1.0.1+1`; no GitHub Release yet because release policy is fail-closed.
 - Existing Web/PWA remains the GitHub Pages root and was not replaced by Flutter Web.
 
@@ -27,15 +28,15 @@ Protected regressions remain iPhone Safari playback, Range/206, Content-Range/Ac
 - `flutter_app/lib/src/library_store.dart`: favorites/history/continue-watching without persisted media refs.
 
 ## This run
-1. Re-inspected GitHub actual state, all branches, the only open PR and CI state.
+1. Re-inspected GitHub actual state, branches, open PRs and CI state.
 2. Confirmed PR #67 final head `3feaf551d5ec7f8dd7a5c5a70f55586b66b82462` passed all 12 protected workflows.
 3. Flutter foundation run `34682564360` passed analyze/tests, Android Mobile APK, Android TV APK identity/LEANBACK checks and iOS UNSIGNED/no-codesign build.
 4. Merged PR #67 to main as `7fbe83f4137301c2201d1f58b112c0e1d1aa85b2`.
 5. Verified post-merge GitHub Pages deploy `34682801846` succeeded and dynamic Pages deployment `34682800749` succeeded for that exact merge commit.
-6. Confirmed no open PR remained, then created `feat/flutter-player-speed-68` from exact main.
+6. Confirmed no open PR remained, then created `feat/flutter-player-speed-68` from exact main and opened PR #68.
 7. Added bounded playback-speed policy: 0.5x, 0.75x, 1x, 1.25x, 1.5x and 2x.
 8. Wired `video_player.setPlaybackSpeed` into Player and added a remote-focusable speed menu.
-9. Added widget/policy regression tests for speed selection and supported values.
+9. Added widget/policy regression tests for speed selection and supported values; `analyze-test` is green on the current PR #68 head.
 10. GitHub Pages product root remains untouched.
 
 ## CI / deployment evidence
@@ -47,16 +48,18 @@ Protected regressions remain iPhone Safari playback, Range/206, Content-Range/Ac
 - PR #67 final-head Web smoke: `34682564319` success.
 - Main `7fbe83f...` GitHub Pages deploy: `34682801846` success.
 - Main `7fbe83f...` dynamic pages deployment: `34682800749` success.
-- PR #68 CI: pending after PR creation.
+- PR #68 current-head protected Web/backend workflows are green: Original Download `34682900173`, Content Runtime `34682900223`, Trusted Filename `34682900148`, Media Expiry `34682900111`, Web Smoke `34682900083`, Remote CORS `34682900078`, Original Player `34682900145`, CORS Boundary `34682900160`, Live Provider `34682900157`, Remote Movie Playback `34682900149`, Mobile WebKit `34682900130`.
+- PR #68 Flutter foundation `34682900196`: analyze-test success; Android Mobile and Android TV builds still in progress; iOS UNSIGNED build/package checks completed successfully and job is finalizing.
 
 ## Artifact state
-- Android Mobile APK: PR #67 build succeeded; version remains `1.0.1+1`; not a published Release asset.
-- Android TV APK: PR #67 build + LEANBACK/package checks succeeded; not a published Release asset.
-- iOS IPA UNSIGNED: PR #67 no-codesign build succeeded; artifact digest recorded by Actions; not installable without external signing/provisioning.
+- PR #67 Android Mobile APK artifact: `Al-Qahtani-Mobile-APK`, 25,191,620 bytes, SHA-256 `b7646857768e2de19cc1919ea8a5168b4070877063095fd0b64667e2cc1fac32`.
+- PR #67 Android TV APK artifact: `Al-Qahtani-TV-APK`, 25,191,918 bytes, SHA-256 `3502e95bc55463b9350a4aea6c45821c7aac8f00f306fed95f9ef1efddd106e3`.
+- PR #67 iOS IPA UNSIGNED artifact: `Al-Qahtani-iOS-UNSIGNED-IPA`, 7,377,547 bytes, SHA-256 `5b12a767f2268d7e34bbcc7ce12e64aed4d05a8e17d210dcd3e2221cebd56ed4`.
+- These are CI artifacts from one commit/version, not GitHub Release assets.
 - Release: none yet; no incomplete GitHub Release will be published.
 
 ## Current gaps / blockers
-- PR #68 must pass Flutter Mobile/TV/iOS and protected Web/backend regressions on its exact final head.
+- PR #68 exact head must complete Android Mobile, Android TV and iOS UNSIGNED jobs successfully before merge.
 - Player still needs runtime evidence for MP4/HLS and especially MPEG-TS on Android ExoPlayer and iOS AVPlayer.
 - Back-focus restoration from Player to Details still needs navigation regression coverage.
 - Download files are app-private; user-visible export/share management remains to be implemented without exposing upstream URLs.
