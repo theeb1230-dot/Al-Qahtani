@@ -1,4 +1,4 @@
-export const PRODUCT_VERSION = "1.0.14";
+export const PRODUCT_VERSION = "1.0.15";
 
 export class TtlCache {
   #entries = new Map();
@@ -40,9 +40,6 @@ export function normalizeMatch(match={}){
   const priority=asNumber(match.priority,inferredPriority);
   let homeGoals=firstScore(team1.goals,team1.score,match.home_score,match.homeScore,match.team1_goals,match.team1Goals,match.score1);
   let awayGoals=firstScore(team2.goals,team2.score,match.away_score,match.awayScore,match.team2_goals,match.team2Goals,match.score2);
-  // The inherited matches worker currently emits string "0"/"0" placeholders for most
-  // ended fixtures, including fixtures known to have non-zero final scores. Treat that
-  // pair as unavailable rather than manufacturing a false 0-0. Live 0-0 remains valid.
   if(priority===3&&homeGoals===0&&awayGoals===0){homeGoals=null;awayGoals=null;}
   return {
     id:asText(match.id||match.link),
