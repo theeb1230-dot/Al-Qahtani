@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node server/index.mjs",
-    "check": "node --check server/app.mjs && node --check server/index.mjs && node --check server/news-runtime.mjs"
+    "check": "node --check server/app.mjs && node --check server/index.mjs && node --check server/news-runtime.mjs && NODE_ENV=test node scripts/hls_manifest_proxy_test.mjs"
   },
   "engines": {
     "node": ">=22"
