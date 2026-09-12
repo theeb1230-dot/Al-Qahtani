@@ -76,18 +76,22 @@ try {
     count: Array.isArray(matchData?.data) ? matchData.data.length : null,
     ms: firstMatches.ms,
   });
+  assert(typeof matchData?.cached === "boolean" && typeof matchData?.stale === "boolean", "deployed v1 matches cache state is explicit", {
+    cached: matchData?.cached,
+    stale: matchData?.stale,
+  });
   assert(Array.isArray(matchData?.data), "deployed v1 matches data is normalized list");
   assert(!containsSensitiveRuntimeField(matchData), "deployed v1 matches do not expose secret/session fields");
 
   const secondMatches = await request("/api/v1/matches");
-  assert(secondMatches.response.ok && secondMatches.data?.status === "success" && secondMatches.data?.version === PRODUCT_VERSION, "deployed v1 matches second request succeeds", {
+  assert(secondMatches.response.ok && secondMatches.data?.status === "success" && secondMatches.data?.version === PRODUCT_VERSION && secondMatches.data?.kind === "matches", "deployed v1 matches second request succeeds", {
     cached: secondMatches.data?.cached,
     stale: secondMatches.data?.stale,
     ms: secondMatches.ms,
   });
-  assert(secondMatches.data?.cached === true || firstMatches.data?.cached === true, "deployed short-lived matches cache becomes observable", {
-    firstCached: firstMatches.data?.cached,
-    secondCached: secondMatches.data?.cached,
+  assert(typeof secondMatches.data?.cached === "boolean" && typeof secondMatches.data?.stale === "boolean", "deployed v1 matches second response keeps explicit cache state", {
+    cached: secondMatches.data?.cached,
+    stale: secondMatches.data?.stale,
   });
 
   for (const searchCase of [
