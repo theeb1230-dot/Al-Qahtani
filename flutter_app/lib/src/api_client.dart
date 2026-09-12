@@ -27,6 +27,20 @@ class AlQahtaniApi {
 
   Uri runtimeUri(String path) => _baseUri.resolve(path);
 
+  CatalogItem _catalogItem(Map<String, dynamic> json) {
+    final item = CatalogItem.fromJson(json);
+    final rawPoster = item.poster.trim();
+    final poster = rawPoster.startsWith('/') ? _baseUri.resolve(rawPoster).toString() : rawPoster;
+    return CatalogItem(
+      id: item.id,
+      title: item.title,
+      poster: poster,
+      type: item.type,
+      ref: item.ref,
+      year: item.year,
+    );
+  }
+
   Future<List<NewsItem>> news() async {
     final json = await _getJson('/api/v1/news');
     return _list(json['data']).map(NewsItem.fromJson).where((item) => item.ref.isNotEmpty).toList(growable: false);
@@ -42,14 +56,14 @@ class AlQahtaniApi {
 
   Future<List<CatalogItem>> category(String categoryId, {int page = 1}) async {
     final json = await _getJson('/api/v1/category', {'ref': categoryId, 'p': '$page'});
-    return _list(json['data']).map(CatalogItem.fromJson).toList(growable: false);
+    return _list(json['data']).map(_catalogItem).toList(growable: false);
   }
 
   Future<List<CatalogItem>> search(String query) async {
     final json = await _getJson('/api/v1/search', {'q': query.trim()});
     final seen = <String>{};
     final out = <CatalogItem>[];
-    for (final item in _list(json['data']).map(CatalogItem.fromJson)) {
+    for (final item in _list(json['data']).map(_catalogItem)) {
       final key = '${item.ref}|${item.title}|${item.year ?? ''}';
       if (item.ref.isNotEmpty && seen.add(key)) out.add(item);
     }
