@@ -8,7 +8,7 @@ GitHub is authoritative when this file disagrees with repository state. The pres
 - Exactly one product PR is open: PR #85 `Unify Arabic identity and repair match/search playback UX`, branch `fix/identity-matches-player-84`.
 - PR #84 was closed unmerged as a duplicate after the stronger PR #85 implementation became the canonical branch. Its useful catalog-poster Runtime-path fix/regression was ported to PR #85 before closure.
 - Product version/build: `1.0.13+13`.
-- Product head before this state-only commit: `4974c273ddd4b455398d8e086a9992c5395dfcfe`.
+- Product head before this state-only commit: `866afaf724ebadf2e2152e2fe79df63a83f3d373`.
 - Web/PWA remains GitHub Pages at `https://theeb1230-dot.github.io/Al-Qahtani/` and is not replaced by Flutter Web.
 - Product boundary remains Al-Qahtani/Basri only. No akwam-indexer, Theeb Engine, THEEB_SERVICE_TOKEN, or other Theeb providers were introduced.
 
@@ -27,11 +27,11 @@ GitHub is authoritative when this file disagrees with repository state. The pres
 
 ## Seven-problem batch status
 1. **Arabic black/gold identity:** **FIX IN PR / NOT DEVICE VERIFIED.** Flutter and Web use the Arabic `القحطاني` identity and gold/black base. Native branding automation and release workflow hooks exist; final APK/TV/IPA inspection is required after merge.
-2. **Incorrect match scores / fake 0-0:** **FIX IN CODE + REGRESSIONS / LIVE PROBE PENDING FINAL HEAD.** Missing scores remain null rather than defaulting to zero; ended/live non-zero score regressions are included. Physical-device display remains unverified.
+2. **Incorrect match scores / fake 0-0:** **MISLEADING 0-0 SUPPRESSED / TRUE FINAL SCORE SOURCE STILL WRONG / NOT DEVICE VERIFIED.** A live probe against the inherited Basri matches Worker showed 23 ended matches, 22 of them returned literal `0`/`0`, including Racing Santander × Alavés, while one ended fixture returned a real 2-0. Runtime now treats ended 0-0 pairs from this broken feed as unavailable rather than presenting them as factual results, while preserving live 0-0 and non-zero ended/live scores. The true Racing 2-1 cannot be reconstructed from the current Worker payload and is not hard-coded.
 3. **Remove technical home screen/menu:** **FIX IN CODE / NOT DEVICE VERIFIED.** Flutter starts on content sections and no RuntimeHome/navigation item is intended for users.
 4. **Downloads:** **SERVER CONTRACT FIXED / DEVICE STILL FAILED-UNTIL-PROVEN.** Independent Watch/Download resolution remains in force, HLS-only download is fail-closed, and trusted filename/Range semantics are regression-protected. Progress/cancel/retry/persistence/file existence still require live-device proof.
 5. **Playback:** **CONTRACT PARTIAL / DEVICE STILL FAILED-UNTIL-PROVEN.** Existing HLS/MP4/MPEG-TS proxy paths remain protected, but Reacher and real iPhone/Android start/seek/pause/resume/duration/retry are not physical-device verified.
-6. **Search posters/dedupe:** **FIX IN PR + REGRESSION / NOT DEVICE VERIFIED.** Search/category catalog items resolve Runtime-relative poster paths against the Al-Qahtani API base and preserve dedupe/year. Placeholder remains only when poster is actually absent or fails.
+6. **Search posters/dedupe:** **FIX IN PR + REGRESSION / NOT DEVICE VERIFIED.** Search/category catalog items resolve Runtime-relative poster paths against the Al-Qahtani API base and preserve dedupe/year. Placeholder remains only when poster is actually absent or fails. Upstream-image opacity/allowlist remains a security verification item and must not be claimed complete until the Runtime image contract is proven not to expose raw upstream URLs.
 7. **Match→Player Web/Flutter:** **FIX IN PR + MATCH RUNTIME CONTRACT / NOT DEVICE VERIFIED.** PR #85 adds opaque match/server/media refs, a Web match player path, Flutter internal match player/server switching, HLS child proxying and Range passthrough. A real iPhone Safari/Flutter playback session is still required.
 
 ## Additional issue matrix
@@ -49,10 +49,9 @@ GitHub is authoritative when this file disagrees with repository state. The pres
 - Four-surface E2E: **OPEN**.
 
 ## CI snapshot
-For product head `4974c273ddd4b455398d8e086a9992c5395dfcfe`, exact-final-head CI was re-triggered after the catalog-poster fix. At the time this state commit was prepared:
-- Media reference expiry `34713590382`: SUCCESS.
-- Original Basri download contract `34713590430`: SUCCESS.
-- Remaining workflows for that head were queued/in progress and must be re-read on the new documentation head before merge: Web smoke, Trusted download filename, Mobile WebKit smoke, Match runtime, Remote CORS, Content runtime, Live provider smoke, Flutter foundation, Independent download resolution, Match score probe, Original Basri player contract, Remote movie playback smoke, and CORS boundary.
+- Exact-final-head CI must always be re-read from the current PR head immediately before merge. Previous heads are evidence only, never merge authority.
+- Recent exact-head predecessors have passed Match runtime, Content runtime, Web smoke, WebKit, CORS, media-reference expiry, independent download resolution, Basri player/download and live-provider contracts except for failures already corrected on the same PR branch (Flutter const analysis, native-brand mask generation, and the iOS icon filename verification gate).
+- The current head must independently pass the same set plus the live match-score probe and all four Flutter jobs before merge.
 - No CI success alone is treated as physical-device proof.
 
 ## Protected regressions
@@ -83,8 +82,8 @@ Protect iPhone Safari/Web playback, Range/206, Content-Range/Accept-Ranges, MP4/
    - اختبار download resolution→opaque ref→local file write.
    - progress/cancel/retry/persistence/file existence/trusted filename.
    - إبقاء HLS-only بلا ملف مستقل fail-closed.
-7. **إكمال Search/Poster parity.**
-   - فحص posters الحقيقية عبر Runtime/allowlist.
+7. **إكمال Search/Poster parity وأمان الصور.**
+   - إثبات posters الحقيقية عبر Runtime مع opaque/allowlisted image contract دون raw upstream URL.
    - اختبار dedupe للمواسم المتشابهة مع توضيح الموسم.
    - حماية category/search pagination من stale responses.
 8. **إكمال Movies/News/Library regressions.**
