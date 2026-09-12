@@ -1,4 +1,4 @@
-export const PRODUCT_VERSION = "1.0.20";
+export const PRODUCT_VERSION = "1.0.21";
 
 export class TtlCache {
   #entries = new Map();
@@ -29,30 +29,6 @@ function asNumber(value,fallback=null){if(value==null)return fallback;if(typeof 
 function firstScore(...values){for(const value of values){const number=asNumber(value,null);if(number!==null)return Math.max(0,Math.trunc(number));}return null;}
 
 export function normalizeCatalogItem(item={}){return {id:asText(item.id||item.ref||item.href||item.link),title:asText(item.title||item.name)||"بدون عنوان",poster:asText(item.poster||item.img||item.image),type:item.is_series===false||item.type==="movie"?"movie":"series",year:asNumber(item.year),ref:asText(item.ref||item.href||item.link)};}
-
 export function normalizeEpisode(episode={},index=0){const episodeNumber=asNumber(episode.episode_number??episode.num??episode.number,index+1);return {episode_id:asText(episode.episode_id||episode.id||episode.link||episode.href),episode_number:Math.max(1,Math.trunc(episodeNumber||index+1)),title:asText(episode.title||episode.name)||`الحلقة ${Math.max(1,Math.trunc(episodeNumber||index+1))}`,ref:asText(episode.ref||episode.link||episode.href),watch_available:episode.watch_available!==false&&Boolean(episode.ref||episode.link||episode.href)};}
-
-export function normalizeMatch(match={}){
-  const team1=match.team1||match.home||{};
-  const team2=match.team2||match.away||{};
-  const rawStatus=asText(match.status).toLowerCase();
-  const inferredPriority=/(?:ended|finished|انته)/i.test(rawStatus)?3:/(?:live|جاري|مباشر)/i.test(rawStatus)?1:2;
-  const priority=asNumber(match.priority,inferredPriority);
-  let homeGoals=firstScore(team1.goals,team1.score,match.home_score,match.homeScore,match.team1_goals,match.team1Goals,match.score1);
-  let awayGoals=firstScore(team2.goals,team2.score,match.away_score,match.awayScore,match.team2_goals,match.team2Goals,match.score2);
-  if(priority===3&&homeGoals===0&&awayGoals===0){homeGoals=null;awayGoals=null;}
-  return {
-    id:asText(match.id||match.link),
-    team1:{name:asText(team1.name),logo:asText(team1.logo||team1.image||team1.img),goals:homeGoals},
-    team2:{name:asText(team2.name),logo:asText(team2.logo||team2.image||team2.img),goals:awayGoals},
-    time:asText(match.time),
-    status:priority===1?"live":priority===3?"ended":"scheduled",
-    priority,
-    competition:asText(match.competition||match.league),
-    channel:asText(match.channel),
-    commentator:asText(match.commentator),
-    ref:asText(match.ref||match.link),
-  };
-}
-
+export function normalizeMatch(match={}){const team1=match.team1||match.home||{};const team2=match.team2||match.away||{};const rawStatus=asText(match.status).toLowerCase();const inferredPriority=/(?:ended|finished|انته)/i.test(rawStatus)?3:/(?:live|جاري|مباشر)/i.test(rawStatus)?1:2;const priority=asNumber(match.priority,inferredPriority);let homeGoals=firstScore(team1.goals,team1.score,match.home_score,match.homeScore,match.team1_goals,match.team1Goals,match.score1);let awayGoals=firstScore(team2.goals,team2.score,match.away_score,match.awayScore,match.team2_goals,match.team2Goals,match.score2);if(priority===3&&homeGoals===0&&awayGoals===0){homeGoals=null;awayGoals=null;}return {id:asText(match.id||match.link),team1:{name:asText(team1.name),logo:asText(team1.logo||team1.image||team1.img),goals:homeGoals},team2:{name:asText(team2.name),logo:asText(team2.logo||team2.image||team2.img),goals:awayGoals},time:asText(match.time),status:priority===1?"live":priority===3?"ended":"scheduled",priority,competition:asText(match.competition||match.league),channel:asText(match.channel),commentator:asText(match.commentator),ref:asText(match.ref||match.link)};}
 export function buildRuntimeEnvelope({kind,data,source,health,cached=false,stale=false,generatedAt=Date.now()}){return {status:"success",version:PRODUCT_VERSION,kind:asText(kind)||"unknown",source:asText(source)||"basri-original",cached:Boolean(cached),stale:Boolean(stale),generated_at:new Date(generatedAt).toISOString(),health:health||null,data};}
