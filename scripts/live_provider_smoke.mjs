@@ -59,6 +59,19 @@ function uniqueMatches(text, re) {
   return out;
 }
 
+function sourceLinks(text, kind) {
+  const out = [];
+  const re = new RegExp(`href=["']((?:https:\\/\\/akwam\\.ss)?\\/${kind}\\/[^"']+)["']`, "gi");
+  for (const m of text.matchAll(re)) {
+    try {
+      const url = new URL(m[1], SOURCE);
+      if (url.protocol !== "https:" || url.hostname !== "akwam.ss" || !url.pathname.startsWith(`/${kind}/`)) continue;
+      if (!out.includes(url.href)) out.push(url.href);
+    } catch {}
+  }
+  return out;
+}
+
 async function matchesSmoke() {
   const page = "/2026/09/matches.html";
   const session = await request(MATCHES + "session", { headers: jsonHeaders(page) });
@@ -86,7 +99,7 @@ async function workerProbe() {
 async function cinemaDirectSmoke() {
   const category = await request(SOURCE + "/series?section=30", { headers: htmlHeaders() });
   if (!assert(category.ok && category.text.length > 1000, "direct cinema category HTML", { status: category.status, bytes: category.text.length, ms: category.ms })) return;
-  const series = uniqueMatches(category.text, /href=["'](https:\/\/akwam\.ss\/series\/[^"']+)["']/gi);
+  const series = sourceLinks(category.text, "series");
   if (!assert(series.length > 0, "direct cinema category has items", { count: series.length })) return;
 
   const search = await request(SOURCE + "/search?q=" + encodeURIComponent("الذئب الوحيد"), { headers: htmlHeaders() });
@@ -94,12 +107,12 @@ async function cinemaDirectSmoke() {
 
   const detail = await request(series[0], { headers: htmlHeaders(SOURCE + "/series?section=30") });
   if (!assert(detail.ok, "direct cinema details", { status: detail.status, ms: detail.ms })) return;
-  const episodes = uniqueMatches(detail.text, /href=["'](https:\/\/akwam\.ss\/episode\/[^"']+)["']/gi);
+  const episodes = sourceLinks(detail.text, "episode");
   if (!assert(episodes.length > 0, "direct cinema details has episodes", { count: episodes.length })) return;
 
   const episode = await request(episodes.at(-1), { headers: htmlHeaders(series[0]) });
   if (!assert(episode.ok, "direct cinema episode", { status: episode.status, ms: episode.ms })) return;
-  const watch = uniqueMatches(episode.text, /href=["'](https:\/\/akwam\.ss\/watch\/[^"']+)["']/gi);
+  const watch = sourceLinks(episode.text, "watch");
   if (!assert(watch.length > 0, "direct cinema episode has watch source", { count: watch.length })) return;
 
   const watchPage = await request(watch[0], { headers: htmlHeaders(episodes.at(-1)) });
