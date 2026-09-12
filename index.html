@@ -65,7 +65,7 @@ function card(m){
  const center=document.createElement('div');center.className='center';const pill=document.createElement('span');pill.className='pill'+(live?' live':'');pill.textContent=label;const time=document.createElement('div');time.className='time';time.textContent=centerText;center.append(pill,time);if(m.competition){const c=document.createElement('div');c.className='competition';c.textContent=m.competition;center.append(c)}d.append(renderTeam(m,'team1'),center,renderTeam(m,'team2'));d.onclick=()=>openMatch(m);d.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openMatch(m)}};return d;
 }
 function openMatch(m){
- const ended=m.status==='ended'||m.priority===3;if(ended){toast('المباراة انتهت ولا يوجد بث مباشر الآن.');return}const ref=String(m.ref||m.link||'').trim();if(!ref){toast('مرجع تشغيل المباراة غير متاح حاليًا.');return}location.href='Player.html?match='+encodeURIComponent(ref);
+ const ended=m.status==='ended'||m.priority===3;if(ended){toast('المباراة انتهت ولا يوجد بث مباشر الآن.');return}const ref=String(m.ref||m.link||'').trim();if(!ref){toast('مرجع تشغيل المباراة غير متاح حاليًا.');return}location.href='match-player.html?match='+encodeURIComponent(ref);
 }
 async function load(){
  list.innerHTML='<div class="state">جارٍ تحميل المباريات…</div>';
