@@ -37,17 +37,7 @@ export class ProviderHealthRegistry {
   #entry(name) {
     const key = String(name || "unknown");
     if (!this.#state.has(key)) {
-      this.#state.set(key, {
-        name: key,
-        successes: 0,
-        failures: 0,
-        consecutiveFailures: 0,
-        lastLatencyMs: null,
-        lastSuccessAt: null,
-        lastFailureAt: null,
-        openUntil: 0,
-        capabilities: {},
-      });
+      this.#state.set(key, { name: key, successes: 0, failures: 0, consecutiveFailures: 0, lastLatencyMs: null, lastSuccessAt: null, lastFailureAt: null, openUntil: 0, capabilities: {} });
     }
     return this.#state.get(key);
   }
@@ -69,9 +59,7 @@ export class ProviderHealthRegistry {
     if (entry.consecutiveFailures >= this.failureThreshold) entry.openUntil = now + this.cooldownMs;
     return this.snapshot(name, now);
   }
-  isAvailable(name, now = Date.now()) {
-    return this.#entry(name).openUntil <= now;
-  }
+  isAvailable(name, now = Date.now()) { return this.#entry(name).openUntil <= now; }
   score(name, now = Date.now()) {
     const entry = this.#entry(name);
     if (entry.openUntil > now) return -1_000_000;
@@ -85,37 +73,21 @@ export class ProviderHealthRegistry {
     if (["mp4", "hls", "mpeg-ts"].includes(entry.capabilities.container)) score += 6;
     return Math.round(score * 100) / 100;
   }
-  rank(names, now = Date.now()) {
-    return [...new Set(names.map(String))]
-      .map(name => ({ name, score: this.score(name, now), available: this.isAvailable(name, now) }))
-      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-  }
+  rank(names, now = Date.now()) { return [...new Set(names.map(String))].map(name => ({ name, score: this.score(name, now), available: this.isAvailable(name, now) })).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)); }
   snapshot(name, now = Date.now()) {
     const entry = this.#entry(name);
-    return {
-      name: entry.name,
-      successes: entry.successes,
-      failures: entry.failures,
-      consecutiveFailures: entry.consecutiveFailures,
-      lastLatencyMs: entry.lastLatencyMs,
-      lastSuccessAt: entry.lastSuccessAt,
-      lastFailureAt: entry.lastFailureAt,
-      circuitOpen: entry.openUntil > now,
-      retryAt: entry.openUntil > now ? entry.openUntil : null,
-      capabilities: { ...entry.capabilities },
-      score: this.score(entry.name, now),
-    };
+    return { name: entry.name, successes: entry.successes, failures: entry.failures, consecutiveFailures: entry.consecutiveFailures, lastLatencyMs: entry.lastLatencyMs, lastSuccessAt: entry.lastSuccessAt, lastFailureAt: entry.lastFailureAt, circuitOpen: entry.openUntil > now, retryAt: entry.openUntil > now ? entry.openUntil : null, capabilities: { ...entry.capabilities }, score: this.score(entry.name, now) };
   }
-  summary(now = Date.now()) {
-    return [...this.#state.keys()].map(name => this.snapshot(name, now)).sort((a, b) => b.score - a.score);
-  }
+  summary(now = Date.now()) { return [...this.#state.keys()].map(name => this.snapshot(name, now)).sort((a, b) => b.score - a.score); }
 }
 
 function asText(value) { return value == null ? "" : String(value).trim(); }
 function asNumber(value, fallback = null) {
+  if (value == null || String(value).trim() === "") return fallback;
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
+function firstDefined(...values) { return values.find(value => value != null && String(value).trim() !== ""); }
 
 export function normalizeCatalogItem(item = {}) {
   return {
@@ -142,17 +114,24 @@ export function normalizeEpisode(episode = {}, index = 0) {
 export function normalizeMatch(match = {}) {
   const team1 = match.team1 || match.home || {};
   const team2 = match.team2 || match.away || {};
+  const homeGoals = firstDefined(team1.goals, team1.score, match.home_score, match.team1_score, match.score1, match.homeGoals);
+  const awayGoals = firstDefined(team2.goals, team2.score, match.away_score, match.team2_score, match.score2, match.awayGoals);
+  const explicitStatus = asText(match.status).toLowerCase();
+  const priority = asNumber(match.priority, 2);
+  const status = ["live", "ended", "scheduled"].includes(explicitStatus)
+    ? explicitStatus
+    : priority === 1 ? "live" : priority === 3 ? "ended" : "scheduled";
   return {
     id: asText(match.id || match.link),
-    team1: { name: asText(team1.name), logo: asText(team1.logo || team1.image || team1.img), goals: asNumber(team1.goals, 0) },
-    team2: { name: asText(team2.name), logo: asText(team2.logo || team2.image || team2.img), goals: asNumber(team2.goals, 0) },
+    team1: { name: asText(team1.name), logo: asText(team1.logo || team1.image || team1.img), goals: asNumber(homeGoals) },
+    team2: { name: asText(team2.name), logo: asText(team2.logo || team2.image || team2.img), goals: asNumber(awayGoals) },
     time: asText(match.time),
-    status: match.priority === 1 ? "live" : match.priority === 3 ? "ended" : "scheduled",
-    priority: asNumber(match.priority, 2),
+    status,
+    priority,
     competition: asText(match.competition || match.league),
     channel: asText(match.channel),
     commentator: asText(match.commentator),
-    ref: asText(match.link),
+    ref: asText(match.ref || match.link),
   };
 }
 
