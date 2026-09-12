@@ -56,12 +56,21 @@ for (const line of sourceText.split(/\r?\n/)) {
   if (clean && !markers.includes(clean)) markers.push(clean);
   if (markers.length >= 30) break;
 }
+
+const cardSnippets = [];
+for (const match of sourceText.matchAll(/<a\b[^>]*href=["'][^"']*\/ar\/news\/\d+\/[^"']*["'][^>]*>[\s\S]{0,1600}?<\/a>/gi)) {
+  const snippet = redact(match[0]).slice(0, 1600);
+  if (snippet && !cardSnippets.includes(snippet)) cardSnippets.push(snippet);
+  if (cardSnippets.length >= 3) break;
+}
+
 console.log("NEWS_SOURCE", {
   status: source.response.status,
   contentType: source.response.headers.get("content-type") || "",
   bytes: sourceText.length,
   title: redact(title).slice(0, 180),
   markers,
+  cardSnippets,
 });
 
 if (!root.response.ok || !source.response.ok) process.exitCode = 1;
