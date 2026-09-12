@@ -21,6 +21,7 @@ class _DetailsPageState extends State<DetailsPage> {
   late Future<TitleDetails> future;
   final DownloadService _downloads = DownloadService();
   final Set<String> _activeDownloads = <String>{};
+  final Map<String, DownloadCancellationToken> _downloadTokens = <String, DownloadCancellationToken>{};
   final Map<String, DownloadProgress> _downloadProgress = <String, DownloadProgress>{};
   final Map<String, int> _reportedBytes = <String, int>{};
   final FocusNode _directPlayFocus = FocusNode(debugLabel: 'details-direct-play');
@@ -35,6 +36,9 @@ class _DetailsPageState extends State<DetailsPage> {
 
   @override
   void dispose() {
+    for (final token in _downloadTokens.values) {
+      token.cancel();
+    }
     _directPlayFocus.dispose();
     for (final node in _episodeFocusNodes.values) {
       node.dispose();
@@ -113,10 +117,21 @@ class _DetailsPageState extends State<DetailsPage> {
     setState(() => _downloadProgress[key] = progress);
   }
 
+  void _cancelDownload(String key) {
+    final token = _downloadTokens[key];
+    if (token == null || token.isCancelled) return;
+    token.cancel();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('جارٍ إلغاء التنزيل وحذف الملف الجزئي…')));
+    }
+  }
+
   Future<void> _download({required String key, required String title, String mediaPath = '', String sourceRef = ''}) async {
     if (_activeDownloads.contains(key)) return;
+    final token = DownloadCancellationToken();
     setState(() {
       _activeDownloads.add(key);
+      _downloadTokens[key] = token;
       _downloadProgress.remove(key);
       _reportedBytes.remove(key);
     });
@@ -126,10 +141,12 @@ class _DetailsPageState extends State<DetailsPage> {
         final resolved = await widget.api.resolvePlayback(sourceRef);
         resolvedPath = resolved.mediaPath;
       }
+      if (token.isCancelled) throw const DownloadException('DOWNLOAD_CANCELLED');
       final uri = widget.api.mediaUri(resolvedPath, download: true);
       final result = await _downloads.download(
         uri,
         fallbackName: title,
+        cancellationToken: token,
         onProgress: (progress) => _onDownloadProgress(key, progress),
       );
       if (!mounted) return;
@@ -140,6 +157,7 @@ class _DetailsPageState extends State<DetailsPage> {
       if (!mounted) return;
       final code = error is DownloadException ? error.code : '';
       final message = switch (code) {
+        'DOWNLOAD_CANCELLED' => 'تم إلغاء التنزيل ولم يُحتفظ بملف جزئي.',
         'DOWNLOAD_STALLED' => 'توقف وصول البيانات لمدة 30 ثانية. أعد المحاولة؛ لم يُترك ملف ناقص.',
         'INCOMPLETE_DOWNLOAD' => 'انقطع التنزيل قبل اكتمال الملف. أعد المحاولة.',
         'EMPTY_DOWNLOAD' => 'وصل رد فارغ من خادم التنزيل. أعد المحاولة لاحقًا.',
@@ -150,6 +168,7 @@ class _DetailsPageState extends State<DetailsPage> {
       if (mounted) {
         setState(() {
           _activeDownloads.remove(key);
+          _downloadTokens.remove(key);
           _downloadProgress.remove(key);
           _reportedBytes.remove(key);
         });
@@ -205,6 +224,7 @@ class _DetailsPageState extends State<DetailsPage> {
                         title: '${details.title} - الحلقة ${episode.number}',
                         sourceRef: episode.ref,
                       ),
+                      onCancelDownload: () => _cancelDownload(key),
                     );
                   }),
                 ] else if (details.hasDirectMedia) ...[
@@ -218,12 +238,12 @@ class _DetailsPageState extends State<DetailsPage> {
                   )),
                   Card(child: ListTile(
                     leading: _activeDownloads.contains('direct')
-                        ? const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const Icon(Icons.cancel_outlined)
                         : const Icon(Icons.download_outlined),
                     title: Text(_activeDownloads.contains('direct') ? _downloadLabel('direct') : 'تنزيل داخل التطبيق'),
-                    subtitle: const Text('يحفظ الملف داخل مساحة التطبيق مع متابعة فعلية للتقدم'),
+                    subtitle: Text(_activeDownloads.contains('direct') ? 'اضغط لإلغاء التنزيل وحذف الملف الجزئي' : 'يحفظ الملف داخل مساحة التطبيق مع متابعة فعلية للتقدم'),
                     onTap: _activeDownloads.contains('direct')
-                        ? null
+                        ? () => _cancelDownload('direct')
                         : () => _download(key: 'direct', title: details.title, mediaPath: details.mediaPath),
                   )),
                 ] else if (details.playbackUnavailable)
@@ -245,6 +265,7 @@ class _EpisodeTile extends StatelessWidget {
     required this.focusNode,
     required this.onTap,
     required this.onDownload,
+    required this.onCancelDownload,
     required this.downloading,
     required this.downloadLabel,
     this.downloadFocusNode,
@@ -255,6 +276,7 @@ class _EpisodeTile extends StatelessWidget {
   final FocusNode? downloadFocusNode;
   final VoidCallback onTap;
   final VoidCallback onDownload;
+  final VoidCallback onCancelDownload;
   final bool downloading;
   final String downloadLabel;
 
@@ -290,11 +312,9 @@ class _EpisodeTile extends StatelessWidget {
                   child: IconButton(
                     key: ValueKey('episode-download-${episode.id}'),
                     focusNode: downloadFocusNode,
-                    tooltip: downloading ? downloadLabel : 'تنزيل الحلقة',
-                    onPressed: downloading ? null : onDownload,
-                    icon: downloading
-                        ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.download_outlined),
+                    tooltip: downloading ? 'إلغاء التنزيل' : 'تنزيل الحلقة',
+                    onPressed: downloading ? onCancelDownload : onDownload,
+                    icon: Icon(downloading ? Icons.cancel_outlined : Icons.download_outlined),
                   ),
                 ),
             ],
@@ -309,18 +329,16 @@ class _EpisodeTile extends StatelessWidget {
       enabled: enabled,
       leading: CircleAvatar(child: Text('${episode.number}')),
       title: Text(label),
-      subtitle: Text(downloading ? downloadLabel : (enabled ? 'مشاهدة أو تنزيل الحلقة' : 'المشاهدة غير متاحة حاليًا')),
+      subtitle: Text(downloading ? '$downloadLabel • اضغط زر الإلغاء لإيقافه' : (enabled ? 'مشاهدة أو تنزيل الحلقة' : 'المشاهدة غير متاحة حاليًا')),
       trailing: enabled
           ? Wrap(
               spacing: 4,
               children: [
                 IconButton(
                   key: ValueKey('episode-download-${episode.id}'),
-                  tooltip: downloading ? downloadLabel : 'تنزيل الحلقة',
-                  onPressed: downloading ? null : onDownload,
-                  icon: downloading
-                      ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.download_outlined),
+                  tooltip: downloading ? 'إلغاء التنزيل' : 'تنزيل الحلقة',
+                  onPressed: downloading ? onCancelDownload : onDownload,
+                  icon: Icon(downloading ? Icons.cancel_outlined : Icons.download_outlined),
                 ),
                 IconButton(
                   key: ValueKey('episode-play-button-${episode.id}'),
