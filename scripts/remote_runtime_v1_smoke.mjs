@@ -1,0 +1,110 @@
+#!/usr/bin/env node
+
+const BASE = "https://al-qahtani-api.onrender.com";
+const ORIGIN = "https://theeb1230-dot.github.io";
+
+function assert(condition, name, detail = {}) {
+  if (!condition) {
+    console.error("FAIL", name, detail);
+    process.exitCode = 1;
+    return false;
+  }
+  console.log("PASS", name, detail);
+  return true;
+}
+
+async function request(path, { timeoutMs = 90_000 } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const started = Date.now();
+  try {
+    const response = await fetch(BASE + path, {
+      headers: { Accept: "application/json", Origin: ORIGIN },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch {}
+    return { response, data, text, ms: Date.now() - started };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function waitForVersionedRuntime() {
+  let last = null;
+  for (let attempt = 1; attempt <= 10; attempt += 1) {
+    try {
+      last = await request("/api/runtime/status", { timeoutMs: 30_000 });
+      if (last.response.ok && last.data?.status === "ok" && last.data?.version === "1.0.1") return last;
+    } catch (error) {
+      last = { error };
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(15_000, attempt * 2_000)));
+  }
+  throw new Error(`versioned runtime did not become ready: ${String(last?.error || last?.response?.status || "unknown")}`);
+}
+
+try {
+  const status = await waitForVersionedRuntime();
+  assert(status.response.ok && status.data?.version === "1.0.1", "deployed runtime status reports 1.0.1", {
+    status: status.response.status,
+    cacheEntries: status.data?.cache_entries,
+    providers: Array.isArray(status.data?.providers) ? status.data.providers.length : null,
+    ms: status.ms,
+  });
+  assert(!JSON.stringify(status.data).match(/THEEB_SERVICE_TOKEN|akwam-indexer|theeb-arab-api/i), "runtime status does not expose cross-project integration markers");
+
+  const firstMatches = await request("/api/v1/matches");
+  const matchData = firstMatches.data;
+  assert(firstMatches.response.ok && matchData?.status === "success" && matchData?.version === "1.0.1" && matchData?.kind === "matches", "deployed v1 matches contract", {
+    source: matchData?.source,
+    cached: matchData?.cached,
+    count: Array.isArray(matchData?.data) ? matchData.data.length : null,
+    ms: firstMatches.ms,
+  });
+  assert(Array.isArray(matchData?.data), "deployed v1 matches data is normalized list");
+
+  const secondMatches = await request("/api/v1/matches");
+  assert(secondMatches.response.ok && secondMatches.data?.status === "success", "deployed v1 matches second request succeeds", {
+    cached: secondMatches.data?.cached,
+    ms: secondMatches.ms,
+  });
+  assert(secondMatches.data?.cached === true || firstMatches.data?.cached === true, "deployed short-lived matches cache becomes observable", {
+    firstCached: firstMatches.data?.cached,
+    secondCached: secondMatches.data?.cached,
+  });
+
+  for (const query of ["الذئب الوحيد", "The Odyssey"]) {
+    const search = await request("/api/v1/search?q=" + encodeURIComponent(query), { timeoutMs: 120_000 });
+    const data = search.data;
+    assert(search.response.ok && data?.status === "success" && data?.version === "1.0.1" && data?.kind === "search", `deployed v1 search contract: ${query}`, {
+      source: data?.source,
+      cached: data?.cached,
+      count: Array.isArray(data?.data) ? data.data.length : null,
+      ms: search.ms,
+    });
+    assert(Array.isArray(data?.data) && data.data.length > 0, `deployed v1 search returns real items: ${query}`);
+    assert((data?.data || []).every((item) => item && typeof item.title === "string" && typeof item.ref === "string" && item.ref.startsWith("legacy:")), `deployed v1 search items are normalized: ${query}`);
+    assert(!(JSON.stringify(data).match(/THEEB_SERVICE_TOKEN|akwam-indexer|theeb-arab-api/i)), `deployed v1 search does not expose cross-project markers: ${query}`);
+  }
+
+  const categoryRef = "https://akwam.ss/series?section=30";
+  const category = await request("/api/v1/category?ref=" + encodeURIComponent(categoryRef) + "&p=1", { timeoutMs: 120_000 });
+  assert(category.response.ok && category.data?.status === "success" && category.data?.version === "1.0.1" && category.data?.kind === "category", "deployed v1 category contract", {
+    source: category.data?.source,
+    cached: category.data?.cached,
+    count: Array.isArray(category.data?.data) ? category.data.data.length : null,
+    ms: category.ms,
+  });
+  assert(Array.isArray(category.data?.data) && category.data.data.length > 0, "deployed v1 category returns real items");
+
+  const health = await request("/api/runtime/status");
+  assert(health.response.ok && Array.isArray(health.data?.providers), "deployed runtime health summary remains structured", {
+    providers: health.data?.providers?.map((item) => ({ name: item.name, score: item.score, circuit: item.circuit })) || [],
+  });
+} catch (error) {
+  console.error("REMOTE_RUNTIME_V1_FATAL", error);
+  process.exitCode = 1;
+}
