@@ -1,102 +1,150 @@
 # Autonomous Development State
 
 ## Source of truth
-GitHub repository state wins over this handoff if they disagree. The preserved `albasritv.github.io-main.zip` remains the behavioral baseline. Live deployed evidence is required before claiming Web parity.
+GitHub repository state wins over this handoff if they disagree. `albasritv.github.io-main.zip` remains the preserved Basri behavioral baseline. Live deployment evidence is required before claiming Web/PWA parity.
 
 ## Product boundary
-- `Al-Qahtani` is independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, and every Theeb provider/API.
-- `THEEB_SERVICE_TOKEN` and other cross-project credentials do not belong here.
-- Historical `https://akwam.ss/...` URLs are part of the original Basri cinema contract only; their presence is not integration with the separate akwam-indexer repository.
-- Matches/news remain on original Basri workers. Cinema stays on the original Basri chain with server-side direct fallback to the historical Basri source when the origin-locked cinema Worker fails or returns unusable empty data.
+- `Al-Qahtani` is independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and every Theeb provider/API.
+- Historical `https://akwam.ss/...` URLs are allowed only because they are part of the original Basri cinema contract.
+- Matches/news remain on original Basri sources. Cinema remains on the original Basri chain with secure server-side direct fallback to the historical Basri source when the origin-locked cinema Worker fails or returns unusable empty data.
+- Flutter is blocked until Web/PWA 1.0.1 is proven live.
 
 ## Current repository state
-- Product `main` at the beginning of this run: `9339af55d9957e537606ff30b5f9de8df42ac4e6` (`Restore real match team logos`).
-- No PR was open at run start, so a new PR was allowed.
-- Active PR: #51 `Expand live episode numbering coverage` on `test/multi-series-episode-numbering-51`.
-- Code head before this documentation commit: `08d8dc7212d512c32e166bcc1d29264d64cb6cf6`.
-- This documentation update creates a newer final head; merge only after all required workflows rerun and pass on that exact final head.
+- Main at run start: `3148b25621eda4a332fc1987a8daaa2991b44b40` (`Fix Saudi match times and logo layout`).
+- No PR was open at run start.
+- Active PR: #54 `Start Al-Qahtani 1.0.1 content runtime`.
+- Branch: `feat/content-runtime-foundation-54`.
+- Code head before this handoff update: `a89758d15c7676a01cc5e8f0fba164f93dee8428`.
+- This handoff commit changes the final head, so every required workflow must rerun and pass on the new exact head before merge.
 
-## Proven playback state
-The user has already verified on real iPhone Safari that playback broadly works after the MPEG-TS/HLS compatibility fixes, including movies, series, anime, native iOS controls, seeking/time display, and fullscreen on multiple sources. Preserve that behavior; do not treat the player as globally broken.
+## Proven live product state before 1.0.1 work
+Real iPhone Safari testing has proven that:
+- movie/series/anime playback broadly works after the MPEG-TS/HLS compatibility path;
+- native iOS controls, fullscreen and seeking work on multiple sources;
+- fake 43200-second HLS duration was removed and bounded transport timestamp probing is used when trustworthy;
+- Range transport remains protected by 206 / `Content-Range` / `Accept-Ranges` regressions;
+- real match team logos are fetched through the bounded Al-Qahtani backend proxy;
+- match times are displayed as Saudi time and the previously clipped logo layout is fixed;
+- episode display numbers are normalized separately from source/internal IDs across multiple live categories;
+- abnormal cinema/watch candidates are filtered generically by MIME/magic/watchability rather than title blacklist;
+- explicit Download behavior remains separate from normal playback.
 
-The deployed code on main already includes:
-- MIME + magic-byte classification for MP4/HLS/Matroska/WebM/MPEG-TS;
-- Safari byte-range handling with 206 / `Content-Range` / `Accept-Ranges` regressions;
-- opaque Al-Qahtani media references without upstream URL leakage;
-- explicit Download semantics separated from normal playback;
-- MPEG-TS HLS wrapping with measured duration instead of the old fabricated 43200-second timeline where trustworthy PCR/PTS evidence exists.
+These are protected regressions. Do not rewrite them without evidence of a new defect.
 
-## Episode numbering: new multi-category evidence
-The prior live regression covered only one Turkish search result. PR #51 expands live coverage to:
-- search: `حلم أشرف الموسم الثاني مدبلج`;
-- مسلسلات أجنبية;
-- مسلسلات عربية;
-- مسلسلات تركية;
-- مسلسلات آسيوية;
-- مسلسلات أنمي;
-- مسلسلات رمضان.
+## 1.0.1 roadmap status
+Target release: Web/PWA `1.0.1`.
 
-The first PR #51 run (`Live provider smoke` run `34660387525`) deliberately failed and exposed a real parser weakness rather than a flaky infrastructure failure:
-- `حلم أشرف الموسم الثاني مدبلج`: duplicate display episode numbers existed later in the 112-entry list;
-- `حب ع ورق`: duplicate display episode numbers existed;
-- `البراني`: source-derived values began `2,2,3,4...`, proving that trusting every slug/anchor number directly is unsafe;
-- `Reacher الموسم الرابع`, `Agent Kim Reactivated`, `شراب التوت الموسم الرابع مدبلج`, and `Alley Cats` already showed clean display numbering while source IDs such as `101923`, `101847`, `93229`, etc. remained distinct.
+### Phase 1 — Content Runtime
+Status: IN PROGRESS.
 
-Root fix on code head `08d8dc7212d512c32e166bcc1d29264d64cb6cf6`:
-- episode labels are preferred over slug text when extracting explicit display numbers;
-- internal `/episode/<id>/...` IDs remain separate as `episode_id`;
-- duplicate/suspicious display-number sequences are collapsed and normalized to a logical contiguous display sequence instead of leaking source IDs or preserving broken duplicate numbering;
-- clean unique sequences remain unchanged;
-- live probe now runs the full series category matrix with bounded concurrency (maximum two category chains at once).
+PR #54 introduces a deliberately small, reviewable runtime foundation:
+- `server/content-runtime.mjs` defines `PRODUCT_VERSION = 1.0.1`;
+- bounded `TtlCache` primitive for short-lived catalog/match metadata caching;
+- `ProviderHealthRegistry` with success/failure tracking, latency-aware scoring, capabilities, bounded circuit-breaker cooldown and source ranking;
+- normalized catalog, episode and match contracts;
+- a stable runtime envelope carrying version/source/cache/health metadata without exposing upstream secrets;
+- `scripts/content_runtime_test.mjs` covers TTL expiry/eviction, provider ranking, circuit opening/recovery, catalog normalization, episode ID vs display-number separation, match normalization and 1.0.1 envelope metadata;
+- `.github/workflows/content-runtime.yml` adds a dedicated runtime regression gate.
 
-The follow-up `Live provider smoke` run `34660465958` passed the new multi-category episode-number step on the fixed code head, along with match-logo proxy, provider, watch parser, abnormal movie watchability, and local backend tests before this documentation commit changed the head.
+The foundation is not wired into the live HTTP routes yet. Existing `/api/matches`, `/api/cinema/*`, media proxy and playback behavior remain unchanged in PR #54 by design. The next Phase-1 PR should integrate these primitives into the backend incrementally, beginning with read-only normalized contracts and short metadata caches rather than a big-bang rewrite.
 
-## Watchability / abnormal cinema result state
-The reported `Grand Theft Auto VI: An Extended Look` case remains fixed generically, not by title blacklist. Page assets are excluded from media candidates; candidates are classified from MIME/magic bytes; normal playback strips upstream attachment disposition; explicit Download keeps trusted attachment behavior. This regression remained green in PR #51 before the documentation head changed.
+## CI evidence from PR #54 before this handoff commit
+First code head `d77409cbdee7878c398d9f0404eac2361ddbac4d`:
+- new Content runtime workflow passed;
+- Web smoke failed because the repository-wide independence grep correctly found forbidden integration-name literals inside the new test/workflow themselves. This was a test design false positive, not a product integration.
 
-## Safari timeline/duration state
-The old fixed `43200`-second HLS metadata has already been removed from main. MPEG-TS duration probing is bounded and uses transport timestamps when trustworthy; when duration cannot be proven, the player avoids claiming a fake duration. Mobile WebKit remains a required gate so episode/parser work cannot silently regress the current iPhone playback path.
+Fix on same branch:
+- removed the duplicated forbidden-name literals from the test/workflow and relied on the repository-wide existing guard;
+- final code head before docs: `a89758d15c7676a01cc5e8f0fba164f93dee8428`.
 
-## CI evidence for PR #51 code head `08d8dc7212d512c32e166bcc1d29264d64cb6cf6`
-Confirmed success before this documentation update:
-- Media reference expiry `34660465907`.
-- Original Basri player contract `34660466062`.
-- Remote CORS smoke `34660465938`.
-- Original Basri download contract `34660465898`.
-- Trusted download filename `34660465924`.
-- Web smoke `34660465931`.
-- CORS boundary `34660465921`.
-- Remote movie playback smoke `34660466141`.
-- Live provider smoke `34660465958`, including the expanded episode-numbering step.
-- Mobile WebKit `34660465912` was still running when this handoff update was written; the final documentation head requires a fresh complete gate set anyway.
+Observed success on that code head before this documentation update:
+- Content runtime `34662517465` success;
+- Web smoke `34662517433` success;
+- CORS boundary `34662517421` success;
+- Remote CORS smoke `34662517410` success;
+- Trusted download filename `34662517420` success;
+- Media reference expiry `34662517468` success;
+- Original Basri download contract `34662517429` success;
+- Original Basri player contract `34662517460` success;
+- Remote movie playback smoke `34662517417` success.
 
-## Main deployment evidence at run start
-For main `9339af55d9957e537606ff30b5f9de8df42ac4e6`, GitHub Pages run `34660177547` completed successfully. The latest main push also had the normal web/runtime workflow set active and green where observed.
-
-Render access is connected, but two workspaces are visible (`My Workspace` and `بيانات`) and no repository evidence identifies the correct workspace unambiguously. Per safety rules no workspace was guessed, so no Render deployment/log claim is made in this run.
+At handoff-write time, Live provider smoke `34662517422` and Mobile WebKit `34662517452` were still running. Because this documentation commit creates a new head, those runs are not sufficient for merge anyway; require a full fresh final-head set.
 
 ## Security/runtime invariants
-- Search/Category → Details → Episodes → Watch/Download → Media remains the Basri flow.
-- Upstream media URLs remain behind short-lived opaque media references.
-- Source/media allowlists and SSRF protections remain mandatory.
-- `.downet.net` legacy-TLS compatibility stays narrowly scoped.
-- Safari byte-range behavior must preserve HTTP 206, `Content-Range`, and `Accept-Ranges` where supported.
-- Normal playback must not inherit upstream attachment disposition; explicit Download retains trusted attachment behavior.
-- Worker/session data stays server-side.
-- Referer values stay URL-safe/ASCII-safe.
-- Ads/popups/unneeded tracking and legacy Basri Android app Intent/deep-link handoff remain prohibited.
+- Search/Category → Details → Episodes → Watch/Download → Media remains intact.
+- Upstream media URLs remain behind short-lived opaque references.
+- Source/media allowlists and SSRF protections stay mandatory.
+- No arbitrary browser-supplied proxy targets.
+- Worker/session material stays server-side.
+- Referer values remain ASCII/URL-safe.
+- Normal playback never inherits upstream attachment semantics; explicit Download keeps trusted attachment behavior.
+- Ads/popups/unneeded tracking and legacy Android Intent/deep-link handoff remain prohibited.
+- Render workspace ownership remains ambiguous unless repository evidence identifies the correct workspace; never guess.
 
-## Web parity / Flutter status
-Flutter remains blocked. Playback is broadly proven on real iPhone Safari and the main branch contains the MPEG-TS/HLS, watchability, duration, and media-proxy fixes, but PR #51 must first prove episode numbering across multiple live content classes without playback regressions. Physical iPhone confirmation remains stronger evidence than CI for device-level timeline/seek behavior.
+## 1.0.1 readiness
+Current readiness: FOUNDATION / NOT RELEASE READY.
 
-## Next-run goals
-1. Re-fetch PR #51 actual final head and require every workflow green on that exact SHA.
-2. Fetch exact logs for any failure and fix only on `test/multi-series-episode-numbering-51` while it remains open.
-3. Reconfirm the expanded live episode matrix, especially Arabic/Ramadan duplicate cases that exposed the root defect.
-4. Merge PR #51 only after all required gates are green on the final head.
-5. After merge, wait for GitHub Pages and deployed runtime checks for the exact new main commit.
-6. Re-run live search/category/details/episodes/watch/media checks, including `الذئب الوحيد` and `The Odyssey`, with bounded concurrency.
-7. Keep GTA/watchability, media-type detection, 206 Range, upstream URL privacy, explicit Download, matches/news, CORS and Safari WebKit regressions green.
-8. Verify the live player continues to avoid fabricated 43200-second duration metadata and preserves honest duration/seek behavior.
-9. Do not guess a Render workspace; only inspect logs/deploys after repository evidence or explicit workspace confirmation identifies the correct one.
-10. Do not start Flutter until live Web parity conditions remain satisfied after these episode-number corrections.
+Not yet complete:
+- live runtime route integration;
+- `/api/home` or equivalent unified home contract;
+- unified normalized search/title/episodes/play contracts;
+- live source health ranking/circuit-breaker integration;
+- bounded metadata caching in production routes;
+- redesigned mobile-first UI/navigation;
+- Player 2.0 history/favorites/continue-watching features;
+- unified search/library UX;
+- installable PWA/service worker/offline shell;
+- diagnostics/observability surface;
+- complete 1.0.1 live release gate and tag/release.
+
+## أهداف التشغيل التالي
+1. **إغلاق PR #54 بأمان**
+   - افحص الرأس النهائي بعد تحديث هذا الملف.
+   - انتظر كل workflows المطلوبة بما فيها Content runtime وLive provider وMobile WebKit.
+   - أصلح أي failure من logs على نفس الفرع فقط.
+   - ادمج فقط بعد خضرة الرأس النهائي.
+
+2. **دمج Content Runtime مع backend دون كسر العقود القديمة**
+   - استورد normalization/health primitives في `server/app.mjs` تدريجيًا.
+   - أبقِ `/api/matches` و`/api/cinema/*` القديمة متوافقة أثناء الانتقال.
+   - أضف عقدًا normalized جديدًا واحدًا أولًا بدل تغيير كل routes دفعة واحدة.
+
+3. **إنشاء runtime health فعلي للمصادر الأصلية**
+   - سجل latency/success/failure للـBasri worker/direct paths.
+   - طبّق circuit breaker bounded دون retry storm.
+   - لا تعرض URL أو token في health payload.
+
+4. **إضافة metadata cache قصير وآمن**
+   - cache للمباريات/البحث/التصنيفات فقط بمدد قصيرة.
+   - no-cache للmedia refs والجلسات والبيانات الحساسة.
+   - أضف regressions للـexpiry والeviction وعدم cache للوسائط.
+
+5. **إنشاء `/api/home` أو عقد home مكافئ**
+   - اجمع حالة المباريات وأقسام المحتوى بصورة bounded.
+   - اسمح بفشل جزئي صادق بدل إسقاط الصفحة كلها.
+   - حافظ على مصدر كل جزء وhealth metadata المنقحة.
+
+6. **بناء عقود title/episodes/play موحدة**
+   - افصل `episode_id` عن `episode_number` رسميًا.
+   - وحّد movie/series details دون تسريب upstream hrefs غير الضرورية.
+   - حافظ على opaque media references ومسار Download الحالي.
+
+7. **بدء واجهة 1.0.1 Mobile-first بعد ثبوت runtime contracts**
+   - صمم الرئيسية + bottom navigation RTL.
+   - حافظ على صفحة المباريات الحالية كمرجع وظيفي حتى ينجح البديل.
+   - أضف skeleton/error/retry states دون إخفاء failures الحقيقية.
+
+8. **تحسين Live matches تدريجيًا**
+   - countdown من Saudi time normalization الحالي.
+   - polling bounded عند حلول الموعد فقط.
+   - status للبث المتاح/غير المتاح دون الثقة العمياء في `priority`.
+
+9. **حماية playback أثناء التوسع**
+   - أبقِ Mobile WebKit وremote playback وRange/CORS/download gates إلزامية.
+   - اختبر MP4/HLS/MPEG-TS ومدة/seek قبل أي Player 2.0 feature.
+   - لا تعتبر نجاح Download أو Range وحده إثبات playback UX.
+
+10. **تجهيز PWA/Diagnostics بعد استقرار runtime + UI**
+   - manifest/service-worker shell بدون cache للفيديو أو media refs.
+   - diagnostics منقحة تعرض version/commit/runtime health فقط.
+   - لا تعلن 1.0.1 Ready أو تبدأ Flutter قبل اكتمال البوابات الحية الكاملة.
