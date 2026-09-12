@@ -9,14 +9,26 @@ const sourceHtml = `<!doctype html><html><head>
   "numberOfItems":2,
   "itemListElement":[
     {"@type":"ListItem","position":1,"name":"عنوان الخبر الأول","item":"https://source.example/ar/news/101/story-one/"},
-    {"@type":"ListItem","position":2,"name":"عنوان الخبر الثاني","item":{"@type":"NewsArticle","url":"https://source.example/ar/news/102/story-two/","name":"عنوان الخبر الثاني","datePublished":"اليوم","description":"وصف مختصر"}}
+    {"@type":"ListItem","position":2,"name":"عنوان الخبر الثاني","item":"https://source.example/ar/news/102/story-two/"}
   ]
-}</script></head><body></body></html>`;
+}</script></head><body>
+<a href="https://source.example/ar/news/101/story-one/" class="news-item big-news-card">
+  <h2 class="news-title">عنوان الخبر الأول</h2>
+  <div class="news-date"><span>2026-09-12</span></div>
+  <p class="big-news-lead">وصف الخبر الأول</p>
+</a>
+<a href="https://source.example/ar/news/102/story-two/" class="news-item">
+  <h3 class="news-title">عنوان الخبر الثاني</h3>
+  <div class="news-date"><span>2026-09-11</span></div>
+</a>
+</body></html>`;
 
 const parsedSource = parseNewsSourceHtml(sourceHtml);
 assert.equal(parsedSource.length, 2);
 assert.equal(parsedSource[0].title, "عنوان الخبر الأول");
-assert.equal(parsedSource[1].description, "وصف مختصر");
+assert.equal(parsedSource[0].date, "2026-09-12");
+assert.equal(parsedSource[0].description, "وصف الخبر الأول");
+assert.equal(parsedSource[1].title, "عنوان الخبر الثاني");
 assert.equal(parseNewsSourceHtml(sourceHtml.replaceAll("source.example", "evil.example").replace('href="https://evil.example/ar/news/"', 'href="https://source.example/ar/news/"')).length, 0, "cross-origin source items are rejected");
 
 let now = 1_000;
@@ -51,6 +63,8 @@ assert.equal(list.version, "1.0.10");
 assert.equal(list.data.length, 2);
 assert.ok(list.data[0].ref);
 assert.equal(list.data[0].title, "عنوان الخبر الأول");
+assert.equal(list.data[0].date, "2026-09-12");
+assert.equal(list.data[0].description, "وصف الخبر الأول");
 assert.equal(JSON.stringify(list).includes("source.example"), false, "news list must not expose source URLs");
 
 const article = await runtime.article(list.data[0].ref);
