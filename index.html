@@ -2,130 +2,34 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#07111f"><title>Al-Qahtani</title>
+<meta name="theme-color" content="#090a0c"><title>القحطاني</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{color-scheme:dark;--bg:#07111f;--panel:#0d1b2c;--panel2:#132238;--text:#fff;--muted:#9db0c4;--accent:#1cc8ee;--danger:#ff5a6b}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% -20%,#153253 0,transparent 35%),var(--bg);color:var(--text);font-family:Cairo,sans-serif;min-height:100vh}
-header{position:sticky;top:0;z-index:5;background:#07111fe8;backdrop-filter:blur(14px);border-bottom:1px solid #ffffff15}
-.wrap{max-width:980px;margin:auto;padding:16px}.brand{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand strong{font-size:1.1rem}.nav{display:flex;gap:8px;flex-wrap:wrap}.nav a{color:var(--text);text-decoration:none;background:var(--panel);padding:8px 11px;border-radius:10px;font-size:.85rem}
-.hero{padding:28px 0 14px}.hero h1{margin:0 0 8px;font-size:clamp(1.6rem,6vw,2.7rem)}.hero p{margin:0;color:var(--muted)}
-.grid{display:grid;gap:12px}.card{background:linear-gradient(145deg,#ffffff08,#ffffff02),var(--panel);border:1px solid #ffffff12;border-radius:18px;padding:14px;display:grid;grid-template-columns:1fr 120px 1fr;align-items:center;gap:8px;cursor:pointer}
-.team{text-align:center}.team-logo-wrap{width:64px;height:64px;margin:0 auto;display:grid;place-items:center;border-radius:50%;background:#ffffff08;border:1px solid #ffffff10;overflow:hidden}.team-logo-wrap>img,.team-logo-wrap>.team-logo-missing{grid-area:1/1}.team img{width:52px;height:52px;object-fit:contain;display:block}.team-logo-missing{width:32px;height:32px;opacity:.5}.team b{display:block;margin-top:6px}.center{text-align:center}.pill{display:inline-block;padding:4px 9px;border-radius:999px;background:#ffffff10;color:var(--muted);font-size:.75rem}.live{color:#ff8b96}.time{font-weight:800;margin-top:8px}
-.state{padding:34px;text-align:center;color:var(--muted);background:var(--panel);border-radius:18px}.retry{margin-top:12px;border:0;background:var(--accent);color:#03141a;padding:10px 14px;border-radius:10px;font-weight:800}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:20;max-width:min(92vw,480px);padding:11px 16px;border:1px solid #ffffff18;background:#101e31;color:#fff;border-radius:12px;box-shadow:0 12px 40px #0008;display:none;text-align:center}
+:root{color-scheme:dark;--bg:#090a0c;--panel:#151619;--panel2:#1c1d21;--text:#fff;--muted:#aaa;--gold:#d5ae55;--gold2:#b88c3d;--danger:#ff6b73}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 75% -10%,#342817 0,transparent 34%),var(--bg);color:var(--text);font-family:Cairo,sans-serif;min-height:100vh}
+header{position:sticky;top:0;z-index:5;background:#090a0cea;backdrop-filter:blur(14px);border-bottom:1px solid #d5ae5522}.wrap{max-width:980px;margin:auto;padding:16px}.brand{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand-mark{display:flex;align-items:center;gap:9px;font-weight:800}.q{color:var(--gold);font-size:2rem;line-height:1}.nav{display:flex;gap:8px;flex-wrap:wrap}.nav a{color:var(--text);text-decoration:none;background:var(--panel);padding:8px 11px;border-radius:10px;font-size:.85rem}.nav a:hover{color:var(--gold)}
+.hero{padding:24px 0 14px}.hero h1{margin:0 0 6px;font-size:clamp(1.5rem,6vw,2.5rem)}.hero p{margin:0;color:var(--muted)}.grid{display:grid;gap:12px}.card{background:linear-gradient(145deg,#d5ae5508,#ffffff02),var(--panel);border:1px solid #d5ae5520;border-radius:18px;padding:14px;display:grid;grid-template-columns:1fr 120px 1fr;align-items:center;gap:8px;cursor:pointer}.card:active{transform:scale(.995)}
+.team{text-align:center}.team-logo-wrap{width:64px;height:64px;margin:0 auto;display:grid;place-items:center;border-radius:50%;background:#ffffff08;border:1px solid #d5ae5524;overflow:hidden}.team img{width:52px;height:52px;object-fit:contain;display:block}.team b{display:block;margin-top:6px}.center{text-align:center}.pill{display:inline-block;padding:4px 9px;border-radius:999px;background:#ffffff10;color:var(--muted);font-size:.75rem}.live{color:#ff8b96}.time{font-weight:800;margin-top:8px;font-size:1.2rem}.score-missing{font-size:.86rem;color:var(--muted)}
+.state{padding:34px;text-align:center;color:var(--muted);background:var(--panel);border-radius:18px}.retry{margin-top:12px;border:0;background:var(--gold);color:#111;padding:10px 14px;border-radius:10px;font-weight:800}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:20;max-width:min(92vw,480px);padding:11px 16px;border:1px solid #d5ae5533;background:#181818;color:#fff;border-radius:12px;box-shadow:0 12px 40px #0008;display:none;text-align:center}
 @media(max-width:620px){.card{grid-template-columns:1fr 92px 1fr}.team-logo-wrap{width:54px;height:54px}.team img{width:44px;height:44px}.team b{font-size:.85rem}}
 </style>
 </head>
 <body>
-<header><div class="wrap brand"><strong>Al-Qahtani</strong><nav class="nav"><a href="./">المباريات</a><a href="albasri-cinema.html">الأفلام والمسلسلات</a><a href="news.html">الأخبار</a></nav></div></header>
-<main class="wrap">
-<section class="hero"><h1>مباريات اليوم</h1><p>نسخة ويب مستقلة بدون إعلانات أو إجبار على فتح تطبيق خارجي. الأوقات بتوقيت السعودية.</p></section>
-<div id="list" class="grid"><div class="state">جارٍ تحميل المباريات…</div></div>
-</main>
+<header><div class="wrap brand"><div class="brand-mark"><span class="q">ق</span><strong>القحطاني</strong></div><nav class="nav"><a href="./">المباريات</a><a href="albasri-cinema.html">الأفلام والمسلسلات</a><a href="news.html">الأخبار</a></nav></div></header>
+<main class="wrap"><section class="hero"><h1>مباريات اليوم</h1><p>الأوقات بتوقيت السعودية، والتشغيل يمر عبر خادم القحطاني دون كشف مصدر البث.</p></section><div id="list" class="grid"><div class="state">جارٍ تحميل المباريات…</div></div></main>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script type="module">
-import { getMatches, getMatchServers, ProviderEndpoints } from './web/core/api-client.js';
+import { ProviderEndpoints } from './web/core/api-client.js';
 import { formatSaudiMatchTime, hasSaudiMatchTimePassed } from './web/core/match-time.js';
-const list=document.getElementById('list'),toastEl=document.getElementById('toast');
-const BASRI_ORIGIN='https://www.albasritv.abrdns.com/';
-const cleanImg=u=>{
- if(!u)return '';
- try{
-   const raw=String(u).trim();
-   const absolute=/^https?:\/\//i.test(raw)||raw.startsWith('//');
-   const url=new URL(raw,absolute?location.href:BASRI_ORIGIN);
-   if(url.protocol==='http:')url.protocol='https:';
-   if(url.protocol!=='https:'&&url.protocol!=='http:')return '';
-   if(['kooorracity.com','www.kooorracity.com'].includes(url.hostname.toLowerCase())&&url.pathname.startsWith('/wp-content/uploads/')){
-     return ProviderEndpoints.backend+'/api/matches/logo?url='+encodeURIComponent(url.href);
-   }
-   return url.href;
- }catch{return ''}
-};
+const list=document.getElementById('list'),toastEl=document.getElementById('toast'),backend=ProviderEndpoints.backend;
 let toastTimer;function toast(msg){clearTimeout(toastTimer);toastEl.textContent=msg;toastEl.style.display='block';toastTimer=setTimeout(()=>toastEl.style.display='none',3200)}
-function logoCandidates(match,side){
- const team=match?.[side]||{};
- const prefix=side==='team1'?'home':'away';
- const values=[
-   team.logo,team.logo_url,team.logoUrl,team.image,team.img,team.icon,team.badge,team.crest,team.photo,team.avatar,
-   match?.[side+'_logo'],match?.[side+'Logo'],match?.[side+'_image'],match?.[side+'Image'],match?.[side+'_img'],match?.[side+'Img'],
-   match?.[prefix+'_logo'],match?.[prefix+'Logo'],match?.[prefix+'_image'],match?.[prefix+'Image'],match?.[prefix+'_img'],match?.[prefix+'Img'],
-   match?.[prefix+'TeamLogo'],match?.[prefix+'_team_logo'],match?.[prefix+'TeamImage'],match?.[prefix+'_team_image']
- ];
- return [...new Set(values.map(cleanImg).filter(Boolean))];
-}
-function makeLogoPlaceholder(){
- const ns='http://www.w3.org/2000/svg';
- const svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 64 64');svg.setAttribute('aria-hidden','true');svg.classList.add('team-logo-missing');
- const shield=document.createElementNS(ns,'path');shield.setAttribute('d','M32 4 52 11v17c0 13-8.4 24.6-20 31C20.4 52.6 12 41 12 28V11L32 4Z');shield.setAttribute('fill','none');shield.setAttribute('stroke','currentColor');shield.setAttribute('stroke-width','4');
- const ball=document.createElementNS(ns,'circle');ball.setAttribute('cx','32');ball.setAttribute('cy','30');ball.setAttribute('r','9');ball.setAttribute('fill','none');ball.setAttribute('stroke','currentColor');ball.setAttribute('stroke-width','3');
- svg.append(shield,ball);return svg;
-}
-function renderTeam(match,side){
- const team=match?.[side]||{};
- const box=document.createElement('div');box.className='team';
- const logoWrap=document.createElement('div');logoWrap.className='team-logo-wrap';
- const fallback=makeLogoPlaceholder();logoWrap.appendChild(fallback);
- const candidates=logoCandidates(match,side);
- if(candidates.length){
-   const img=document.createElement('img');img.alt=team.name?`شعار ${team.name}`:'شعار الفريق';img.loading='lazy';img.decoding='async';
-   let index=0,retried=false,current='';
-   const tryNext=()=>{
-     if(current&&!retried){retried=true;const retryUrl=current+(current.includes('?')?'&':'?')+'_retry='+Date.now();setTimeout(()=>{img.src=retryUrl},1600);return}
-     if(index>=candidates.length){img.remove();fallback.hidden=false;return}
-     retried=false;current=candidates[index++];fallback.hidden=true;img.src=current;
-   };
-   img.addEventListener('error',tryNext);
-   img.addEventListener('load',()=>{fallback.hidden=true});
-   logoWrap.appendChild(img);tryNext();
- }
- const name=document.createElement('b');name.textContent=String(team.name||'');
- box.append(logoWrap,name);return box;
-}
-function card(m){
- const d=document.createElement('div');d.className='card';
- const score=(m.team1?.goals||0)+' - '+(m.team2?.goals||0);
- const live=m.priority===1, ended=m.priority===3;
- const scheduledStarted=!live&&!ended&&hasSaudiMatchTimePassed(m.time);
- const label=live?'جاري الآن':ended?'انتهت':scheduledStarted?'موعدها بدأ — بانتظار البث':'لم تبدأ';
- const centerText=live||ended?score:formatSaudiMatchTime(m.time);
- const center=document.createElement('div');center.className='center';
- const pill=document.createElement('span');pill.className='pill'+(live?' live':'');pill.textContent=label;
- const time=document.createElement('div');time.className='time';time.textContent=centerText;
- center.append(pill,time);
- d.append(renderTeam(m,'team1'),center,renderTeam(m,'team2'));
- d.onclick=()=>openMatch(m);
- return d;
-}
-async function openMatch(m){
- if(m.priority===3){toast('المباراة انتهت ولا يوجد بث مباشر الآن.');return}
- try{
-   toast(m.priority===2?'جاري التحقق من بدء البث…':'جاري فحص خوادم البث…');
-   const result=await getMatchServers(m.link),j=result.data;
-   if(j?.success&&Array.isArray(j.servers)&&j.servers.length){
-     const payload={servers:j.servers};
-     const bytes=new TextEncoder().encode(JSON.stringify(payload));let s='';bytes.forEach(b=>s+=String.fromCharCode(b));
-     const b64=btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-     location.href='Player.html?intent='+encodeURIComponent('legacy://player?data='+b64);
-     return;
-   }
-   toast(m.priority===2?'البث لم يتوفر من المصدر بعد. أعد المحاولة بعد قليل.':'لا يوجد مصدر بث متاح لهذه المباراة حاليًا.');
- }catch(e){toast('تعذر فحص خوادم البث الآن. حاول بعد قليل.');}
-}
-async function load(){
- list.innerHTML='<div class="state">جارٍ تحميل المباريات…</div>';
- try{
-  const result=await getMatches(),j=result.data;
-  if(!j?.success||!Array.isArray(j.data))throw new Error('payload');
-  list.innerHTML='';if(!j.data.length){list.innerHTML='<div class="state">لا توجد مباريات اليوم.</div>';return}
-  j.data.forEach(m=>list.appendChild(card(m)));
- }catch(e){
-   list.innerHTML='<div class="state">تعذر جلب المباريات حاليًا.<br><button id="retryMatches" class="retry">إعادة المحاولة</button></div>';
-   document.getElementById('retryMatches')?.addEventListener('click',load);
- }
-}
-load();setInterval(()=>load(),45000);
+function teamView(team={}){const box=document.createElement('div');box.className='team';const wrap=document.createElement('div');wrap.className='team-logo-wrap';if(team.logo){const img=document.createElement('img');img.src=new URL(team.logo,backend).href;img.alt=team.name?`شعار ${team.name}`:'شعار الفريق';img.loading='lazy';img.onerror=()=>{img.remove();wrap.textContent='⚽'};wrap.appendChild(img)}else wrap.textContent='⚽';const name=document.createElement('b');name.textContent=String(team.name||'');box.append(wrap,name);return box}
+function scoreText(m){const a=m.team1?.goals,b=m.team2?.goals;if(Number.isFinite(a)&&Number.isFinite(b))return `${a} - ${b}`;return ''}
+function card(m){const d=document.createElement('div');d.className='card';const live=m.status==='live'||m.priority===1,ended=m.status==='ended'||m.priority===3;const scheduledStarted=!live&&!ended&&hasSaudiMatchTimePassed(m.time);const label=live?'جاري الآن':ended?'انتهت':scheduledStarted?'موعدها بدأ — بانتظار البث':'لم تبدأ';const score=scoreText(m);const center=document.createElement('div');center.className='center';const pill=document.createElement('span');pill.className='pill'+(live?' live':'');pill.textContent=label;const main=document.createElement('div');main.className='time';main.textContent=(live||ended)?(score||'النتيجة غير متاحة'):formatSaudiMatchTime(m.time);center.append(pill,main);d.append(teamView(m.team1),center,teamView(m.team2));d.onclick=()=>openMatch(m);return d}
+async function runtimeJson(path){const r=await fetch(backend+path,{headers:{Accept:'application/json'},cache:'no-store'});const j=await r.json().catch(()=>null);if(!r.ok||j?.status!=='success')throw new Error(j?.message||`HTTP_${r.status}`);return j}
+async function openMatch(m){if(!m.ref){toast('مصدر المباراة غير متاح حاليًا.');return}if(m.status==='ended'){toast('المباراة انتهت ولا يوجد بث مباشر الآن.');return}try{toast('جاري تجهيز بث المباراة…');const j=await runtimeJson('/api/v1/matches/play?ref='+encodeURIComponent(m.ref));const media=j?.data?.media_path,type=j?.data?.media_type||'';if(!media)throw new Error('NO_MEDIA');const url=new URL(media,backend).href;location.href='Player.html?url='+encodeURIComponent(url)+'&type='+encodeURIComponent(type)}catch{toast('تعذر تشغيل المباراة حاليًا. أعد المحاولة بعد قليل.')}}
+async function load(){list.innerHTML='<div class="state">جارٍ تحميل المباريات…</div>';try{const j=await runtimeJson('/api/v1/matches');if(!Array.isArray(j.data))throw new Error('payload');list.innerHTML='';if(!j.data.length){list.innerHTML='<div class="state">لا توجد مباريات اليوم.</div>';return}j.data.forEach(m=>list.appendChild(card(m)))}catch{list.innerHTML='<div class="state">تعذر جلب المباريات حاليًا.<br><button id="retryMatches" class="retry">إعادة المحاولة</button></div>';document.getElementById('retryMatches')?.addEventListener('click',load)}}
+load();setInterval(load,45000);
 </script>
-</body>
-</html>
+</body></html>
