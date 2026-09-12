@@ -100,6 +100,15 @@ function safeHtmlDiagnostics(text) {
   return { title, hrefs, scripts, markers };
 }
 
+function safeJsDiagnostics(text) {
+  return [...text.matchAll(/.{0,100}(?:ajax|fetch|recently-container|entry-box|section|loadMore|load_more|\/ajax\/|\/api\/).{0,180}/gi)]
+    .slice(0, 30)
+    .map((m) => String(m[0])
+      .replace(/https?:\/\/[^\s"'`)]+/g, "[url]")
+      .replace(/\s+/g, " ")
+      .slice(0, 280));
+}
+
 async function matchesSmoke() {
   const page = "/2026/09/matches.html";
   const session = await request(MATCHES + "session", { headers: jsonHeaders(page) });
@@ -128,7 +137,11 @@ async function cinemaDirectSmoke() {
   const category = await request(SOURCE + "/series?section=30", { headers: htmlHeaders() });
   if (!assert(category.ok && category.text.length > 1000, "direct cinema category HTML", { status: category.status, bytes: category.text.length, ms: category.ms })) return;
   const series = sourceLinks(category.text, "series");
-  if (!series.length) console.log("INFO direct cinema HTML diagnostics", JSON.stringify(safeHtmlDiagnostics(category.text)));
+  if (!series.length) {
+    console.log("INFO direct cinema HTML diagnostics", JSON.stringify(safeHtmlDiagnostics(category.text)));
+    const js = await request(SOURCE + "/style/assets/js/akwam.js", { headers: htmlHeaders(SOURCE + "/series?section=30") }, 20000);
+    console.log("INFO direct cinema loader diagnostics", JSON.stringify({ status: js.status, bytes: js.text.length, markers: safeJsDiagnostics(js.text) }));
+  }
   if (!assert(series.length > 0, "direct cinema category has items", { count: series.length })) return;
 
   const search = await request(SOURCE + "/search?q=" + encodeURIComponent("الذئب الوحيد"), { headers: htmlHeaders() });
