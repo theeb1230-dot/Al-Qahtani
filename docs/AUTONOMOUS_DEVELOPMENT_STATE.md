@@ -5,12 +5,11 @@ GitHub is authoritative when this file disagrees with the repository. The preser
 
 ## Current state
 - Main: `02e92a9fa936284c927fc1a633adb6b5b873e827` (`Load cinema categories beyond the first 30 items`).
-- PR #58 merged after its final required gates were green; it added endless 30-item category pagination and iPhone WebKit regression coverage.
-- GitHub Pages post-merge run `34664586489` completed successfully for main `02e92a9f...`; no post-merge failure was observed in the 13-run set checked after merge.
+- PR #58 merged with endless 30-item category pagination and iPhone WebKit regression coverage.
+- GitHub Pages post-merge run `34664586489` succeeded for main `02e92a9f...`.
 - Active PR: #60 `Hide cinema source URLs behind category IDs`.
 - Branch: `feat/category-ids-60`.
-- Code head before this documentation update: `fabfbb1525ecfe7cde04712c6160027397fa3f72`.
-- The first CI set for that code head completed without an observed failure; this documentation commit moves the head, so a fresh final-head gate set is mandatory before merge.
+- Final code head before this documentation commit: `68ec62f139f64cde1d3dfd89344d080b4d160e5b`.
 - Target: Web/PWA `1.0.1`.
 - Flutter remains blocked until Web/PWA 1.0.1 is proven live across all required release gates.
 
@@ -26,33 +25,40 @@ Real iPhone Safari testing has already proven playback across multiple movie/ser
 - additive runtime HTTP contracts: `/api/runtime/status`, `/api/v1/matches`, `/api/v1/search?q=...`, `/api/v1/category?ref=...&p=...`.
 - deployed runtime contract smoke covering version, matches, Arabic/English search semantics, category, cache and sanitized health.
 - endless movie/series category pagination merged in #58: page 1, then page 2+ when the viewport reaches the tail, no fixed page count, stale-response rejection, concurrency guard and deduplication.
-- iPhone WebKit regression verifies two 30-item batches render 60 unique cards and requests `p=2`.
 
 ## PR #60 — server-side category identifiers
-Goal: the 1.0.1 browser must not know original Basri category URLs. It should send stable product-level identifiers while only the Al-Qahtani backend knows the Basri mapping.
+Goal: the 1.0.1 browser must not know original Basri category URLs. It sends stable product-level identifiers while only the Al-Qahtani backend knows the Basri mapping.
 
 Implemented on the active branch:
-- new `server/catalog-categories.mjs` owns the 12 allowed category mappings for series and movies;
+- `server/catalog-categories.mjs` owns the 12 allowed category mappings for series and movies;
 - stable IDs such as `series-foreign`, `series-arabic`, `movie-foreign`, `movie-anime` map server-side to the preserved Basri source URLs;
 - `web/core/catalog-config.js` contains only titles + opaque IDs and no `akwam.ss` category URLs;
-- `web/core/api-client.js` now routes category loads through `/api/v1/category?ref=<category-id>&p=<page>`;
-- `content-runtime-service.category(...)` resolves the ID server-side before calling the Basri category fetcher;
-- unknown IDs return an empty safe category envelope and never reach an upstream fetcher;
-- exact legacy category URLs remain temporarily accepted inside the runtime resolver only for already-deployed compatibility during migration;
-- cache keys use the stable category ID instead of the upstream URL;
-- infinite scroll remains unchanged: 30-item batches, page 2+, no hard UI limit;
-- the Node regression asserts browser config has no `akwam.ss` source URLs;
-- the iPhone WebKit pagination smoke now requires the browser to send `series-foreign`, keeps that ID for page 2, and still reaches 60 unique cards.
+- `web/core/api-client.js` routes category loads through `/api/v1/category?ref=<category-id>&p=<page>`;
+- `content-runtime-service.category(...)` resolves the ID server-side before calling the original Basri category fetcher;
+- unknown IDs are rejected safely before upstream fetch;
+- exact legacy category URLs remain temporarily accepted only inside the runtime resolver for already-deployed compatibility during migration;
+- cache keys use stable category IDs instead of upstream URLs;
+- infinite scroll remains 30-item batches with page 2+ and no hard UI limit.
+
+### Compatibility failure found and fixed
+The first updated PR head exposed a real migration mismatch rather than a provider failure:
+- Mobile WebKit run `34664865812`, job `103474636464`, failed in `Exercise cinema navigation in iPhone WebKit` waiting for `#mediaGrid .item`.
+- Root cause 1: the old WebKit mock still intercepted `/api/cinema/category` while the browser had moved to `/api/v1/category`.
+- Root cause 2: the runtime category contract returns normalized fields `{poster,type,ref}`, while the existing cinema UI still consumes legacy display fields `{img,is_series,href}` during the additive migration.
+- `web/core/api-client.js` now validates the versioned runtime category envelope and adapts only its normalized display fields at the UI boundary, keeping the backend contract clean while preserving the existing Details/Player/Download flow.
+- `scripts/mobile_webkit_smoke.mjs` now mocks `/api/v1/category`, category IDs and the normalized runtime envelope.
+- `scripts/category_infinite_webkit_smoke.mjs` now uses the normalized `poster` field and still requires `series-foreign`, page 2 and 60 unique cards.
 
 ## CI / deployment evidence
 For main `02e92a9fa936284c927fc1a633adb6b5b873e827`:
 - GitHub Pages `34664586489`: success.
-- Content runtime and the normal post-merge regression set were observed without a failure after #58 merged.
 
-For PR #60 code head `fabfbb1525ecfe7cde04712c6160027397fa3f72` before this documentation update:
-- 11 pull-request workflows were triggered.
-- after settling, no run remained queued or in progress and no `conclusion: failure` was observed.
-- because this documentation commit changes the PR head, these results are historical only; fresh final-head checks must pass before merge.
+For PR #60 head `68ec62f139f64cde1d3dfd89344d080b4d160e5b` before this documentation commit:
+- all 11 pull-request workflows completed;
+- no `failure`, `queued` or `in_progress` run remained in the exact-head set when rechecked;
+- Remote CORS run `34665400461` explicitly completed `success`;
+- the prior WebKit failure belonged to older head `cb8dcfa...` and was fixed before `68ec62f...`.
+- this documentation commit moves the PR head again, therefore a fresh exact-head green set is mandatory before merge.
 
 ## Render evidence / blocker
 The connected Render account exposes two workspaces, `My Workspace` and `بيانات`. Repository evidence still does not prove which workspace owns Al-Qahtani. Do not guess direct Render logs. External deployed HTTP and GitHub Actions runtime evidence remain authoritative until workspace ownership is proven.
@@ -73,7 +79,7 @@ The connected Render account exposes two workspaces, `My Workspace` and `بيا�
 ## 1.0.1 readiness
 Current readiness: **Phase 1 runtime + endless category UX merged; opaque category-ID migration in PR #60; NOT release ready.**
 
-Still required before `1.0.1` can be called ready: close #60 with final-head green gates and live proof; unified `/api/v1/home`; unified title/episodes/play contracts; production health/circuit decisions; full mobile-first RTL UI; live matches UX; Player 2.0 history/favorites/continue-watching; unified search/library UX; installable PWA; diagnostics/observability; and the complete Safari/security/live release matrix.
+Still required before `1.0.1` can be called ready: close #60 with final-head green gates and deployed proof; unified `/api/v1/home`; unified title/episodes/play contracts; production health/circuit decisions; full mobile-first RTL UI; live matches UX; Player 2.0 history/favorites/continue-watching; unified search/library UX; installable PWA; diagnostics/observability; and the complete Safari/security/live release matrix.
 
 ## أهداف التشغيل التالي
 1. **إغلاق PR #60 بأمان.**
@@ -82,8 +88,8 @@ Still required before `1.0.1` can be called ready: close #60 with final-head gre
    - الدمج فقط بعد خضرة جميع البوابات المطلوبة.
 2. **إثبات Category IDs حيًا بعد الدمج.**
    - انتظار GitHub Pages/backend لنفس commit قدر ما تسمح الأدوات.
-   - التحقق أن Safari يرسل IDs فقط وأن الصفحة الثانية والثالثة تستمر بالتحميل.
-   - التأكد أن browser assets المنشورة لا تحتوي روابط تصنيف `akwam.ss`.
+   - التحقق من `/api/v1/category?ref=series-foreign&p=1` على النشر الفعلي.
+   - التأكد أن browser assets المنشورة لا تحتوي روابط تصنيف `akwam.ss` وأن page 2+ يبقى عبر ID نفسه.
 3. **إنشاء `/api/v1/home` موحد.**
    - جمع المباريات + أقسام محتوى محدودة باستخدام bounded concurrency.
    - السماح بفشل قسم واحد دون إسقاط الصفحة كاملة.
