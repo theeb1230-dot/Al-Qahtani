@@ -21,6 +21,8 @@ class _DetailsPageState extends State<DetailsPage> {
   late Future<TitleDetails> future;
   final DownloadService _downloads = DownloadService();
   final Set<String> _activeDownloads = <String>{};
+  final Map<String, DownloadProgress> _downloadProgress = <String, DownloadProgress>{};
+  final Map<String, int> _reportedBytes = <String, int>{};
   final FocusNode _directPlayFocus = FocusNode(debugLabel: 'details-direct-play');
   final Map<String, FocusNode> _episodeFocusNodes = <String, FocusNode>{};
   final Map<String, FocusNode> _episodeDownloadFocusNodes = <String, FocusNode>{};
@@ -48,18 +50,12 @@ class _DetailsPageState extends State<DetailsPage> {
 
   FocusNode _episodeFocus(EpisodeItem episode) {
     final key = '${episode.id}:${episode.number}';
-    return _episodeFocusNodes.putIfAbsent(
-      key,
-      () => FocusNode(debugLabel: 'details-episode-$key'),
-    );
+    return _episodeFocusNodes.putIfAbsent(key, () => FocusNode(debugLabel: 'details-episode-$key'));
   }
 
   FocusNode _episodeDownloadFocus(EpisodeItem episode) {
     final key = '${episode.id}:${episode.number}';
-    return _episodeDownloadFocusNodes.putIfAbsent(
-      key,
-      () => FocusNode(debugLabel: 'details-episode-download-$key'),
-    );
+    return _episodeDownloadFocusNodes.putIfAbsent(key, () => FocusNode(debugLabel: 'details-episode-download-$key'));
   }
 
   Future<void> _openDirect(TitleDetails details) async {
@@ -99,9 +95,31 @@ class _DetailsPageState extends State<DetailsPage> {
     );
   }
 
+  String _downloadLabel(String key) {
+    final progress = _downloadProgress[key];
+    if (progress == null) return 'جاري بدء التنزيل…';
+    final received = progress.receivedBytes / (1024 * 1024);
+    final fraction = progress.fraction;
+    if (fraction != null) return 'جاري التنزيل ${(fraction * 100).toStringAsFixed(0)}% • ${received.toStringAsFixed(1)} MB';
+    return 'جاري التنزيل • ${received.toStringAsFixed(1)} MB';
+  }
+
+  void _onDownloadProgress(String key, DownloadProgress progress) {
+    if (!mounted) return;
+    final last = _reportedBytes[key] ?? -1;
+    final complete = progress.totalBytes != null && progress.receivedBytes >= progress.totalBytes!;
+    if (!complete && last >= 0 && progress.receivedBytes - last < 256 * 1024) return;
+    _reportedBytes[key] = progress.receivedBytes;
+    setState(() => _downloadProgress[key] = progress);
+  }
+
   Future<void> _download({required String key, required String title, String mediaPath = '', String sourceRef = ''}) async {
     if (_activeDownloads.contains(key)) return;
-    setState(() => _activeDownloads.add(key));
+    setState(() {
+      _activeDownloads.add(key);
+      _downloadProgress.remove(key);
+      _reportedBytes.remove(key);
+    });
     try {
       var resolvedPath = mediaPath;
       if (resolvedPath.isEmpty) {
@@ -109,18 +127,33 @@ class _DetailsPageState extends State<DetailsPage> {
         resolvedPath = resolved.mediaPath;
       }
       final uri = widget.api.mediaUri(resolvedPath, download: true);
-      final result = await _downloads.download(uri, fallbackName: title);
+      final result = await _downloads.download(
+        uri,
+        fallbackName: title,
+        onProgress: (progress) => _onDownloadProgress(key, progress),
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('اكتمل التنزيل داخل مساحة التطبيق • ${(result.bytes / (1024 * 1024)).toStringAsFixed(1)} MB'),
       ));
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('تعذر تنزيل هذا المصدر حاليًا. لم يتم فتح رابط خارجي.'),
-      ));
+      final code = error is DownloadException ? error.code : '';
+      final message = switch (code) {
+        'DOWNLOAD_STALLED' => 'توقف وصول البيانات لمدة 30 ثانية. أعد المحاولة؛ لم يُترك ملف ناقص.',
+        'INCOMPLETE_DOWNLOAD' => 'انقطع التنزيل قبل اكتمال الملف. أعد المحاولة.',
+        'EMPTY_DOWNLOAD' => 'وصل رد فارغ من خادم التنزيل. أعد المحاولة لاحقًا.',
+        _ => 'تعذر تنزيل هذا المصدر حاليًا. لم يتم فتح رابط خارجي.',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     } finally {
-      if (mounted) setState(() => _activeDownloads.remove(key));
+      if (mounted) {
+        setState(() {
+          _activeDownloads.remove(key);
+          _downloadProgress.remove(key);
+          _reportedBytes.remove(key);
+        });
+      }
     }
   }
 
@@ -165,6 +198,7 @@ class _DetailsPageState extends State<DetailsPage> {
                       focusNode: focusNode,
                       downloadFocusNode: isTvTarget ? _episodeDownloadFocus(episode) : null,
                       downloading: _activeDownloads.contains(key),
+                      downloadLabel: _downloadLabel(key),
                       onTap: () => _openEpisode(episode, focusNode),
                       onDownload: () => _download(
                         key: key,
@@ -178,7 +212,7 @@ class _DetailsPageState extends State<DetailsPage> {
                     focusNode: _directPlayFocus,
                     leading: const Icon(Icons.play_circle_outline),
                     title: const Text('مشاهدة داخل التطبيق'),
-                    subtitle: const Text('تشغيل آمن داخل المشغل المدمج'),
+                    subtitle: const Text('مشغل أصلي مع تحويل تلقائي لمحرك الويب الداخلي عند عدم توافق المصدر'),
                     trailing: const Icon(Icons.play_arrow),
                     onTap: () => _openDirect(details),
                   )),
@@ -186,8 +220,8 @@ class _DetailsPageState extends State<DetailsPage> {
                     leading: _activeDownloads.contains('direct')
                         ? const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.download_outlined),
-                    title: Text(_activeDownloads.contains('direct') ? 'جاري التنزيل…' : 'تنزيل داخل التطبيق'),
-                    subtitle: const Text('يحفظ الملف داخل مساحة التطبيق'),
+                    title: Text(_activeDownloads.contains('direct') ? _downloadLabel('direct') : 'تنزيل داخل التطبيق'),
+                    subtitle: const Text('يحفظ الملف داخل مساحة التطبيق مع متابعة فعلية للتقدم'),
                     onTap: _activeDownloads.contains('direct')
                         ? null
                         : () => _download(key: 'direct', title: details.title, mediaPath: details.mediaPath),
@@ -212,6 +246,7 @@ class _EpisodeTile extends StatelessWidget {
     required this.onTap,
     required this.onDownload,
     required this.downloading,
+    required this.downloadLabel,
     this.downloadFocusNode,
   });
 
@@ -221,6 +256,7 @@ class _EpisodeTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDownload;
   final bool downloading;
+  final String downloadLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +278,7 @@ class _EpisodeTile extends StatelessWidget {
                     enabled: enabled,
                     leading: CircleAvatar(child: Text('${episode.number}')),
                     title: Text(label),
-                    subtitle: const Text('اضغط موافق للتشغيل، وانتقل إلى زر التنزيل عند الحاجة'),
+                    subtitle: Text(downloading ? downloadLabel : 'اضغط موافق للتشغيل، وانتقل إلى زر التنزيل عند الحاجة'),
                     trailing: enabled ? const Icon(Icons.play_arrow) : const Icon(Icons.block),
                     onTap: enabled ? onTap : null,
                   ),
@@ -254,7 +290,7 @@ class _EpisodeTile extends StatelessWidget {
                   child: IconButton(
                     key: ValueKey('episode-download-${episode.id}'),
                     focusNode: downloadFocusNode,
-                    tooltip: downloading ? 'جاري التنزيل' : 'تنزيل الحلقة',
+                    tooltip: downloading ? downloadLabel : 'تنزيل الحلقة',
                     onPressed: downloading ? null : onDownload,
                     icon: downloading
                         ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
@@ -273,14 +309,14 @@ class _EpisodeTile extends StatelessWidget {
       enabled: enabled,
       leading: CircleAvatar(child: Text('${episode.number}')),
       title: Text(label),
-      subtitle: Text(enabled ? 'مشاهدة أو تنزيل الحلقة' : 'المشاهدة غير متاحة حاليًا'),
+      subtitle: Text(downloading ? downloadLabel : (enabled ? 'مشاهدة أو تنزيل الحلقة' : 'المشاهدة غير متاحة حاليًا')),
       trailing: enabled
           ? Wrap(
               spacing: 4,
               children: [
                 IconButton(
                   key: ValueKey('episode-download-${episode.id}'),
-                  tooltip: downloading ? 'جاري التنزيل' : 'تنزيل الحلقة',
+                  tooltip: downloading ? downloadLabel : 'تنزيل الحلقة',
                   onPressed: downloading ? null : onDownload,
                   icon: downloading
                       ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))

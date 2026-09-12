@@ -11,10 +11,11 @@ import 'src/match_player_page.dart';
 import 'src/models.dart';
 import 'src/news_page.dart';
 
-const _brandBg = Color(0xFF09090B);
-const _brandPanel = Color(0xFF151515);
-const _brandGold = Color(0xFFD8AA4F);
-const _brandGoldMuted = Color(0xFF9C783A);
+const _brandBg = Color(0xFF101827);
+const _brandPanel = Color(0xFF172235);
+const _brandGold = Color(0xFFC6974C);
+const _brandGoldMuted = Color(0xFF9A7440);
+const _brandGoldLight = Color(0xFFE2BE79);
 
 void main() => runApp(const AlQahtaniApp());
 
@@ -30,7 +31,7 @@ class _AlQahtaniAppState extends State<AlQahtaniApp> {
     final base = ThemeData.dark(useMaterial3: true);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'القحطاني',
+      title: 'القحطاني TV',
       locale: const Locale('ar'),
       supportedLocales: const [Locale('ar')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
@@ -38,7 +39,7 @@ class _AlQahtaniAppState extends State<AlQahtaniApp> {
         scaffoldBackgroundColor: _brandBg,
         appBarTheme: const AppBarTheme(
           backgroundColor: _brandBg,
-          foregroundColor: Color(0xFFF7E7BE),
+          foregroundColor: Color(0xFFF6E8C7),
           centerTitle: true,
           elevation: 0,
         ),
@@ -46,24 +47,24 @@ class _AlQahtaniAppState extends State<AlQahtaniApp> {
           color: _brandPanel,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: Color(0x335E4820)),
+            side: const BorderSide(color: Color(0x55C6974C)),
           ),
         ),
         colorScheme: ColorScheme.fromSeed(
           seedColor: _brandGold,
           primary: _brandGold,
-          secondary: const Color(0xFFF1D38E),
+          secondary: _brandGoldLight,
           surface: _brandPanel,
           brightness: Brightness.dark,
         ),
         navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: const Color(0xFF121212),
-          indicatorColor: const Color(0x553D2E13),
+          backgroundColor: const Color(0xFF131E30),
+          indicatorColor: const Color(0x554B3A20),
           iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
-                color: states.contains(WidgetState.selected) ? _brandGold : const Color(0xFFC7C7C7),
+                color: states.contains(WidgetState.selected) ? _brandGoldLight : const Color(0xFFC7CED8),
               )),
           labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
-                color: states.contains(WidgetState.selected) ? const Color(0xFFF4DC9E) : const Color(0xFFD0D0D0),
+                color: states.contains(WidgetState.selected) ? _brandGoldLight : const Color(0xFFD0D5DD),
                 fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
               )),
         ),
@@ -89,15 +90,54 @@ void openDetails(BuildContext context, AlQahtaniApi api, LocalLibraryStore store
   Navigator.of(context).push(MaterialPageRoute(builder: (_) => DetailsPage(api: api, store: store, item: item)));
 }
 
+class _QPlayMark extends StatelessWidget {
+  const _QPlayMark({this.size = 38});
+  final double size;
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(painter: _QPlayPainter()),
+      );
+}
+
+class _QPlayPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * .09
+      ..strokeCap = StrokeCap.round
+      ..color = _brandGold;
+    final center = Offset(size.width * .47, size.height * .45);
+    canvas.drawCircle(center, size.width * .29, ring);
+    final tail = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * .09
+      ..strokeCap = StrokeCap.round
+      ..color = _brandGold;
+    canvas.drawLine(Offset(size.width * .61, size.height * .60), Offset(size.width * .79, size.height * .78), tail);
+    final play = Path()
+      ..moveTo(size.width * .40, size.height * .32)
+      ..lineTo(size.width * .40, size.height * .58)
+      ..lineTo(size.width * .61, size.height * .45)
+      ..close();
+    canvas.drawPath(play, Paint()..color = _brandGoldLight);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class _BrandTitle extends StatelessWidget {
   const _BrandTitle();
   @override
   Widget build(BuildContext context) => const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('ق', style: TextStyle(color: _brandGold, fontSize: 30, fontWeight: FontWeight.w800, height: 1)),
+          _QPlayMark(size: 38),
           SizedBox(width: 10),
-          Text('القحطاني', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: .2)),
+          Text('القحطاني TV', style: TextStyle(color: _brandGoldLight, fontWeight: FontWeight.w800, letterSpacing: .2)),
         ],
       );
 }
@@ -155,7 +195,7 @@ class _TvNavigation extends StatelessWidget {
   Widget build(BuildContext context) => NavigationRail(
     extended: true,
     minExtendedWidth: 190,
-    backgroundColor: const Color(0xFF111111),
+    backgroundColor: const Color(0xFF131E30),
     selectedIndex: selectedIndex,
     onDestinationSelected: onSelected,
     destinations: const [
@@ -196,8 +236,8 @@ class _TeamBadge extends StatelessWidget {
             padding: const EdgeInsets.all(7),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFF1C1C1C),
-              border: Border.all(color: const Color(0x335E4820)),
+              color: const Color(0xFF1B293D),
+              border: Border.all(color: const Color(0x44C6974C)),
             ),
             child: logo.isEmpty
                 ? const Icon(Icons.shield_outlined, color: _brandGoldMuted)
@@ -341,11 +381,11 @@ class _CatalogCard extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Expanded(
               child: item.poster.isEmpty
-                  ? const ColoredBox(color: Color(0xFF1A1A1A), child: Center(child: Icon(Icons.movie_outlined, color: _brandGoldMuted, size: 42)))
+                  ? const ColoredBox(color: Color(0xFF162235), child: Center(child: Icon(Icons.movie_outlined, color: _brandGoldMuted, size: 42)))
                   : Image.network(
                       item.poster,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFF1A1A1A), child: Center(child: Icon(Icons.broken_image_outlined, color: _brandGoldMuted, size: 38))),
+                      errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFF162235), child: Center(child: Icon(Icons.broken_image_outlined, color: _brandGoldMuted, size: 38))),
                     ),
             ),
             Padding(
@@ -353,7 +393,7 @@ class _CatalogCard extends StatelessWidget {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 3),
-                Text([item.type == 'movie' ? 'فيلم' : 'مسلسل', if (item.year != null) '${item.year}'].join(' • '), style: const TextStyle(color: Color(0xFFB0A998), fontSize: 12)),
+                Text([item.type == 'movie' ? 'فيلم' : 'مسلسل', if (item.year != null) '${item.year}'].join(' • '), style: const TextStyle(color: Color(0xFFB8B09F), fontSize: 12)),
               ]),
             ),
           ]),

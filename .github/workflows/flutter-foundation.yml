@@ -91,7 +91,7 @@ jobs:
           printf '%s\n' "$BADGING" | grep -q "package: name='com.alqahtani.al_qahtani'"
           printf '%s\n' "$BADGING" | grep -q "versionCode='$EXPECTED_BUILD'"
           printf '%s\n' "$BADGING" | grep -q "versionName='$EXPECTED_VERSION'"
-          printf '%s\n' "$BADGING" | grep -q "application-label-ar:'القحطاني'\|application-label:'القحطاني'"
+          printf '%s\n' "$BADGING" | grep -q "application-label-ar:'القحطاني TV'\|application-label:'القحطاني TV'"
           test -s flutter_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           test -s flutter_app/android/app/src/main/res/drawable/launch_qaf.png
       - name: Stage mobile APK and checksum
@@ -144,7 +144,7 @@ jobs:
           grep -q 'LEANBACK_LAUNCHER' flutter_app/android/app/src/main/AndroidManifest.xml
           grep -q 'android.software.leanback.*true' flutter_app/android/app/src/main/AndroidManifest.xml
           grep -q 'android.hardware.touchscreen.*false' flutter_app/android/app/src/main/AndroidManifest.xml
-          grep -q 'android:label="القحطاني"' flutter_app/android/app/src/main/AndroidManifest.xml
+          grep -q 'android:label="القحطاني TV"' flutter_app/android/app/src/main/AndroidManifest.xml
           grep -q 'NavigationRail' flutter_app/lib/main.dart
           grep -q 'AL_QAHTANI_TARGET' flutter_app/lib/src/app_target.dart
           test -s flutter_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
@@ -224,7 +224,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" = 'com.alqahtani.alQahtani'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" = "$EXPECTED_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")" = "$EXPECTED_BUILD"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")" = 'القحطاني'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST")" = 'القحطاني TV'
           test -s flutter_app/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png
       - name: Package UNSIGNED IPA and checksum
         run: |

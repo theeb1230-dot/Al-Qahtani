@@ -1,10 +1,19 @@
 import assert from 'node:assert/strict';
-import { assertPublicHttpsUrl, createMatchPlaybackRuntime } from '../server/match-playback.mjs';
+import { assertPublicHttpsUrl, createMatchPlaybackRuntime, __candidateUrlsForTest } from '../server/match-playback.mjs';
 
 assert.throws(() => assertPublicHttpsUrl('http://example.com/live.m3u8'), /HTTPS/);
 assert.throws(() => assertPublicHttpsUrl('https://127.0.0.1/live.m3u8'), /PRIVATE/);
 assert.throws(() => assertPublicHttpsUrl('https://localhost/live.m3u8'), /HOST/);
 assert.equal(assertPublicHttpsUrl('https://cdn.example.org/live.m3u8').hostname, 'cdn.example.org');
+
+const candidates = __candidateUrlsForTest(`
+  <div data-hls="https://cdn.example.org/live/main.m3u8"></div>
+  <script>const source = "https:\\/\\/video.example.org\\/opaque\\/stream";</script>
+  <script>const backup = atob("aHR0cHM6Ly9jZG4uZXhhbXBsZS5vcmcvYmFja3VwLm1wNA==");</script>
+`, 'https://embed.example.org/player');
+assert.equal(candidates.direct.includes('https://cdn.example.org/live/main.m3u8'), true);
+assert.equal(candidates.direct.includes('https://cdn.example.org/backup.mp4'), true);
+assert.equal(candidates.nested.includes('https://video.example.org/opaque/stream'), true);
 
 let requestedTarget = '';
 const runtime = createMatchPlaybackRuntime({

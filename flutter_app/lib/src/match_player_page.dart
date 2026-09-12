@@ -23,6 +23,7 @@ class _MatchPlayerPageState extends State<MatchPlayerPage> {
   bool _loadingServers = true;
   bool _loadingMedia = false;
   String? _error;
+  int _generation = 0;
 
   @override
   void initState() {
@@ -31,13 +32,14 @@ class _MatchPlayerPageState extends State<MatchPlayerPage> {
   }
 
   Future<void> _loadServers() async {
+    final generation = ++_generation;
     setState(() {
       _loadingServers = true;
       _error = null;
     });
     try {
       final servers = await widget.api.matchServers(widget.match.ref);
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _servers = servers;
         _loadingServers = false;
@@ -46,9 +48,9 @@ class _MatchPlayerPageState extends State<MatchPlayerPage> {
         setState(() => _error = 'لا يوجد مصدر بث متاح لهذه المباراة حاليًا');
         return;
       }
-      await _play(servers.first);
+      await _playIndex(0, generation: generation, automatic: true);
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         _loadingServers = false;
         _error = 'تعذر تجهيز خوادم المباراة. أعد المحاولة بعد قليل.';
@@ -57,22 +59,31 @@ class _MatchPlayerPageState extends State<MatchPlayerPage> {
   }
 
   Future<void> _play(MatchServer server) async {
-    if (_loadingMedia) return;
+    final index = _servers.indexWhere((item) => item.ref == server.ref);
+    if (index < 0) return;
+    final generation = ++_generation;
+    await _playIndex(index, generation: generation, automatic: false);
+  }
+
+  Future<void> _playIndex(int index, {required int generation, required bool automatic}) async {
+    if (index < 0 || index >= _servers.length || generation != _generation) return;
+    final server = _servers[index];
     setState(() {
       _loadingMedia = true;
-      _error = null;
+      _error = automatic && index > 0 ? 'السيرفر السابق لم يعمل، جارٍ تجربة ${server.name} تلقائيًا…' : null;
       _selected = server;
     });
     VideoPlayerController? next;
     try {
-      final playback = await widget.api.resolveMatchPlayback(server.ref);
+      final playback = await widget.api.resolveMatchPlayback(server.ref).timeout(const Duration(seconds: 25));
+      if (generation != _generation) return;
       next = VideoPlayerController.networkUrl(
         widget.api.mediaUri(playback.mediaPath),
         formatHint: videoFormatHintForRuntimeMedia(playback.mediaType),
       );
-      await next.initialize();
+      await next.initialize().timeout(const Duration(seconds: 20));
       await next.play();
-      if (!mounted) {
+      if (!mounted || generation != _generation) {
         await next.dispose();
         return;
       }
@@ -80,20 +91,27 @@ class _MatchPlayerPageState extends State<MatchPlayerPage> {
       setState(() {
         _controller = next;
         _loadingMedia = false;
+        _error = null;
       });
       await previous?.dispose();
     } catch (_) {
       await next?.dispose();
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
+      if (index + 1 < _servers.length) {
+        setState(() => _error = 'تعذر تشغيل ${server.name}، جارٍ تجربة السيرفر التالي تلقائيًا…');
+        await _playIndex(index + 1, generation: generation, automatic: true);
+        return;
+      }
       setState(() {
         _loadingMedia = false;
-        _error = 'تعذر تشغيل هذا السيرفر داخل التطبيق. جرّب سيرفرًا آخر.';
+        _error = 'تم فحص جميع خوادم المباراة ولم يرجع أي منها بثًا قابلًا للتشغيل حاليًا.';
       });
     }
   }
 
   @override
   void dispose() {
+    _generation++;
     _controller?.dispose();
     super.dispose();
   }
@@ -162,8 +180,8 @@ class _MatchPlayerPageState extends State<MatchPlayerPage> {
                       const Icon(Icons.error_outline),
                       const SizedBox(width: 10),
                       Expanded(child: Text(_error!)),
-                      if (_servers.isEmpty)
-                        TextButton(onPressed: _loadServers, child: const Text('إعادة المحاولة')),
+                      if (!_loadingMedia)
+                        TextButton(onPressed: _loadServers, child: const Text('إعادة الفحص')),
                     ],
                   ),
                 ),
@@ -177,7 +195,7 @@ class _MatchPlayerPageState extends State<MatchPlayerPage> {
                 runSpacing: 8,
                 children: _servers
                     .map((server) => ChoiceChip(
-                          selected: identical(server, _selected) || server.ref == _selected?.ref,
+                          selected: server.ref == _selected?.ref,
                           onSelected: _loadingMedia ? null : (_) => _play(server),
                           label: Text(server.name),
                         ))

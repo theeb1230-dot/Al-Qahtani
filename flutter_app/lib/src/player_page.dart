@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import 'api_client.dart';
 import 'app_target.dart';
@@ -40,9 +41,13 @@ class PlayerPage extends StatefulWidget {
 
 class _PlayerPageState extends State<PlayerPage> {
   VideoPlayerController? _controller;
+  WebViewController? _webController;
   Timer? _progressTimer;
   String _status = 'جاري تجهيز المشاهدة…';
+  String _resolvedMediaPath = '';
+  String _resolvedMediaType = '';
   bool _failed = false;
+  bool _usingWebFallback = false;
   double _playbackSpeed = 1.0;
 
   @override
@@ -60,13 +65,15 @@ class _PlayerPageState extends State<PlayerPage> {
         mediaPath = resolved.mediaPath;
         mediaType = resolved.mediaType;
       }
+      _resolvedMediaPath = mediaPath;
+      _resolvedMediaType = mediaType;
       if (!mounted) return;
       final controller = VideoPlayerController.networkUrl(
         widget.api.mediaUri(mediaPath),
         formatHint: videoFormatHintForRuntimeMedia(mediaType),
       );
       _controller = controller;
-      await controller.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 25));
       await controller.setPlaybackSpeed(_playbackSpeed);
       if (!mounted) return;
       final resume = widget.store.resumePosition(widget.item.ref, episodeId: widget.episodeId);
@@ -75,18 +82,55 @@ class _PlayerPageState extends State<PlayerPage> {
       }
       setState(() {
         _failed = false;
+        _usingWebFallback = false;
         _status = 'جاهز للمشاهدة • ${runtimeMediaLabel(mediaType)}';
       });
       _progressTimer?.cancel();
       _progressTimer = Timer.periodic(const Duration(seconds: 5), (_) => _saveProgress());
       await controller.play();
     } catch (_) {
+      await _controller?.dispose();
+      _controller = null;
       if (!mounted) return;
+      if (!isTvTarget && _resolvedMediaPath.isNotEmpty) {
+        await _startInternalWebFallback();
+        return;
+      }
       setState(() {
         _failed = true;
-        _status = 'تعذر تشغيل هذا المصدر داخل التطبيق حاليًا';
+        _status = 'تعذر تشغيل هذا المصدر داخل المشغل الأصلي';
       });
     }
+  }
+
+  Future<void> _startInternalWebFallback() async {
+    final opaqueMedia = widget.api.mediaUri(_resolvedMediaPath);
+    final playerUri = Uri.parse('https://theeb1230-dot.github.io/Al-Qahtani/Player.html').replace(
+      queryParameters: {
+        'url': opaqueMedia.toString(),
+        'type': _resolvedMediaType.trim().isEmpty ? 'stream' : _resolvedMediaType,
+        'name': widget.title,
+      },
+    );
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFF101827))
+      ..setNavigationDelegate(NavigationDelegate(
+        onNavigationRequest: (request) {
+          final uri = Uri.tryParse(request.url);
+          if (uri == null) return NavigationDecision.prevent;
+          final allowed = uri.host == 'theeb1230-dot.github.io' || uri.host == 'al-qahtani-api.onrender.com';
+          return allowed ? NavigationDecision.navigate : NavigationDecision.prevent;
+        },
+      ))
+      ..loadRequest(playerUri);
+    if (!mounted) return;
+    setState(() {
+      _webController = controller;
+      _usingWebFallback = true;
+      _failed = false;
+      _status = 'تم التحويل تلقائيًا إلى محرك الويب الداخلي';
+    });
   }
 
   Future<void> _saveProgress() async {
@@ -150,7 +194,9 @@ class _PlayerPageState extends State<PlayerPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (activeController != null)
+                  if (_usingWebFallback && _webController != null)
+                    Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(18), child: WebViewWidget(controller: _webController!)))
+                  else if (activeController != null)
                     AspectRatio(
                       aspectRatio: activeController.value.aspectRatio > 0 ? activeController.value.aspectRatio : 16 / 9,
                       child: VideoPlayer(activeController),
@@ -161,6 +207,11 @@ class _PlayerPageState extends State<PlayerPage> {
                     const CircularProgressIndicator(),
                   const SizedBox(height: 16),
                   Text(_status, textAlign: TextAlign.center),
+                  if (_usingWebFallback)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text('المصدر يبقى خلف وسيط القحطاني ولا يتم فتح تطبيق خارجي.', textAlign: TextAlign.center),
+                    ),
                   if (activeController != null) ...[
                     const SizedBox(height: 12),
                     VideoProgressIndicator(

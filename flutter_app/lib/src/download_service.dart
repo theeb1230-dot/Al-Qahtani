@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -8,6 +9,15 @@ class DownloadResult {
 
   final String path;
   final int bytes;
+}
+
+class DownloadProgress {
+  const DownloadProgress({required this.receivedBytes, this.totalBytes});
+
+  final int receivedBytes;
+  final int? totalBytes;
+
+  double? get fraction => totalBytes == null || totalBytes! <= 0 ? null : (receivedBytes / totalBytes!).clamp(0.0, 1.0).toDouble();
 }
 
 class DownloadedFileInfo {
@@ -23,6 +33,7 @@ class DownloadedFileInfo {
 }
 
 typedef DownloadDirectoryProvider = Future<Directory> Function();
+typedef DownloadProgressCallback = void Function(DownloadProgress progress);
 
 class DownloadService {
   DownloadService({http.Client? client, DownloadDirectoryProvider? directoryProvider})
@@ -37,7 +48,11 @@ class DownloadService {
     return Directory('${root.path}${Platform.pathSeparator}AlQahtani${Platform.pathSeparator}Downloads');
   }
 
-  Future<DownloadResult> download(Uri uri, {String fallbackName = 'al-qahtani-media'}) async {
+  Future<DownloadResult> download(
+    Uri uri, {
+    String fallbackName = 'al-qahtani-media',
+    DownloadProgressCallback? onProgress,
+  }) async {
     if (uri.path != '/api/cinema/media' || uri.queryParameters['download'] != '1') {
       throw const DownloadException('INVALID_DOWNLOAD_REFERENCE');
     }
@@ -48,27 +63,53 @@ class DownloadService {
       throw DownloadException('HTTP_${response.statusCode}');
     }
 
+    final total = _responseLength(response.headers);
     final directory = await _downloadDirectory(create: true);
     final fileName = _trustedFileName(response.headers['content-disposition']) ?? _sanitizeFileName(fallbackName);
     final finalFile = File('${directory.path}${Platform.pathSeparator}$fileName');
     final tempFile = File('${finalFile.path}.part');
 
     var bytes = 0;
+    IOSink? sink;
     try {
-      final sink = tempFile.openWrite(mode: FileMode.writeOnly);
-      await for (final chunk in response.stream) {
+      sink = tempFile.openWrite(mode: FileMode.writeOnly);
+      onProgress?.call(DownloadProgress(receivedBytes: 0, totalBytes: total));
+      final stream = response.stream.timeout(
+        const Duration(seconds: 30),
+        onTimeout: (eventSink) => eventSink.addError(const DownloadException('DOWNLOAD_STALLED')),
+      );
+      await for (final chunk in stream) {
         bytes += chunk.length;
         sink.add(chunk);
+        onProgress?.call(DownloadProgress(receivedBytes: bytes, totalBytes: total));
       }
+      await sink.flush();
       await sink.close();
+      sink = null;
       if (bytes == 0) throw const DownloadException('EMPTY_DOWNLOAD');
+      if (total != null && bytes < total) throw const DownloadException('INCOMPLETE_DOWNLOAD');
       if (await finalFile.exists()) await finalFile.delete();
       await tempFile.rename(finalFile.path);
       return DownloadResult(path: finalFile.path, bytes: bytes);
     } catch (_) {
+      try {
+        await sink?.close();
+      } catch (_) {}
       if (await tempFile.exists()) await tempFile.delete();
       rethrow;
     }
+  }
+
+  static int? _responseLength(Map<String, String> headers) {
+    final direct = int.tryParse(headers['content-length'] ?? '');
+    if (direct != null && direct > 0) return direct;
+    final range = headers['content-range'];
+    if (range != null) {
+      final match = RegExp(r'/([0-9]+)$').firstMatch(range.trim());
+      final value = match == null ? null : int.tryParse(match.group(1)!);
+      if (value != null && value > 0) return value;
+    }
+    return null;
   }
 
   Future<List<DownloadedFileInfo>> listDownloads() async {
