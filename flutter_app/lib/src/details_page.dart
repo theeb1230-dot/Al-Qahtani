@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'app_target.dart';
 import 'models.dart';
+import 'player_page.dart';
 
 class DetailsPage extends StatefulWidget {
   const DetailsPage({super.key, required this.api, required this.item});
@@ -22,6 +23,33 @@ class _DetailsPageState extends State<DetailsPage> {
   }
 
   void retry() => setState(() => future = widget.api.details(widget.item.ref));
+
+  void _openDirect(TitleDetails details) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlayerPage(
+          api: widget.api,
+          title: details.title,
+          mediaPath: details.mediaPath,
+          mediaType: details.mediaType,
+        ),
+      ),
+    );
+  }
+
+  void _openEpisode(EpisodeItem episode) {
+    if (episode.ref.isEmpty || !episode.watchAvailable) return;
+    final label = episode.title.trim().isEmpty ? 'الحلقة ${episode.number}' : episode.title;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlayerPage(
+          api: widget.api,
+          title: label,
+          sourceRef: episode.ref,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,12 +88,21 @@ class _DetailsPageState extends State<DetailsPage> {
               if (details.hasEpisodes) ...[
                 Text('الحلقات', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
-                ...details.episodes.map((episode) => _EpisodeTile(episode: episode)),
+                ...details.episodes.map(
+                  (episode) => _EpisodeTile(
+                    episode: episode,
+                    onTap: () => _openEpisode(episode),
+                  ),
+                ),
               ] else if (details.hasDirectMedia)
-                const ListTile(
-                  leading: Icon(Icons.play_circle_outline),
-                  title: Text('مصدر مشاهدة مباشر متاح'),
-                  subtitle: Text('سيتم ربطه بالمشغل الداخلي في مرحلة Player التالية.'),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.play_circle_outline),
+                    title: const Text('مشاهدة داخل التطبيق'),
+                    subtitle: const Text('المصدر يمر عبر Al-Qahtani media proxy دون كشف العنوان الأصلي.'),
+                    trailing: const Icon(Icons.play_arrow),
+                    onTap: () => _openDirect(details),
+                  ),
                 )
               else if (details.playbackUnavailable)
                 const ListTile(
@@ -84,20 +121,22 @@ class _DetailsPageState extends State<DetailsPage> {
 }
 
 class _EpisodeTile extends StatelessWidget {
-  const _EpisodeTile({required this.episode});
+  const _EpisodeTile({required this.episode, required this.onTap});
   final EpisodeItem episode;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final label = episode.title.trim().isEmpty ? 'الحلقة ${episode.number}' : episode.title;
+    final enabled = episode.watchAvailable && episode.ref.isNotEmpty;
     return Card(
       child: ListTile(
-        enabled: episode.watchAvailable && episode.ref.isNotEmpty,
+        enabled: enabled,
         leading: CircleAvatar(child: Text('${episode.number}')),
         title: Text(label),
         subtitle: const Text('رقم الحلقة منفصل عن معرف المصدر الداخلي'),
-        trailing: episode.watchAvailable ? const Icon(Icons.play_arrow) : const Icon(Icons.block),
-        onTap: episode.watchAvailable ? () {} : null,
+        trailing: enabled ? const Icon(Icons.play_arrow) : const Icon(Icons.block),
+        onTap: enabled ? onTap : null,
       ),
     );
   }
