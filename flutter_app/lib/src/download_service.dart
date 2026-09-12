@@ -32,6 +32,17 @@ class DownloadedFileInfo {
   final DateTime modifiedAt;
 }
 
+class DownloadCancellationToken {
+  final Completer<void> _cancelled = Completer<void>();
+
+  bool get isCancelled => _cancelled.isCompleted;
+  Future<void> get whenCancelled => _cancelled.future;
+
+  void cancel() {
+    if (!_cancelled.isCompleted) _cancelled.complete();
+  }
+}
+
 typedef DownloadDirectoryProvider = Future<Directory> Function();
 typedef DownloadProgressCallback = void Function(DownloadProgress progress);
 
@@ -52,13 +63,18 @@ class DownloadService {
     Uri uri, {
     String fallbackName = 'al-qahtani-media',
     DownloadProgressCallback? onProgress,
+    DownloadCancellationToken? cancellationToken,
   }) async {
     if (uri.path != '/api/cinema/media' || uri.queryParameters['download'] != '1') {
       throw const DownloadException('INVALID_DOWNLOAD_REFERENCE');
     }
+    _throwIfCancelled(cancellationToken);
 
     final request = http.Request('GET', uri)..headers['accept'] = '*/*';
-    final response = await _client.send(request).timeout(const Duration(seconds: 30));
+    final response = await _awaitOrCancel(
+      _client.send(request).timeout(const Duration(seconds: 30)),
+      cancellationToken,
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw DownloadException('HTTP_${response.statusCode}');
     }
@@ -71,6 +87,7 @@ class DownloadService {
 
     var bytes = 0;
     IOSink? sink;
+    StreamIterator<List<int>>? iterator;
     try {
       sink = tempFile.openWrite(mode: FileMode.writeOnly);
       onProgress?.call(DownloadProgress(receivedBytes: 0, totalBytes: total));
@@ -78,7 +95,9 @@ class DownloadService {
         const Duration(seconds: 30),
         onTimeout: (eventSink) => eventSink.addError(const DownloadException('DOWNLOAD_STALLED')),
       );
-      await for (final chunk in stream) {
+      iterator = StreamIterator<List<int>>(stream);
+      while (await _moveNextOrCancel(iterator, cancellationToken)) {
+        final chunk = iterator.current;
         bytes += chunk.length;
         sink.add(chunk);
         onProgress?.call(DownloadProgress(receivedBytes: bytes, totalBytes: total));
@@ -87,11 +106,14 @@ class DownloadService {
       await sink.close();
       sink = null;
       if (bytes == 0) throw const DownloadException('EMPTY_DOWNLOAD');
-      if (total != null && bytes < total) throw const DownloadException('INCOMPLETE_DOWNLOAD');
+      if (total != null && bytes != total) throw const DownloadException('INCOMPLETE_DOWNLOAD');
       if (await finalFile.exists()) await finalFile.delete();
       await tempFile.rename(finalFile.path);
       return DownloadResult(path: finalFile.path, bytes: bytes);
     } catch (_) {
+      try {
+        await iterator?.cancel();
+      } catch (_) {}
       try {
         await sink?.close();
       } catch (_) {}
@@ -100,15 +122,47 @@ class DownloadService {
     }
   }
 
+  static void _throwIfCancelled(DownloadCancellationToken? token) {
+    if (token?.isCancelled ?? false) throw const DownloadException('DOWNLOAD_CANCELLED');
+  }
+
+  static Future<T> _awaitOrCancel<T>(Future<T> operation, DownloadCancellationToken? token) async {
+    if (token == null) return operation;
+    _throwIfCancelled(token);
+    final result = await Future.any<Object>([
+      operation.then<Object>((value) => _DownloadValue<T>(value)),
+      token.whenCancelled.then<Object>((_) => const _DownloadCancelled()),
+    ]);
+    if (result is _DownloadCancelled) throw const DownloadException('DOWNLOAD_CANCELLED');
+    return (result as _DownloadValue<T>).value;
+  }
+
+  static Future<bool> _moveNextOrCancel(
+    StreamIterator<List<int>> iterator,
+    DownloadCancellationToken? token,
+  ) async {
+    if (token == null) return iterator.moveNext();
+    _throwIfCancelled(token);
+    final result = await Future.any<Object>([
+      iterator.moveNext().then<Object>((value) => _DownloadValue<bool>(value)),
+      token.whenCancelled.then<Object>((_) => const _DownloadCancelled()),
+    ]);
+    if (result is _DownloadCancelled) {
+      await iterator.cancel();
+      throw const DownloadException('DOWNLOAD_CANCELLED');
+    }
+    return (result as _DownloadValue<bool>).value;
+  }
+
   static int? _responseLength(Map<String, String> headers) {
-    final direct = int.tryParse(headers['content-length'] ?? '');
-    if (direct != null && direct > 0) return direct;
     final range = headers['content-range'];
     if (range != null) {
       final match = RegExp(r'/([0-9]+)$').firstMatch(range.trim());
       final value = match == null ? null : int.tryParse(match.group(1)!);
       if (value != null && value > 0) return value;
     }
+    final direct = int.tryParse(headers['content-length'] ?? '');
+    if (direct != null && direct > 0) return direct;
     return null;
   }
 
@@ -181,6 +235,15 @@ class DownloadService {
   }
 
   void close() => _client.close();
+}
+
+class _DownloadValue<T> {
+  const _DownloadValue(this.value);
+  final T value;
+}
+
+class _DownloadCancelled {
+  const _DownloadCancelled();
 }
 
 class DownloadException implements Exception {
