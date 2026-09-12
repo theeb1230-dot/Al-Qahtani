@@ -12,20 +12,21 @@ header{position:sticky;top:0;z-index:5;background:#07111fe8;backdrop-filter:blur
 .wrap{max-width:980px;margin:auto;padding:16px}.brand{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand strong{font-size:1.1rem}.nav{display:flex;gap:8px;flex-wrap:wrap}.nav a{color:var(--text);text-decoration:none;background:var(--panel);padding:8px 11px;border-radius:10px;font-size:.85rem}
 .hero{padding:28px 0 14px}.hero h1{margin:0 0 8px;font-size:clamp(1.6rem,6vw,2.7rem)}.hero p{margin:0;color:var(--muted)}
 .grid{display:grid;gap:12px}.card{background:linear-gradient(145deg,#ffffff08,#ffffff02),var(--panel);border:1px solid #ffffff12;border-radius:18px;padding:14px;display:grid;grid-template-columns:1fr 120px 1fr;align-items:center;gap:8px;cursor:pointer}
-.team{text-align:center}.team-logo-wrap{width:64px;height:64px;margin:0 auto;display:grid;place-items:center;border-radius:50%;background:#ffffff08;border:1px solid #ffffff10;overflow:hidden}.team img{width:58px;height:58px;object-fit:contain;display:block}.team-logo-missing{width:32px;height:32px;opacity:.5}.team b{display:block;margin-top:6px}.center{text-align:center}.pill{display:inline-block;padding:4px 9px;border-radius:999px;background:#ffffff10;color:var(--muted);font-size:.75rem}.live{color:#ff8b96}.time{font-weight:800;margin-top:8px}
+.team{text-align:center}.team-logo-wrap{width:64px;height:64px;margin:0 auto;display:grid;place-items:center;border-radius:50%;background:#ffffff08;border:1px solid #ffffff10;overflow:hidden}.team-logo-wrap>img,.team-logo-wrap>.team-logo-missing{grid-area:1/1}.team img{width:52px;height:52px;object-fit:contain;display:block}.team-logo-missing{width:32px;height:32px;opacity:.5}.team b{display:block;margin-top:6px}.center{text-align:center}.pill{display:inline-block;padding:4px 9px;border-radius:999px;background:#ffffff10;color:var(--muted);font-size:.75rem}.live{color:#ff8b96}.time{font-weight:800;margin-top:8px}
 .state{padding:34px;text-align:center;color:var(--muted);background:var(--panel);border-radius:18px}.retry{margin-top:12px;border:0;background:var(--accent);color:#03141a;padding:10px 14px;border-radius:10px;font-weight:800}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:20;max-width:min(92vw,480px);padding:11px 16px;border:1px solid #ffffff18;background:#101e31;color:#fff;border-radius:12px;box-shadow:0 12px 40px #0008;display:none;text-align:center}
-@media(max-width:620px){.card{grid-template-columns:1fr 92px 1fr}.team-logo-wrap{width:54px;height:54px}.team img{width:48px;height:48px}.team b{font-size:.85rem}}
+@media(max-width:620px){.card{grid-template-columns:1fr 92px 1fr}.team-logo-wrap{width:54px;height:54px}.team img{width:44px;height:44px}.team b{font-size:.85rem}}
 </style>
 </head>
 <body>
 <header><div class="wrap brand"><strong>Al-Qahtani</strong><nav class="nav"><a href="./">المباريات</a><a href="albasri-cinema.html">الأفلام والمسلسلات</a><a href="news.html">الأخبار</a></nav></div></header>
 <main class="wrap">
-<section class="hero"><h1>مباريات اليوم</h1><p>نسخة ويب مستقلة بدون إعلانات أو إجبار على فتح تطبيق خارجي.</p></section>
+<section class="hero"><h1>مباريات اليوم</h1><p>نسخة ويب مستقلة بدون إعلانات أو إجبار على فتح تطبيق خارجي. الأوقات بتوقيت السعودية.</p></section>
 <div id="list" class="grid"><div class="state">جارٍ تحميل المباريات…</div></div>
 </main>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script type="module">
 import { getMatches, getMatchServers, ProviderEndpoints } from './web/core/api-client.js';
+import { formatSaudiMatchTime, hasSaudiMatchTimePassed } from './web/core/match-time.js';
 const list=document.getElementById('list'),toastEl=document.getElementById('toast');
 const BASRI_ORIGIN='https://www.albasritv.abrdns.com/';
 const cleanImg=u=>{
@@ -42,7 +43,6 @@ const cleanImg=u=>{
    return url.href;
  }catch{return ''}
 };
-const fmt=t=>{if(!t)return '';const m=String(t).match(/(\d{1,2}):(\d{2})/);if(!m)return t;let h=+m[1],ap=h>=12?'م':'ص';h=h%12||12;return h+':'+m[2]+' '+ap};
 let toastTimer;function toast(msg){clearTimeout(toastTimer);toastEl.textContent=msg;toastEl.style.display='block';toastTimer=setTimeout(()=>toastEl.style.display='none',3200)}
 function logoCandidates(match,side){
  const team=match?.[side]||{};
@@ -87,8 +87,9 @@ function card(m){
  const d=document.createElement('div');d.className='card';
  const score=(m.team1?.goals||0)+' - '+(m.team2?.goals||0);
  const live=m.priority===1, ended=m.priority===3;
- const label=live?'جاري الآن':ended?'انتهت':'لم تبدأ';
- const centerText=live||ended?score:fmt(m.time);
+ const scheduledStarted=!live&&!ended&&hasSaudiMatchTimePassed(m.time);
+ const label=live?'جاري الآن':ended?'انتهت':scheduledStarted?'موعدها بدأ — بانتظار البث':'لم تبدأ';
+ const centerText=live||ended?score:formatSaudiMatchTime(m.time);
  const center=document.createElement('div');center.className='center';
  const pill=document.createElement('span');pill.className='pill'+(live?' live':'');pill.textContent=label;
  const time=document.createElement('div');time.className='time';time.textContent=centerText;
