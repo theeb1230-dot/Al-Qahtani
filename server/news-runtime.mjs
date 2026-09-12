@@ -31,6 +31,10 @@ function decodeHtml(value = "") {
     .replace(/&gt;/gi, ">");
 }
 
+function htmlText(value = "", max = 2_000) {
+  return safeText(decodeHtml(String(value).replace(/<[^>]*>/g, " ")), max).replace(/\s+/g, " ").trim();
+}
+
 function normalizeParagraphs(value) {
   if (Array.isArray(value)) return value.map((entry) => safeText(entry, 8_000)).filter(Boolean).slice(0, 100);
   const text = safeText(value, 40_000);
@@ -61,11 +65,26 @@ function safeSourceArticleUrl(value, allowedOrigin) {
   }
 }
 
-export function parseNewsSourceHtml(html = "") {
-  const text = String(html || "");
-  const allowedOrigin = sourceOriginFromHtml(text);
-  if (!allowedOrigin) return [];
-  const scripts = [...text.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+function parseNewsCards(text, allowedOrigin) {
+  const out = [];
+  const seen = new Set();
+  for (const match of String(text).matchAll(/<a\b([^>]*href=["']([^"']*\/ar\/news\/\d+\/[^"']*)["'][^>]*)>([\s\S]{0,2400}?)<\/a>/gi)) {
+    const url = safeSourceArticleUrl(match[2], allowedOrigin);
+    if (!url || seen.has(url)) continue;
+    const body = match[3] || "";
+    const title = htmlText(body.match(/<(?:h2|h3)\b[^>]*class=["'][^"']*news-title[^"']*["'][^>]*>([\s\S]*?)<\/(?:h2|h3)>/i)?.[1] || "", 500);
+    if (!title) continue;
+    const date = htmlText(body.match(/<div\b[^>]*class=["'][^"']*news-date[^"']*["'][^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i)?.[1] || "", 160);
+    const description = htmlText(body.match(/<p\b[^>]*class=["'][^"']*(?:big-news-lead|news-lead)[^"']*["'][^>]*>([\s\S]*?)<\/p>/i)?.[1] || "", 2_000);
+    seen.add(url);
+    out.push({ url, title, date, description });
+    if (out.length >= 60) break;
+  }
+  return out;
+}
+
+function parseNewsJsonLd(text, allowedOrigin) {
+  const scripts = [...String(text).matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
   const out = [];
   const seen = new Set();
   for (const match of scripts) {
@@ -85,13 +104,21 @@ export function parseNewsSourceHtml(html = "") {
           title: safeText(rawItem?.name || entry?.name || "بدون عنوان", 500),
           date: safeText(rawItem?.datePublished || rawItem?.date || "", 160),
           description: safeText(rawItem?.description || "", 2_000),
-          image: safeText(rawItem?.image?.url || rawItem?.image || "", 4_000),
         });
         if (out.length >= 60) return out;
       }
     }
   }
   return out;
+}
+
+export function parseNewsSourceHtml(html = "") {
+  const text = String(html || "");
+  const allowedOrigin = sourceOriginFromHtml(text);
+  if (!allowedOrigin) return [];
+  const cards = parseNewsCards(text, allowedOrigin);
+  if (cards.length) return cards;
+  return parseNewsJsonLd(text, allowedOrigin);
 }
 
 export function createNewsRuntime({ fetchImpl = fetch, workerBase = DEFAULT_WORKER, now = () => Date.now() } = {}) {
@@ -163,7 +190,6 @@ export function createNewsRuntime({ fetchImpl = fetch, workerBase = DEFAULT_WORK
         title: safeText(item?.title || item?.name || "بدون عنوان", 500),
         date: safeText(item?.date || "", 160),
         description: safeText(item?.description || item?.summary || "", 2_000),
-        image: safeText(item?.image || item?.img || "", 4_000),
       };
     }).filter((item) => item.ref);
     return { status: "success", version: "1.0.10", kind: "news", data: items };
@@ -185,7 +211,6 @@ export function createNewsRuntime({ fetchImpl = fetch, workerBase = DEFAULT_WORK
         ref: String(ref),
         title: safeText(data.title || "", 500),
         date: safeText(data.date || "", 160),
-        image: safeText(data.image || data.img || "", 4_000),
         paragraphs: normalizeParagraphs(data.paragraphs || data.content_text || data.content || ""),
       },
     };
