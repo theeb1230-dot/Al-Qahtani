@@ -4,102 +4,93 @@
 GitHub is authoritative when this file disagrees with the repository. The preserved original `albasritv.github.io-main.zip` archive remains the behavioral baseline. Live deployment and artifact evidence are required before claiming parity or release readiness.
 
 ## Current state
-- Main: `d0742ccc1671185cfa6ff7d302ae623d5b9c4310` (merged PR #64: Flutter title details and episode normalization).
-- Active PR: #65 `Add Flutter internal player with opaque media playback`.
-- Active branch: `feat/flutter-internal-player-65`.
-- PR #65 original head `41e2bb8e2754d4830422b50a5c2a9871654766e6` passed all protected Web/backend workflows but failed Flutter foundation run `34674906694` in analyze, Android Mobile, Android TV and iOS because `player_page.dart` passed a nullable `VideoPlayerController?` into non-nullable `video_player` APIs.
-- The root cause was fixed on the same branch by deriving a non-null `activeController` only after `isInitialized == true`; fix commit `f847c2b6dc33c0e1bf64064b63accfa7039e1675`.
-- Flutter product version remains `1.0.1+1`; no release is published until a release-worthy tranche and verified triplet exist from one commit/version.
-- Existing Web/PWA remains the GitHub Pages product root and is not replaced by Flutter Web.
+- Main: `df1b5c074caf173bfcb030131160749887696538` (merged PR #65: Flutter internal player with opaque media playback).
+- Active branch: `feat/flutter-local-library-66`.
+- Active PR: to be opened for the local library tranche.
+- Flutter product version remains `1.0.1+1`; no GitHub Release is published until a release-worthy triplet is verified from one commit/version.
+- Existing Web/PWA remains the GitHub Pages product root and has not been replaced by Flutter Web.
 
 ## Product boundary
-Al-Qahtani remains fully independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and all Theeb-specific APIs/providers. `https://akwam.ss/...` is allowed only as part of the preserved original Basri source contract. Flutter consumes Al-Qahtani backend contracts only and must not scrape or expose upstream hosts, Worker/session material, or source URLs.
+Al-Qahtani remains fully independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and all Theeb-specific APIs/providers. `https://akwam.ss/...` is permitted only as part of the preserved original Basri source contract. Flutter consumes Al-Qahtani backend contracts only and must not scrape or expose upstream hosts, Worker/session material, or source URLs.
 
 ## Protected Web behavior
-Protected regressions remain iPhone Safari playback, Range/206, Content-Range/Accept-Ranges, MPEG-TS/HLS handling, measured duration, real match logos, Saudi match times, separated episode display numbering, endless 30-item category pagination, explicit Download behavior, CORS, SSRF/allowlists, zero ads/popups/unneeded tracking, and no legacy Android Intent/deep-link handoff.
+Protected regressions remain iPhone Safari playback, Range/206, Content-Range/Accept-Ranges, MPEG-TS/HLS handling, measured duration, real match logos, Saudi match times, separated episode numbering, endless 30-item pagination, explicit Download behavior, CORS, SSRF/allowlists, zero ads/popups/unneeded tracking, and no legacy Android Intent/deep-link handoff.
 
 ## Flutter structure
-- `flutter_app/lib/main.dart`: Arabic RTL shell, Mobile navigation, dedicated Android TV NavigationRail, catalog/search navigation.
-- `flutter_app/lib/src/app_target.dart`: Mobile/TV/iOS runtime target selection.
-- `flutter_app/lib/src/api_client.dart`: Al-Qahtani-only API access, opaque detail/media reference mapping and playback resolution.
-- `flutter_app/lib/src/models.dart`: catalog/matches plus normalized `TitleDetails` and `EpisodeItem` with explicit `episode_id` vs `episode_number` separation.
-- `flutter_app/lib/src/details_page.dart`: title/details/episodes UI; episodes and direct movies route only to the internal Player path.
-- `flutter_app/lib/src/player_page.dart`: internal native player backed by Flutter `video_player`, using only Al-Qahtani media-proxy URLs; nullable controller use is guarded before all non-nullable player APIs.
+- `flutter_app/lib/main.dart`: Arabic RTL shell, Mobile navigation, Android TV NavigationRail, catalog/search plus new local `مكتبتي` surface.
+- `flutter_app/lib/src/api_client.dart`: Al-Qahtani-only API access and opaque media resolution.
+- `flutter_app/lib/src/details_page.dart`: details/episodes, favorites toggle, routes playback with stable content metadata only.
+- `flutter_app/lib/src/player_page.dart`: internal `video_player` player; periodically persists position/duration but never persists media-proxy URLs.
+- `flutter_app/lib/src/library_store.dart`: local favorites/history/continue-watching store using SharedPreferences with bounded history.
+- `flutter_app/test/library_store_test.dart`: regression tests for favorite persistence, episode-separated progress and completed-item filtering.
 
 ## This run
-1. Re-read GitHub actual state and found PR #65 as the only open PR; no second PR was opened.
-2. Verified PR #65 head `41e2bb8e2754d4830422b50a5c2a9871654766e6` was mergeable but Flutter foundation run `34674906694` failed while all 11 protected Web/backend workflows succeeded.
-3. Read Flutter analyze logs and identified four concrete null-safety errors in `flutter_app/lib/src/player_page.dart` around `VideoPlayer`, `VideoProgressIndicator`, `ValueListenableBuilder`, and play/pause calls.
-4. Fixed the root cause on the same branch by introducing `activeController`, which is non-null only after initialization, and using it consistently for rendering, progress and playback controls.
-5. The fix commit is `f847c2b6dc33c0e1bf64064b63accfa7039e1675`.
-6. Fresh protected checks started for the fix head; early completed results include Content runtime, media-reference expiry, Remote CORS, trusted download filename, original player/download contracts and CORS boundary, all successful. Flutter foundation and longer WebKit/live/playback checks were still running/queued when this state update was written.
-7. The existing GitHub Pages web root was not modified or converted to Flutter Web.
-8. No Release was published because the final exact head has not yet completed the required triplet gates.
+1. Inspected GitHub actual state and found PR #65 as the only open PR.
+2. Verified exact head `4911dad894e3f158656a7e2dd576f80ee2026120` passed all 12 required workflows, including Flutter foundation, Mobile WebKit, Remote movie playback, Content runtime, CORS, media expiry and Download contracts.
+3. Merged PR #65 to main as `df1b5c074caf173bfcb030131160749887696538`.
+4. Created `feat/flutter-local-library-66` from that exact merge commit.
+5. Added local Favorites, History and Continue Watching using stable content refs only; no short-lived media ref is persisted.
+6. Added resume-position restoration per content/episode and a bounded 80-entry history.
+7. Added a Mobile/TV `مكتبتي` navigation destination and favorite toggle in Details.
+8. Added SharedPreferences-backed tests. CI for this new branch will be the merge gate.
+9. GitHub Pages root was not modified or converted to Flutter Web.
 
 ## CI / deployment evidence
-- PR #65 failing Flutter foundation run on original head: `34674906694`.
-- Root-cause evidence: Flutter analyze reported four `VideoPlayerController?` to non-nullable API errors in `lib/src/player_page.dart`.
-- Fix-head Flutter foundation: `34677300914` (fresh run; must be green before merge).
-- Fix-head Web smoke: `34677300824`.
-- Fix-head Mobile WebKit: `34677300859`.
-- Fix-head Remote movie playback: `34677300882`.
-- Fix-head Content runtime: `34677300861` success at time of update.
-- Fix-head CORS boundary: `34677300885` success at time of update.
-- Fix-head media-reference expiry: `34677300865` success at time of update.
-- Fix-head Remote CORS: `34677300844` success at time of update.
-- Fix-head trusted download filename: `34677300889` success at time of update.
-- Fix-head Original Basri player contract: `34677300891` success at time of update.
-- Fix-head Original Basri download contract: `34677300913` success at time of update.
-- Main GitHub Pages from prior merge remained successful at run `34674773818`; this PR does not replace the web root.
+- PR #65 final-head Flutter foundation: `34677329987` success.
+- PR #65 final-head Mobile WebKit: `34677330053` success.
+- PR #65 final-head Remote movie playback: `34677329993` success.
+- PR #65 final-head Content runtime: `34677329959` success.
+- PR #65 final-head Web smoke: `34677329972` success.
+- PR #65 final-head CORS/media-expiry/download/original-player checks: all success on the same head.
+- PR #66 CI: pending after PR creation.
 
 ## Artifact state
-- Android Mobile APK: build pipeline exists; current version `1.0.1+1`; PR #65 artifact not accepted until final-head Flutter run succeeds.
-- Android TV APK: dedicated TV runtime + LEANBACK build path exists; PR #65 artifact not accepted until final-head Flutter run succeeds.
-- iOS IPA UNSIGNED: no-codesign build path exists and remains explicitly unsigned; PR #65 artifact not accepted until final-head Flutter run succeeds.
-- Release policy remains fail-closed: do not publish until APK Mobile + APK TV + IPA UNSIGNED all succeed from the same release commit/version and pass integrity/identity checks.
+- Android Mobile APK: build pipeline exists; version `1.0.1+1`; no release asset published in this run.
+- Android TV APK: dedicated TV runtime + LEANBACK build path exists; no release asset published in this run.
+- iOS IPA UNSIGNED: no-codesign build path exists; no release asset published in this run.
+- Release policy remains fail-closed: APK Mobile + APK TV + IPA UNSIGNED must all succeed from one release commit/version with integrity checks before publication.
 
 ## Current gaps / blockers
-- PR #65 cannot merge until the final exact head passes Flutter Mobile/TV/iOS plus all protected Web/backend regressions.
-- Player still needs device/runtime evidence for MP4/HLS and especially MPEG-TS behavior on Android ExoPlayer and iOS AVPlayer.
-- Player does not yet persist position/history/continue-watching.
-- Download UI is not yet wired in Flutter, although backend opaque media download semantics remain protected.
-- TV needs explicit D-Pad Player focus/controls tests, not merely successful TV compilation.
-- PiP/AirPlay capability integration remains unimplemented and must use only public platform APIs.
-- Render workspace identity remains ambiguous for direct dashboard-log inspection; external runtime/CI evidence is used instead of guessing.
+- Local-library tranche must pass Flutter Mobile/TV/iOS builds and protected Web/backend regressions before merge.
+- Player still needs runtime evidence for MP4/HLS and especially MPEG-TS on Android ExoPlayer and iOS AVPlayer.
+- Flutter Download UI is not yet wired.
+- TV Player needs explicit D-Pad focus/control widget tests.
+- PiP/AirPlay capability integration remains unimplemented and must use public APIs only.
+- Render workspace identity remains ambiguous for direct dashboard-log inspection; external runtime/CI evidence is used rather than guessing.
 
 ## أهداف التشغيل التالي
-1. **إغلاق PR #65 بأمان.**
-   - فحص exact-head Flutter/Web checks بعد إصلاح null-safety.
-   - معالجة أي failure جديد على نفس الفرع فقط.
-   - الدمج فقط بعد خضرة جميع البوابات المطلوبة.
-2. **إثبات Player MP4/HLS.**
-   - إضافة اختبارات lifecycle وحالات الخطأ.
-   - تحقق من media-proxy URL فقط.
-   - اختبار seek/progress دون مدة وهمية.
-3. **تثبيت MPEG-TS native behavior.**
-   - فحص Android ExoPlayer وiOS AVPlayer capability الفعلي.
-   - إبقاء fallback داخل Al-Qahtani فقط.
-   - عرض عدم الدعم بصدق عند الحاجة.
-4. **تحسين Android TV Player.**
-   - D-Pad focus لأزرار play/seek/retry.
-   - Back يعيد المستخدم للتفاصيل ويحفظ focus.
+1. **إغلاق PR #66 بأمان.**
+   - تشغيل Flutter analyze/tests والبناء الثلاثي.
+   - معالجة أي failure على نفس الفرع فقط.
+   - الدمج فقط بعد خضرة exact head.
+2. **تثبيت المفضلة والسجل.**
+   - اختبار persistence بعد إعادة إنشاء store.
+   - اختبار حدود السجل والتنظيف.
+   - ضمان عدم تخزين media refs أو upstream URLs.
+3. **تحسين Continue Watching.**
+   - إظهار الحلقة والموضع بوضوح.
+   - استعادة الموضع بعد حل media ref جديد.
+   - إزالة العناصر المكتملة تلقائيًا من قائمة الاستكمال.
+4. **إثبات Player MP4/HLS.**
+   - اختبار lifecycle والseek/progress.
+   - الحفاظ على opaque media proxy فقط.
+   - عدم اختلاق duration.
+5. **تثبيت MPEG-TS native behavior.**
+   - فحص ExoPlayer وAVPlayer فعليًا.
+   - fallback داخل Al-Qahtani فقط.
+   - رسالة صادقة عند عدم الدعم.
+6. **إضافة Download في Flutter.**
+   - استخدام download semantics الحالية عبر opaque media path.
+   - منع أي upstream URL في الواجهة أو logs.
+   - حالات نجاح/فشل واضحة.
+7. **تحسين Android TV Player.**
+   - D-Pad focus لأزرار التشغيل والseek/retry.
+   - Back يعيد focus للتفاصيل.
    - عدم الاعتماد على touch-only scrubbing.
-5. **إضافة Download في Flutter.**
-   - استخدام `download=1` على opaque media path فقط.
-   - عدم تخزين upstream URL.
-   - حالات تقدم/نجاح/فشل واضحة.
-6. **إضافة Favorites محلية.**
-   - تخزين stable content refs فقط.
-   - واجهة إضافة/إزالة واضحة.
-   - schema قابل للترقية.
-7. **إضافة History وContinue Watching.**
-   - حفظ position/content ref دون media refs المنتهية.
-   - استعادة آخر موضع بعد حل media ref جديد.
-   - حد وتنظيف للسجل.
 8. **إضافة Player UX متقدم.**
    - playback speed حيث تدعم المنصة.
-   - PiP/AirPlay عبر APIs عامة فقط عند الإمكان.
-   - رسائل أخطاء لا تسرب المصدر.
+   - PiP/AirPlay عبر APIs عامة فقط.
+   - رسائل أخطاء منقحة.
 9. **حماية GitHub Pages في كل دمج.**
    - WebKit/CORS/Range/Download regressions.
    - عدم تحويل Pages إلى Flutter Web حاليًا.
