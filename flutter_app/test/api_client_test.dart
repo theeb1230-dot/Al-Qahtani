@@ -28,6 +28,42 @@ void main() {
     expect(api.mediaUri(resolved.mediaPath).host, 'runtime.example');
   });
 
+  test('news stays behind Al-Qahtani runtime and maps opaque refs', () async {
+    final client = MockClient((request) async {
+      expect(request.url.host, 'runtime.example');
+      if (request.url.path == '/api/v1/news') {
+        return http.Response(
+          jsonEncode({
+            'status': 'success',
+            'version': '1.0.1',
+            'kind': 'news',
+            'data': [
+              {'id': 'opaque-news-1', 'ref': 'opaque-news-1', 'title': 'خبر تجريبي', 'date': 'اليوم', 'description': 'وصف'},
+            ],
+          }),
+          200,
+        );
+      }
+      expect(request.url.path, '/api/v1/news/article');
+      expect(request.url.queryParameters['ref'], 'opaque-news-1');
+      return http.Response(
+        jsonEncode({
+          'status': 'success',
+          'version': '1.0.1',
+          'kind': 'news-article',
+          'data': {'ref': 'opaque-news-1', 'title': 'خبر تجريبي', 'date': 'اليوم', 'paragraphs': ['الفقرة الأولى']},
+        }),
+        200,
+      );
+    });
+    final api = AlQahtaniApi(client: client, baseUri: Uri.parse('https://runtime.example'));
+    final items = await api.news();
+    expect(items.single.ref, 'opaque-news-1');
+    final article = await api.newsArticle(items.single.ref);
+    expect(article.paragraphs, ['الفقرة الأولى']);
+    expect(article.ref, isNot(contains('http')));
+  });
+
   test('mediaUri rejects arbitrary upstream urls', () {
     final api = AlQahtaniApi(baseUri: Uri.parse('https://runtime.example'));
     expect(
