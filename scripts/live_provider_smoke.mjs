@@ -61,10 +61,9 @@ function uniqueMatches(text, re) {
 
 function sourceLinks(text, kind) {
   const out = [];
-  const re = new RegExp(`href=["']((?:https:\\/\\/akwam\\.ss)?\\/${kind}\\/[^"']+)["']`, "gi");
-  for (const m of text.matchAll(re)) {
+  for (const m of text.matchAll(/href=["']([^"']+)["']/gi)) {
     try {
-      const url = new URL(m[1], SOURCE);
+      const url = new URL(m[1], SOURCE + "/");
       if (url.protocol !== "https:" || url.hostname !== "akwam.ss" || !url.pathname.startsWith(`/${kind}/`)) continue;
       if (!out.includes(url.href)) out.push(url.href);
     } catch {}
