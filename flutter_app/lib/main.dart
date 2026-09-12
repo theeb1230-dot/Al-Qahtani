@@ -14,7 +14,6 @@ import 'src/player_page.dart';
 const _brandBlack = Color(0xFF090A0C);
 const _brandPanel = Color(0xFF151619);
 const _brandGold = Color(0xFFD5AE55);
-const _brandGoldSoft = Color(0xFFB88C3D);
 
 void main() => runApp(const AlQahtaniApp());
 
@@ -98,7 +97,7 @@ class _ShellState extends State<Shell> {
     ];
     final content = IndexedStack(index: index, children: pages);
     return Scaffold(
-      appBar: const AppBar(title: _BrandTitle()),
+      appBar: AppBar(title: const _BrandTitle()),
       body: isTvTarget
           ? FocusTraversalGroup(child: Row(children: [
               _TvNavigation(selectedIndex: index, onSelected: (value) => setState(() => index = value)),
