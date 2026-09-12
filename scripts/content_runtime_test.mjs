@@ -9,12 +9,16 @@ import {
   buildRuntimeEnvelope,
 } from "../server/content-runtime.mjs";
 
-assert.equal(PRODUCT_VERSION, "1.0.13");
+assert.equal(PRODUCT_VERSION, "1.0.14");
 
 const cache = new TtlCache({ maxEntries: 2 });
 cache.set("matches", { ok: true }, 1000, 10_000);
 assert.deepEqual(cache.get("matches", 10_500), { ok: true });
 assert.equal(cache.get("matches", 11_001), undefined);
+cache.set("peek", { ok: "stale" }, 100, 12_000);
+const stalePeek = cache.peek("peek", 12_101);
+assert.equal(stalePeek.expired, true);
+assert.deepEqual(stalePeek.value, { ok: "stale" });
 cache.set("a", 1, 1000, 20_000);
 cache.set("b", 2, 1000, 20_000);
 cache.set("c", 3, 1000, 20_000);
@@ -107,7 +111,9 @@ assert.equal(liveZeroScore.team2.goals, 0);
 
 const envelope = buildRuntimeEnvelope({ kind: "matches", data: [match], source: "basri-original", health: health.summary(3000), generatedAt: 0 });
 assert.equal(envelope.status, "success");
-assert.equal(envelope.version, "1.0.13");
+assert.equal(envelope.version, "1.0.14");
+assert.equal(envelope.cached, false);
+assert.equal(envelope.stale, false);
 assert.equal(envelope.generated_at, "1970-01-01T00:00:00.000Z");
 assert.equal(envelope.data.length, 1);
 assert.equal(envelope.source, "basri-original");
