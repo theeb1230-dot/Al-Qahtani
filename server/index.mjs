@@ -1,15 +1,28 @@
 import { pathToFileURL } from "node:url";
 import { createServer } from "./app.mjs";
 import { createNewsRuntime } from "./news-runtime.mjs";
+import { createProductionMatchRuntime } from "./match-production.mjs";
 
 const MATCH_LOGO_HOSTS = new Set(["kooorracity.com", "www.kooorracity.com"]);
+const ALLOWED_ORIGINS = new Set([
+  "https://theeb1230-dot.github.io",
+  "http://localhost:8000",
+  "http://127.0.0.1:8000",
+]);
+
+function applyRuntimeCors(req, res, { media = false } = {}) {
+  const origin = String(req.headers.origin || "");
+  if (ALLOWED_ORIGINS.has(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", media ? "Content-Type,Range" : "Content-Type");
+  if (media) {
+    res.setHeader("Access-Control-Expose-Headers", "Content-Type,Content-Length,Content-Range,Accept-Ranges,ETag,Last-Modified");
+  }
+}
 
 function applyLogoCors(req, res) {
-  const origin = String(req.headers.origin || "");
-  if (["https://theeb1230-dot.github.io", "http://localhost:8000", "http://127.0.0.1:8000"].includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader("Vary", "Origin");
+  applyRuntimeCors(req, res);
 }
 
 function isAllowedMatchLogoUrl(value) {
@@ -24,7 +37,7 @@ function isAllowedMatchLogoUrl(value) {
 async function proxyMatchLogo(req, res, url) {
   applyLogoCors(req, res);
   if (req.method === "OPTIONS") {
-    res.writeHead(204, { "Access-Control-Allow-Methods": "GET,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" });
+    res.writeHead(204);
     return res.end();
   }
   if (req.method !== "GET") {
@@ -80,15 +93,15 @@ async function proxyMatchLogo(req, res, url) {
 }
 
 function sendRuntimeJson(req, res, status, payload) {
-  applyLogoCors(req, res);
+  applyRuntimeCors(req, res);
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   return res.end(JSON.stringify(payload));
 }
 
 async function handleNewsRuntime(req, res, url, newsRuntime) {
-  applyLogoCors(req, res);
+  applyRuntimeCors(req, res);
   if (req.method === "OPTIONS") {
-    res.writeHead(204, { "Access-Control-Allow-Methods": "GET,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" });
+    res.writeHead(204);
     return res.end();
   }
   if (req.method !== "GET") return sendRuntimeJson(req, res, 405, { status: "error", message: "METHOD_NOT_ALLOWED" });
@@ -106,7 +119,42 @@ async function handleNewsRuntime(req, res, url, newsRuntime) {
   }
 }
 
-export function createProductionServer({ appServer = createServer(), newsRuntime = createNewsRuntime() } = {}) {
+async function handleMatchRuntime(req, res, url, matchRuntime) {
+  const media = url.pathname === "/api/matches/media";
+  applyRuntimeCors(req, res, { media });
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    return res.end();
+  }
+  if (req.method !== "GET") return sendRuntimeJson(req, res, 405, { status: "error", message: "METHOD_NOT_ALLOWED" });
+  try {
+    if (url.pathname === "/api/v1/matches") return sendRuntimeJson(req, res, 200, await matchRuntime.matches());
+    if (url.pathname === "/api/v1/matches/servers") {
+      const ref = String(url.searchParams.get("ref") || "").trim();
+      if (!ref) return sendRuntimeJson(req, res, 400, { status: "error", message: "MISSING_MATCH_REFERENCE" });
+      return sendRuntimeJson(req, res, 200, await matchRuntime.servers(ref));
+    }
+    if (url.pathname === "/api/v1/matches/playback") {
+      const ref = String(url.searchParams.get("ref") || "").trim();
+      if (!ref) return sendRuntimeJson(req, res, 400, { status: "error", message: "MISSING_MATCH_SERVER_REFERENCE" });
+      return sendRuntimeJson(req, res, 200, await matchRuntime.playback(ref));
+    }
+    if (url.pathname === "/api/matches/media") {
+      return await matchRuntime.proxyMedia(req, res, String(url.searchParams.get("id") || ""));
+    }
+  } catch (error) {
+    const message = String(error?.message || "MATCH_RUNTIME_FAILED");
+    const status = message.includes("EXPIRED") ? 410 : message.startsWith("MISSING_") ? 400 : 502;
+    if (!res.headersSent) return sendRuntimeJson(req, res, status, { status: "error", message });
+    res.destroy(error);
+  }
+}
+
+export function createProductionServer({
+  appServer = createServer(),
+  newsRuntime = createNewsRuntime(),
+  matchRuntime = createProductionMatchRuntime(),
+} = {}) {
   const [appHandler] = appServer.listeners("request");
   if (typeof appHandler !== "function") throw new Error("APP_REQUEST_HANDLER_MISSING");
 
@@ -118,6 +166,14 @@ export function createProductionServer({ appServer = createServer(), newsRuntime
       if (url.pathname === "/api/matches/logo") return await proxyMatchLogo(req, res, url);
       if (url.pathname === "/api/v1/news" || url.pathname === "/api/v1/news/article") {
         return await handleNewsRuntime(req, res, url, newsRuntime);
+      }
+      if ([
+        "/api/v1/matches",
+        "/api/v1/matches/servers",
+        "/api/v1/matches/playback",
+        "/api/matches/media",
+      ].includes(url.pathname)) {
+        return await handleMatchRuntime(req, res, url, matchRuntime);
       }
       wantsDownload = url.pathname === "/api/cinema/media" && url.searchParams.get("download") === "1";
     } catch {}
