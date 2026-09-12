@@ -10,6 +10,7 @@ import {
   BasriSource,
 } from "./basri-source.mjs";
 import { buildDownloadContentDisposition, sanitizeDownloadFilename } from "./download-filename.mjs";
+import { createContentRuntimeService } from "./content-runtime-service.mjs";
 
 const MATCHES = "https://api.albasritv1.workers.dev/";
 const CINEMA = "https://albas.albesriali03.workers.dev/";
@@ -239,6 +240,12 @@ async function cinemaCategory(sourceUrl, page = 1) {
   return { status: "success", source: result.source, data: normalizeCatalog(items) };
 }
 
+const contentRuntime = createContentRuntimeService({
+  fetchMatches: getMatches,
+  searchCatalog: cinemaSearch,
+  fetchCategory: cinemaCategory,
+});
+
 function requestMedia(target, headers, { allowBrokenChain = false, redirects = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const request = https.request(target, {
@@ -441,7 +448,7 @@ async function proxyMedia(req, res, id) {
   }
 }
 
-export function createServer() {
+export function createServer({ runtimeService = contentRuntime } = {}) {
   return http.createServer(async (req, res) => {
     applyCors(req, res);
     if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
@@ -449,6 +456,10 @@ export function createServer() {
     const started = Date.now();
     try {
       if (url.pathname === "/health") return sendJson(res, 200, { status: "ok", cinema_source: "basri-original" });
+      if (url.pathname === "/api/runtime/status") return sendJson(res, 200, runtimeService.status());
+      if (url.pathname === "/api/v1/matches") return sendJson(res, 200, await runtimeService.matches());
+      if (url.pathname === "/api/v1/search") return sendJson(res, 200, await runtimeService.search((url.searchParams.get("q") || "").trim()));
+      if (url.pathname === "/api/v1/category") return sendJson(res, 200, await runtimeService.category(url.searchParams.get("ref") || "", Number(url.searchParams.get("p") || 1)));
       if (url.pathname === "/api/matches") return sendJson(res, 200, await getMatches());
       if (url.pathname === "/api/matches/servers") return sendJson(res, 200, await getMatchServers(url.searchParams.get("url") || ""));
       if (url.pathname === "/api/cinema/search") return sendJson(res, 200, await cinemaSearch((url.searchParams.get("q") || "").trim()));
