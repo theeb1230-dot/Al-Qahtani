@@ -1,4 +1,5 @@
 import { createMatchPlaybackRuntime } from './match-playback.mjs';
+import { normalizeMatch } from './content-runtime.mjs';
 
 const MATCHES = 'https://api.albasritv1.workers.dev/';
 const BASRI_ORIGIN = 'https://www.albasritv.abrdns.com';
@@ -57,6 +58,7 @@ export function createProductionMatchRuntime() {
     async matches() {
       const raw = await fetchMatches();
       const masked = runtime.maskMatchesPayload(raw);
+      const normalized = masked.data.map(normalizeMatch);
       return {
         status: 'success',
         version: '1.0.13',
@@ -65,7 +67,7 @@ export function createProductionMatchRuntime() {
         cached: false,
         generated_at: new Date().toISOString(),
         health: null,
-        data: masked.data,
+        data: normalized,
       };
     },
     async servers(ref) {
