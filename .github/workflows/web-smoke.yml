@@ -143,13 +143,16 @@ jobs:
           node --check web/core/contracts.js
           node --check web/core/api-client.js
           node --check web/core/catalog-config.js
+          node --check web/core/match-time.js
           node --check scripts/live_provider_smoke.mjs
           node --check scripts/episode_number_test.mjs
+          node --check scripts/match_time_test.mjs
           node --check server/app.mjs
           node --check server/index.mjs
           node --check scripts/local_backend_smoke.mjs
           node --check scripts/remote_runtime_smoke.mjs
           node scripts/episode_number_test.mjs
+          node scripts/match_time_test.mjs
 
       - name: Guard provider module retry
         shell: bash
