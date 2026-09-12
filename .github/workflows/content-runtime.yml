@@ -23,6 +23,7 @@ jobs:
           node --check scripts/content_runtime_test.mjs
           node --check scripts/content_runtime_service_test.mjs
           node --check scripts/runtime_http_test.mjs
+          node --check scripts/remote_runtime_v1_smoke.mjs
       - name: Run content runtime regressions
         run: |
           node scripts/content_runtime_test.mjs
