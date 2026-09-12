@@ -163,7 +163,8 @@ class _PlayerPageState extends State<PlayerPage> {
           return allowed ? NavigationDecision.navigate : NavigationDecision.prevent;
         },
         onWebResourceError: (error) {
-          if (!mounted || !_usingWebFallback || !error.isForMainFrame) return;
+          final isMainFrame = error.isForMainFrame ?? true;
+          if (!mounted || !_usingWebFallback || !isMainFrame) return;
           setState(() {
             _failed = true;
             _usingWebFallback = false;
