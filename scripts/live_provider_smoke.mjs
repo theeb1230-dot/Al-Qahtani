@@ -101,12 +101,21 @@ function safeHtmlDiagnostics(text) {
 }
 
 function safeJsDiagnostics(text) {
-  return [...text.matchAll(/.{0,100}(?:ajax|fetch|recently-container|entry-box|section|loadMore|load_more|\/ajax\/|\/api\/).{0,180}/gi)]
-    .slice(0, 30)
-    .map((m) => String(m[0])
+  const lines = String(text).split(/\r?\n/);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/(?:\$\.ajax|ajax\(|fetch\(|url\s*:|data\s*:|type\s*:|method\s*:|success\s*:|recently|entry-box|section|load)/i.test(lines[i])) continue;
+    const start = Math.max(0, i - 1);
+    const end = Math.min(lines.length, i + 3);
+    const snippet = lines.slice(start, end).join(" ")
       .replace(/https?:\/\/[^\s"'`)]+/g, "[url]")
       .replace(/\s+/g, " ")
-      .slice(0, 280));
+      .trim()
+      .slice(0, 420);
+    if (snippet && !out.includes(snippet)) out.push(snippet);
+    if (out.length >= 40) break;
+  }
+  return out;
 }
 
 async function matchesSmoke() {
