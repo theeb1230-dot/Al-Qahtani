@@ -30,6 +30,34 @@ void main() {
     expect(api.mediaUri(resolved.mediaPath).host, 'runtime.example');
   });
 
+  test('match logos are routed through the Al-Qahtani runtime proxy', () async {
+    final client = MockClient((request) async {
+      expect(request.url.path, '/api/v1/matches');
+      return jsonResponse({
+        'status': 'success',
+        'kind': 'matches',
+        'data': [
+          {
+            'team1': {'name': 'الأول', 'logo': 'https://kooorracity.com/wp-content/uploads/team-a.png'},
+            'team2': {'name': 'الثاني', 'logo': 'https://kooorracity.com/wp-content/uploads/team-b.png'},
+            'time': '3:00 PM',
+            'status': 'scheduled',
+            'ref': 'opaque-match',
+          }
+        ],
+      });
+    });
+    final api = AlQahtaniApi(client: client, baseUri: Uri.parse('https://runtime.example'));
+    final item = (await api.matches()).single;
+    final home = Uri.parse(item.homeLogo);
+    final away = Uri.parse(item.awayLogo);
+    expect(home.host, 'runtime.example');
+    expect(home.path, '/api/matches/logo');
+    expect(home.queryParameters['url'], 'https://kooorracity.com/wp-content/uploads/team-a.png');
+    expect(away.path, '/api/matches/logo');
+    expect(away.queryParameters['url'], 'https://kooorracity.com/wp-content/uploads/team-b.png');
+  });
+
   test('catalog poster runtime paths are resolved against Al-Qahtani API', () async {
     final client = MockClient((request) async => jsonResponse({
           'status': 'success',
