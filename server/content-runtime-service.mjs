@@ -6,6 +6,7 @@ import {
   normalizeCatalogItem,
   normalizeMatch,
 } from "./content-runtime.mjs";
+import { resolveCatalogCategory } from "./catalog-categories.mjs";
 
 const DEFAULT_MATCH_TTL_MS = 15_000;
 const DEFAULT_CATALOG_TTL_MS = 30_000;
@@ -107,15 +108,15 @@ export function createContentRuntimeService({
     },
 
     async category(ref, page = 1) {
-      const sourceRef = String(ref || "").trim();
+      const category = resolveCatalogCategory(ref);
       const pageNumber = Math.max(1, Number(page) || 1);
-      if (!sourceRef) return buildRuntimeEnvelope({ kind: "category", data: [], source: "basri-original", health: null });
+      if (!category) return buildRuntimeEnvelope({ kind: "category", data: [], source: "basri-original", health: null });
       return execute({
         kind: "category",
-        key: cacheKey("category", `${sourceRef}|${pageNumber}`),
+        key: cacheKey("category", `${category.id}|${pageNumber}`),
         ttlMs: catalogTtlMs,
         fallbackProvider: "basri-cinema",
-        fetcher: () => fetchCategory(sourceRef, pageNumber),
+        fetcher: () => fetchCategory(category.sourceUrl, pageNumber),
         normalize: (payload) => unwrapList(payload).map(normalizeCatalogItem).filter((item) => item.ref),
       });
     },
