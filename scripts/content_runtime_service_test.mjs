@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { PRODUCT_VERSION } from "../server/content-runtime.mjs";
 import { createContentRuntimeService } from "../server/content-runtime-service.mjs";
 
 let clock = 1_000;
@@ -47,7 +48,7 @@ const service = createContentRuntimeService({
 });
 
 const firstMatches = await service.matches();
-assert.equal(firstMatches.version, "1.0.15");
+assert.equal(firstMatches.version, PRODUCT_VERSION);
 assert.equal(firstMatches.kind, "matches");
 assert.equal(firstMatches.cached, false);
 assert.equal(firstMatches.stale, false);
@@ -99,7 +100,7 @@ assert.equal(categoryCalls, 2, "unknown IDs must not reach upstream fetcher");
 
 const homeBeforeCalls = categoryCalls;
 const home = await service.home();
-assert.equal(home.version, "1.0.15");
+assert.equal(home.version, PRODUCT_VERSION);
 assert.equal(home.kind, "home");
 assert.equal(home.source, "al-qahtani-runtime");
 assert.equal(home.data.partial, false);
@@ -182,7 +183,7 @@ assert.equal(staleSearchCalls, 5, "stale data beyond the configured window must 
 
 const status = service.status();
 assert.equal(status.status, "ok");
-assert.equal(status.version, "1.0.15");
+assert.equal(status.version, PRODUCT_VERSION);
 assert.equal(status.resilience.fetch_attempts, 2);
 assert.equal(status.resilience.stale_if_error_ms, 300_000);
 assert.ok(status.cache_entries >= 2);
