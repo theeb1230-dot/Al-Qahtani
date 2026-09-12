@@ -68,6 +68,7 @@ jobs:
               'Mobile WebKit smoke',
               'Content runtime',
               'Remote movie playback smoke',
+              'Remote news smoke',
               'Live provider smoke',
               'Original Basri download contract',
               'Original Basri player contract',
