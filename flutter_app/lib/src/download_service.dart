@@ -113,7 +113,7 @@ class DownloadService {
         var append = bytes > 0;
         if (append && response.statusCode == 206) {
           final rangeStart = _contentRangeStart(response.headers['content-range']);
-          if (rangeStart != bytes) throw const DownloadException('INVALID_RESUME_RANGE');
+          if (rangeStart != bytes) throw const DownloadException('INCOMPLETE_DOWNLOAD');
         } else if (append && response.statusCode == 200) {
           // The origin ignored Range. Restart safely instead of appending duplicate bytes.
           append = false;
@@ -210,7 +210,7 @@ class DownloadService {
   static bool _canReconnect(Object error, int attempts, int bytes) {
     if (attempts >= _maxReconnectAttempts || bytes <= 0) return false;
     if (error is DownloadException) {
-      if (error.code == 'DOWNLOAD_CANCELLED' || error.code == 'INVALID_RESUME_RANGE' || error.code == 'RESUME_NOT_SUPPORTED') {
+      if (error.code == 'DOWNLOAD_CANCELLED' || error.code == 'RESUME_NOT_SUPPORTED') {
         return false;
       }
       if (error.code == 'DOWNLOAD_STALLED' || error.code == 'INCOMPLETE_DOWNLOAD') return true;
@@ -221,7 +221,7 @@ class DownloadService {
   }
 
   static Future<void> _reconnectDelay(int attempt, DownloadCancellationToken? token) {
-    final milliseconds = 500 * attempt.clamp(1, _maxReconnectAttempts);
+    final milliseconds = (500 * attempt.clamp(1, _maxReconnectAttempts)).toInt();
     return _awaitOrCancel(Future<void>.delayed(Duration(milliseconds: milliseconds)), token);
   }
 
