@@ -1,9 +1,11 @@
 import { createServer } from "./app.mjs";
+import { createNewsRuntime } from "./news-runtime.mjs";
 
 const port = Number(process.env.PORT || 3000);
 const server = createServer();
 const [appHandler] = server.listeners("request");
 const MATCH_LOGO_HOSTS = new Set(["kooorracity.com", "www.kooorracity.com"]);
+const newsRuntime = createNewsRuntime();
 
 function applyLogoCors(req, res) {
   const origin = String(req.headers.origin || "");
@@ -80,17 +82,40 @@ async function proxyMatchLogo(req, res, url) {
   }
 }
 
-// The original Basri page downloads the same resolved media used for playback.
-// Keep attachment semantics behind the validated Al-Qahtani media-reference path:
-// invalid/expired references remain ordinary JSON errors and never receive
-// download headers, while a successful proxied media response becomes an
-// attachment without exposing the upstream URL.
+function sendRuntimeJson(req, res, status, payload) {
+  applyLogoCors(req, res);
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  return res.end(JSON.stringify(payload));
+}
+
+async function handleNewsRuntime(req, res, url) {
+  applyLogoCors(req, res);
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, { "Access-Control-Allow-Methods": "GET,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" });
+    return res.end();
+  }
+  if (req.method !== "GET") return sendRuntimeJson(req, res, 405, { status: "error", message: "METHOD_NOT_ALLOWED" });
+  try {
+    if (url.pathname === "/api/v1/news") return sendRuntimeJson(req, res, 200, await newsRuntime.list());
+    if (url.pathname === "/api/v1/news/article") {
+      const ref = String(url.searchParams.get("ref") || "").trim();
+      if (!ref) return sendRuntimeJson(req, res, 400, { status: "error", message: "MISSING_NEWS_REFERENCE" });
+      return sendRuntimeJson(req, res, 200, await newsRuntime.article(ref));
+    }
+  } catch (error) {
+    const message = String(error?.message || "NEWS_RUNTIME_FAILED");
+    const status = message === "NEWS_REFERENCE_EXPIRED" ? 410 : 502;
+    return sendRuntimeJson(req, res, status, { status: "error", message });
+  }
+}
+
 server.removeAllListeners("request");
 server.on("request", async (req, res) => {
   let wantsDownload = false;
   try {
     const url = new URL(req.url || "/", "http://localhost");
     if (url.pathname === "/api/matches/logo") return await proxyMatchLogo(req, res, url);
+    if (url.pathname === "/api/v1/news" || url.pathname === "/api/v1/news/article") return await handleNewsRuntime(req, res, url);
     wantsDownload = url.pathname === "/api/cinema/media" && url.searchParams.get("download") === "1";
   } catch {}
 
