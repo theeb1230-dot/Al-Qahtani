@@ -135,7 +135,7 @@ function serverCandidates(payload) {
     if (!row) continue;
     if (typeof row === "string") out.push({ name: "سيرفر المباراة", url: row, type: "" });
     else {
-      const url = String(row.url || row.src || row.link || row.file || "");
+      const url = String(row.url || row.src || row.link || row.file || row.embed || row.iframe || row.player || "");
       if (url) out.push({ name: String(row.name || row.title || "سيرفر المباراة"), url, type: String(row.type || "") });
     }
   }
@@ -155,16 +155,49 @@ function extractMediaUrls(html, base) {
   return found;
 }
 
-async function resolveServerCandidate(candidate) {
-  let target = safeHttpsUrl(candidate.url);
+function extractEmbedUrls(html, base) {
+  const found = [];
+  const patterns = [
+    /<(?:iframe|embed)\b[^>]*\bsrc=["']([^"']+)["']/gi,
+    /(?:iframe|embed|player)(?:Url|URL|Src|SRC)?\s*[:=]\s*["']([^"']+)["']/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of String(html || "").matchAll(pattern)) {
+      try {
+        const value = new URL(match[1], base).href;
+        if (!found.includes(value)) found.push(value);
+      } catch {}
+    }
+  }
+  return found;
+}
+
+async function resolveServerCandidate(candidate, depth = 0, referer = `https://www.albasritv.abrdns.com${MATCH_PAGE}`) {
+  if (depth > 3) return null;
+  let target = safeHttpsUrl(new URL(candidate.url, MATCHES).href);
   if (/\.(?:m3u8|mp4|ts|m2ts)(?:$|\?)/i.test(target.pathname + target.search)) return { url: target.href, type: candidate.type };
-  const response = await fetch(target, { redirect: "follow", cache: "no-store", headers: { Accept: "text/html,application/xhtml+xml,application/vnd.apple.mpegurl,video/*,*/*;q=0.8", Referer: `https://www.albasritv.abrdns.com${MATCH_PAGE}`, "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1" } });
+  const response = await fetch(target, {
+    redirect: "follow",
+    cache: "no-store",
+    headers: {
+      Accept: "text/html,application/xhtml+xml,application/vnd.apple.mpegurl,video/*,*/*;q=0.8",
+      Referer: referer,
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1",
+    },
+  });
+  if (!response.ok) return null;
   target = safeHttpsUrl(response.url);
   const type = String(response.headers.get("content-type") || "").toLowerCase();
   if (type.includes("mpegurl") || type.startsWith("video/")) return { url: target.href, type };
   const html = await response.text();
   for (const value of extractMediaUrls(html, target.href)) {
     try { return { url: safeHttpsUrl(value).href, type: value.includes(".m3u8") ? "m3u8" : value.includes(".mp4") ? "mp4" : "stream" }; } catch {}
+  }
+  for (const embed of extractEmbedUrls(html, target.href).slice(0, 6)) {
+    try {
+      const nested = await resolveServerCandidate({ name: candidate.name, url: embed, type: "" }, depth + 1, target.href);
+      if (nested) return nested;
+    } catch {}
   }
   return null;
 }
