@@ -35,14 +35,19 @@ function json(route, data, status = 200) {
 async function installBackendMocks(page) {
   await page.route(`${BACKEND}/**`, async route => {
     const u = new URL(route.request().url());
-    if (u.pathname === "/api/cinema/category") {
-      const isMovie = u.searchParams.get("type") === "movie";
+    if (u.pathname === "/api/v1/category") {
+      const categoryId = u.searchParams.get("ref") || "";
+      const isMovie = categoryId.startsWith("movie-");
       return json(route, {
         status: "success",
+        version: "1.0.1",
+        kind: "category",
         source: "basri-direct",
+        cached: false,
+        health: { name: "basri-direct", score: 100 },
         data: isMovie
-          ? [{ title: "فيلم اختبار 2026", img: moviePoster, is_series: false, href: movieRef }]
-          : [{ title: "مسلسل اختبار", img: seriesPoster, is_series: true, href: sampleRef }],
+          ? [{ title: "فيلم اختبار 2026", poster: moviePoster, type: "movie", ref: movieRef }]
+          : [{ title: "مسلسل اختبار", poster: seriesPoster, type: "series", ref: sampleRef }],
       });
     }
     if (u.pathname === "/api/cinema/search") {
