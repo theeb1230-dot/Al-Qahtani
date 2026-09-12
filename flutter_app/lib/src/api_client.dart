@@ -31,6 +31,15 @@ class AlQahtaniApi {
     return TitleDetails.fromJson(json);
   }
 
+  Future<TitleDetails> resolvePlayback(String ref) async {
+    final resolved = await details(ref);
+    if (resolved.hasDirectMedia) return resolved;
+    if (resolved.playbackUnavailable) {
+      throw ApiException(resolved.playbackReason.isEmpty ? 'PLAYBACK_UNAVAILABLE' : resolved.playbackReason);
+    }
+    throw const ApiException('NO_PLAYABLE_MEDIA');
+  }
+
   Uri mediaUri(String mediaPath, {bool download = false}) {
     if (!mediaPath.startsWith('/api/cinema/media?')) {
       throw const ApiException('INVALID_MEDIA_REFERENCE');
