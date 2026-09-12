@@ -4,95 +4,126 @@
 GitHub is authoritative when this file disagrees with the repository. The preserved original Basri archive remains the behavioral baseline. Live deployment evidence is required before claiming Web/PWA parity.
 
 ## Current state
-- Main: `2eff04b462a40f2c5f103aa2d4ceba5943d364d1` (`Expose versioned 1.0.1 runtime HTTP routes`).
-- PR #55 merged: runtime service integration.
-- PR #56 merged after all 11 required final-head PR checks succeeded, including Mobile WebKit and Live provider.
-- Post-merge GitHub Pages run `34663381231` completed build + deploy successfully for `2eff04b...`.
-- Post-merge Remote runtime smoke run `34663383763` completed successfully after its backend auto-deploy wait and deployed runtime/Safari probe.
-- Active PR: #57 `Prove deployed 1.0.1 runtime contracts`.
-- Branch: `test/remote-runtime-v1-57`.
-- Code head before this documentation update: `bdc449c3b6df67eb51c4cbaf6a6da762b080465f`.
+- Main: `53d70fae870c7346ea406a19362fa928c4b92915` (`Merge pull request #57 ... Prove deployed 1.0.1 runtime contracts`).
+- PR #57 merged only after all 11 final-head PR gates succeeded on `ba1ac007d4117fb98dbc261ae3c02c3078989772`.
+- Active PR: #59 `Make deployed search gate source-aware`.
+- Branch: `fix/remote-runtime-search-gate-58`.
+- Current code commit before this documentation update: `aebaee19440f794619687397a40d6e1d0f8f2b8c`.
 - Target: Web/PWA `1.0.1`.
-- Flutter remains blocked until Web/PWA 1.0.1 is proven live.
+- Flutter remains blocked until Web/PWA 1.0.1 is proven live across the required gates.
 
 ## Product boundary
-Al-Qahtani remains independent from unrelated projects and providers. Only original Basri source contracts are allowed. Existing source allowlists, SSRF protections, server-side session handling, opaque media references and Safari Range protections remain mandatory.
+Al-Qahtani is fully independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and all Theeb-specific APIs/providers. `https://akwam.ss/...` is permitted only because it belongs to the preserved original Basri source contract. No Theeb fallback or cross-project runtime dependency is allowed.
 
 ## Protected live behavior
-Real iPhone Safari testing has already proven working playback across multiple movie/series/anime samples after the MPEG-TS/HLS path. Match logos and Saudi match times are proven on device. Episode display numbering is separated from internal IDs. These paths remain protected regressions.
+Real iPhone Safari testing has already proven working playback across multiple movie/series/anime samples after the MPEG-TS/HLS path. Safari Range/206, MIME/magic container detection, opaque media references, explicit Download behavior, match logos, Saudi match times, and separated episode display numbering are protected regressions and must not be casually reworked.
 
 ## 1.0.1 Phase 1 progress
 Merged to main:
-- `server/content-runtime.mjs`: version `1.0.1`, bounded TTL cache, provider health/circuit-breaker primitives and normalization helpers.
+- `server/content-runtime.mjs`: product version `1.0.1`, bounded TTL cache, provider-health/circuit primitives, normalization helpers.
 - `server/content-runtime-service.mjs`: normalized matches/search/category service, bounded metadata cache and health accounting.
-- additive runtime HTTP routes in `server/app.mjs`:
+- additive HTTP contracts in `server/app.mjs`:
   - `/api/runtime/status`
   - `/api/v1/matches`
   - `/api/v1/search?q=...`
   - `/api/v1/category?ref=...&p=...`
 - old `/api/matches` and `/api/cinema/*` routes remain available during migration.
-- deterministic local HTTP regression coverage in `scripts/runtime_http_test.mjs`.
+- deterministic local route regression coverage in `scripts/runtime_http_test.mjs`.
+- `.github/workflows/remote-runtime-v1-smoke.yml` and `scripts/remote_runtime_v1_smoke.mjs` now provide a post-merge live contract gate.
 
-PR #57 adds the deployed proof gate for these new routes:
-- `scripts/remote_runtime_v1_smoke.mjs` waits for the deployed 1.0.1 status route, validates normalized matches, Arabic and English searches (`الذئب الوحيد`, `The Odyssey`), a real category, structured provider health, and observable short-lived match cache behavior;
-- the deployed smoke rejects cross-project integration markers in runtime output;
-- `.github/workflows/remote-runtime-v1-smoke.yml` runs only after pushes to main so the test targets the actually deployed commit;
-- the normal Content runtime PR gate syntax-checks the remote smoke before merge.
+## CI and live deployment evidence
+PR #57 final head `ba1ac007d4117fb98dbc261ae3c02c3078989772` passed all 11 required PR workflows:
+- Web smoke `34663667985` success.
+- Content runtime `34663667897` success.
+- Remote movie playback `34663667925` success.
+- CORS boundary `34663667923` success.
+- Media reference expiry `34663667889` success.
+- Trusted download filename `34663667896` success.
+- Remote CORS `34663667906` success.
+- Original Basri download `34663667882` success.
+- Original Basri player `34663667928` success.
+- Live provider `34663667878` success.
+- Mobile WebKit `34663667894` success.
 
-## CI / deployment evidence
-PR #56 final head `1f511822203a0f3b4f3b91cf0c56d5327638e7ff` passed all 11 required workflows. Notable final-head runs:
-- Content runtime `34663298078` success.
-- Web smoke `34663298077` success.
-- Live provider `34663298028` success.
-- Mobile WebKit `34663298060` success.
-- Remote movie playback `34663298006` success.
-- Remote CORS `34663298007` success.
-- CORS boundary `34663298050` success.
-- Original player `34663298008` success.
-- Original download `34663298032` success.
-- Media reference expiry `34663298009` success.
-- Trusted download filename `34663298036` success.
+Post-merge main `53d70fae870c7346ea406a19362fa928c4b92915` started the new deployed-v1 workflow as run `34663761975`. The deployed backend itself was live and answered the new contracts, but the run failed on one over-strict source-content assertion rather than a transport/runtime failure. Evidence from the job log:
+- `/api/runtime/status`: HTTP 200, version `1.0.1`, no sensitive/session fields exposed.
+- `/api/v1/matches`: 30 normalized matches from `basri-matches`; a second request showed `cached: true`.
+- `/api/v1/search?q=الذئب الوحيد`: 4 normalized real items from `basri-direct`.
+- `/api/v1/search?q=The%20Odyssey`: valid `1.0.1` search contract from `basri-direct`, but current source result count was `0`.
+- `/api/v1/category`: 24 real normalized items from `basri-direct`.
+- health summary remained structured and sanitized for `basri-direct` and `basri-matches`.
+- The only failing assertion was requiring `The Odyssey` to be non-empty despite the current original source legitimately returning an empty list. Forcing old/archive/download-only content into results merely to satisfy a smoke test would conflict with the product filtering contract.
 
-Post-merge main `2eff04b...`:
-- GitHub Pages run `34663381231` build/deploy success.
-- Remote runtime run `34663383763` deployed-runtime job success after backend auto-deploy wait.
-- Other normal post-merge workflows were still settling when PR #57 was created; no failure had been observed at this handoff point.
+PR #59 changes only the deployed smoke semantics: both Arabic and English queries must still return a valid normalized 1.0.1 contract; the Arabic control remains required to be non-empty, while `The Odyssey` is treated as source-dependent and may truthfully be empty. No playback, source filtering, proxy, Range, Download, or security runtime behavior is changed.
 
-Render workspace ownership remains ambiguous because repository evidence does not identify one visible workspace unambiguously. Do not guess direct Render logs. External deployed runtime workflows remain the accepted evidence until ownership is proven.
+## Render evidence / blocker
+Render currently exposes two workspaces to the connected account: `My Workspace` and `بيانات`. Repository evidence does not identify which one owns Al-Qahtani unambiguously. Per project rules, no workspace was guessed and no direct Render service/log claim is made. External deployed HTTP/GitHub Actions evidence remains authoritative until workspace ownership is proven.
 
 ## Security/runtime invariants
 - Search/Category → Details → Episodes → Watch/Download → Media remains intact.
-- Runtime migration is additive until live parity proves replacements safe.
+- Runtime migration stays additive until live parity proves replacements safe.
 - Upstream media URLs remain behind short-lived opaque references.
-- Source/media allowlists and SSRF protections stay mandatory.
-- No arbitrary browser-supplied proxy targets.
-- Worker/session material stays server-side.
+- Source/media allowlists and SSRF/DNS/host protections stay mandatory.
+- No arbitrary browser-supplied proxy target is accepted.
+- Worker/session material remains server-side.
 - Referer values remain ASCII/URL-safe.
-- Metadata cache never caches video streams, media refs, sessions or Download responses.
+- Metadata cache never caches video streams, media references, sessions, or Download responses.
 - Normal playback never inherits upstream attachment semantics; explicit Download keeps trusted attachment behavior.
 - Ads/popups/unneeded tracking and legacy Android Intent/deep-link handoff remain prohibited.
 
 ## 1.0.1 readiness
-Current readiness: Phase-1 deployed-contract proof, NOT release ready.
+Current readiness: **Phase 1 deployed-contract hardening; NOT release ready.**
 
-Completed so far:
-- runtime primitives;
-- runtime service;
-- versioned additive status/matches/search/category HTTP contracts;
-- local route tests;
-- deployed old-flow runtime proof after the new route merge;
-- dedicated deployed-v1 smoke under PR #57.
+Completed:
+- runtime primitives and single product version source;
+- bounded metadata cache;
+- provider health/circuit primitives;
+- normalized matches/search/category service;
+- additive versioned HTTP contracts;
+- deterministic route tests;
+- post-merge live contract workflow;
+- live proof that runtime status, matches, Arabic search, category, cache behavior, and sanitized health execute successfully on the deployed backend.
 
-Still required: merge #57 and obtain its post-merge deployed-v1 evidence, server-side category identifiers/mapping, unified home/title/episodes/play contracts, production health/circuit decisions, redesigned mobile-first UI, Live matches UX, Player 2.0 local history/favorites/continue-watching, unified search/library, installable PWA, diagnostics/observability, and the final 1.0.1 live release gate.
+Still required before 1.0.1 can be called ready: close #59 and obtain a green post-merge deployed-v1 gate; opaque server-side category identifiers; unified home/title/episodes/play contracts; production health/circuit decisions; full mobile-first RTL interface; live matches UX; Player 2.0 local history/favorites/continue-watching; unified search/library UX; installable PWA; diagnostics/observability; and the complete Safari/security/live release matrix.
 
 ## أهداف التشغيل التالي
-1. إغلاق PR #57 بأمان: افحص الرأس النهائي بعد تحديث هذا الملف، أصلح أي failure على نفس الفرع، وادمج فقط بعد خضرة جميع البوابات المطلوبة.
-2. بعد دمج #57 انتظر backend auto-deploy وتحقق أن `Remote runtime v1 smoke` ينجح على commit الرئيسي نفسه.
-3. راجع نتائج `/api/runtime/status` وhealth/cache من الاختبار المنشور وتأكد أن metadata منقحة ولا تكشف أسرارًا أو upstream URLs حساسة.
-4. أضف category IDs أو mapping server-side حتى لا تحتاج واجهة 1.0.1 إلى معرفة `akwam.ss` أو source URLs.
-5. أنشئ `/api/home` بفشل جزئي آمن وbounded concurrency يجمع المباريات وأقسام محتوى محدودة.
-6. ابنِ `/api/v1/title` وepisodes/play contracts تدريجيًا مع فصل `episode_id` عن `episode_number` والحفاظ على opaque media refs.
-7. فعّل قرارات health/circuit-breaker تدريجيًا في production requests مع cooldown/recovery probe ومنع retry storms.
-8. ابدأ واجهة 1.0.1 Mobile-first وBottom Navigation فقط بعد ثبوت العقود الجديدة حيًا.
-9. أبقِ WebKit/playback/Range/CORS/download/matches/news regressions إلزامية عند كل PR.
-10. جهّز PWA وDiagnostics بعد استقرار runtime/UI؛ لا تبدأ Flutter ولا تعلن 1.0.1 Ready قبل اكتمال البوابات الحية الكاملة.
+1. **إغلاق PR #59 بأمان.**
+   - فحص جميع بوابات CI على الرأس النهائي بعد تحديث هذا الملف.
+   - إصلاح أي failure على نفس الفرع فقط وإعادة الاختبار حتى الخضرة.
+   - الدمج فقط بعد نجاح البوابات المطلوبة ثم التحقق من `Remote runtime v1 smoke` على main.
+2. **إخفاء عناوين التصنيفات الأصلية خلف IDs داخلية.**
+   - تعريف مفاتيح ثابتة للتصنيفات الرئيسية داخل Backend.
+   - تحويل المفتاح إلى رابط Basri المسموح server-side فقط.
+   - رفض أي category key مجهول وعدم توسيع arbitrary URL surface.
+3. **إنشاء `/api/v1/home` موحد.**
+   - جمع المباريات وأقسام محتوى محدودة بـbounded concurrency.
+   - السماح بفشل جزئي دون إسقاط الصفحة كاملة.
+   - تطبيق TTL قصير مناسب وإرجاع metadata منقحة.
+4. **إنشاء عقد موحد للتفاصيل.**
+   - إضافة `/api/v1/title/:id` أو عقد مكافئ باستخدام opaque refs.
+   - تطبيع poster/title/type/year والحقول المتاحة فقط.
+   - الحفاظ على fallback إلى مصدر Basri الأصلي وحده.
+5. **إكمال عقد المواسم والحلقات.**
+   - فصل `episode_id` و`episode_number` في العقد العام.
+   - تطبيع الموسم والترتيب دون تسريب IDs داخلية كأرقام عرض.
+   - توسيع regression عبر الفئات الست للمسلسلات.
+6. **إنشاء عقد play موحد وآمن.**
+   - إبقاء media refs opaque وقصيرة العمر.
+   - ترتيب المصادر حسب compatibility/health دون retry storm.
+   - حماية MPEG-TS/HLS وRange/206 وmeasured-duration وDownload الحاليين.
+7. **ربط health/circuit-breaker بطلبات production تدريجيًا.**
+   - وضع cooldown وrecovery probe محدودين.
+   - تسجيل latency/failures دون أسرار أو upstream URLs حساسة.
+   - منع retries على الطلبات غير الآمنة أو غير المفيدة.
+8. **بدء هيكل واجهة 1.0.1 بعد اكتمال عقود runtime الأساسية.**
+   - Mobile-first RTL مع Bottom Navigation على الجوال.
+   - حالات skeleton/empty/error/retry واضحة.
+   - إبقاء Safari وواجهة البصري القديمة قابلة للرجوع خلال الانتقال.
+9. **توسيع بوابات regression الحية.**
+   - إبقاء WebKit/playback/Range/CORS/Download/matches/news إلزامية.
+   - اختبار البحث العربي والإنجليزي كعقد مع عدم اختلاق نتائج غير موجودة في المصدر.
+   - استمرار فحص SSRF/allowlists/secrets/Referer وفلترة download-only.
+10. **تهيئة PWA وDiagnostics والبوابة النهائية للإصدار.**
+   - manifest/service-worker للـstatic shell والmetadata فقط دون video/media-ref caching.
+   - diagnostics منقحة تعرض version/commit/readiness/health بلا secrets.
+   - عدم إنشاء Tag/Release `1.0.1` وعدم بدء Flutter قبل اكتمال كل البوابات الحية.
