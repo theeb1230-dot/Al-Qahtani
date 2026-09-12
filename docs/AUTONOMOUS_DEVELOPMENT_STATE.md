@@ -4,21 +4,23 @@
 GitHub is authoritative when this file disagrees with the repository. The preserved original `albasritv.github.io-main.zip` remains the behavioral baseline. Live deployment and artifact evidence are required before claiming parity or release readiness.
 
 ## Current state
-- Main: `868850f3471ebe5007a54b8b8dc217fe53096e3f` (merged PR #68: native Flutter playback speed controls).
-- Active branch: `feat/flutter-tv-focus-restore-69`.
-- Active PR: to be opened for Android TV focus restoration.
-- Flutter product version: `1.0.1+1`; no GitHub Release yet because release policy remains fail-closed.
-- Existing Web/PWA remains the GitHub Pages product root and was not replaced by Flutter Web.
+- Main: `973b0ea6eefa2f3809da16229868020a6f55520d` (merged PR #69: restore Android TV focus after player).
+- Active PR: #72 `Add opaque news runtime and Flutter news section`.
+- Active branch: `feat/flutter-news-runtime-70`.
+- Code head before this documentation commit: `2c59341a4e286029d468ffac577474405f8433dc`.
+- Flutter product version remains `1.0.1+1`; no GitHub Release yet because the current tranche is not declared release-ready.
+- Existing Web/PWA remains the GitHub Pages product root and has not been replaced by Flutter Web.
 
 ## Product boundary
-Al-Qahtani remains independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and Theeb-specific providers. Flutter consumes only Al-Qahtani contracts and must not expose upstream hosts, Worker/session material, or source URLs.
+Al-Qahtani remains independent from `theeb1230-dot/akwam-indexer`, Theeb Engine, `THEEB_SERVICE_TOKEN`, and Theeb-specific providers. Flutter consumes only Al-Qahtani contracts and must not expose upstream hosts, Worker/session material, source article URLs, media URLs, or source session data. `akwam.ss` remains permitted only as part of the inherited original Basri source contract.
 
 ## Protected Web behavior
 Protected regressions remain iPhone Safari playback, Range/206, Content-Range/Accept-Ranges, MPEG-TS/HLS handling, measured duration, real match logos, Saudi match times, separated episode numbering, endless 30-item pagination, explicit Download behavior, CORS, SSRF/allowlists, zero ads/popups/unneeded tracking, and no legacy Android Intent/deep-link handoff.
 
 ## Flutter structure
-- `flutter_app/lib/main.dart`: Arabic RTL shell, Mobile navigation and Android TV NavigationRail.
-- `flutter_app/lib/src/api_client.dart`: Al-Qahtani-only API access with opaque media resolution.
+- `flutter_app/lib/main.dart`: Arabic RTL shell, Mobile navigation and Android TV NavigationRail; PR #72 adds News as a native section.
+- `flutter_app/lib/src/api_client.dart`: Al-Qahtani-only API access for matches/category/search/details/media and PR #72 opaque news contracts.
+- `flutter_app/lib/src/news_page.dart`: Arabic native news list/article UX with loading, empty, retry and refresh states.
 - `flutter_app/lib/src/details_page.dart`: details/episodes, favorites, playback, native Download and route-return focus ownership.
 - `flutter_app/lib/src/player_page.dart`: internal `video_player` playback, resume/progress, TV remote-safe controls and playback speed.
 - `flutter_app/lib/src/player_controls.dart`: focusable rewind/play/forward plus speed menu.
@@ -27,77 +29,99 @@ Protected regressions remain iPhone Safari playback, Range/206, Content-Range/Ac
 - `flutter_app/lib/src/download_service.dart`: opaque-only atomic native downloader.
 - `flutter_app/lib/src/library_store.dart`: favorites/history/continue-watching without persisted media refs.
 
-## This run
-1. Re-inspected GitHub actual state and confirmed PR #68 was the only open PR and mergeable.
-2. Verified exact PR #68 head `a267b48c416ebc194a53aea4dfaf06e7c3ced72a` passed all 12 protected workflows.
-3. Verified Flutter foundation run `34683081584` passed analyze/tests, Android Mobile APK checks, Android TV LEANBACK/package checks and iOS UNSIGNED/no-codesign checks.
-4. Verified all three PR #68 artifacts were produced from the same head commit.
-5. Merged PR #68 to main as `868850f3471ebe5007a54b8b8dc217fe53096e3f`.
-6. Verified post-merge GitHub Pages deploy `34684853908` succeeded for that exact merge commit; protected post-merge smoke jobs were still running when this state was written.
-7. Confirmed no open PR remained, then created `feat/flutter-tv-focus-restore-69` from exact main.
-8. Added route-aware focus restoration for direct playback and individual episode playback.
-9. Added dedicated FocusNodes for the direct play tile and episode tiles, with deterministic disposal.
-10. Added widget regression coverage proving focus returns to the invoking control after the Player route closes.
+## PR #72 — opaque news runtime
+This PR moves Flutter news behind Al-Qahtani instead of teaching the app about the inherited news Worker.
+
+Implemented:
+- `server/news-runtime.mjs` wraps the inherited Basri news source server-side only;
+- `/api/v1/news` returns normalized `id/ref/title/date/description` without source article URLs;
+- `/api/v1/news/article?ref=...` accepts only an opaque random server-issued reference and returns text fields/paragraphs;
+- article references expire after 30 minutes and the server-side map is bounded to 1024 entries;
+- source URLs are never returned to Flutter and are never accepted from the Flutter client;
+- Flutter models/API mapping for News and NewsArticle;
+- native Arabic RTL News navigation/list/article screens for Mobile and TV;
+- Node regression proves serialized runtime envelopes do not leak source URLs and expired refs fail closed;
+- Flutter API regression proves news requests target only the Al-Qahtani runtime host.
+
+## Failures found and root fixes
+- Initial PR #72 Flutter foundation run `34686226778`, job `103533566491`, passed `flutter analyze` but failed 1 of 24 tests because `http.Response(String)` attempted Latin-1 encoding for Arabic JSON fixture text. This was a test-fixture encoding defect, not application mapping behavior.
+- Root fix commit `2c59341a4e286029d468ffac577474405f8433dc` replaced string response construction with `http.Response.bytes(utf8.encode(...))` and explicit `application/json; charset=utf-8` for Arabic fixtures.
+- This documentation commit moves the PR head, so every required workflow must be evaluated again on the new exact head before merge.
 
 ## CI / deployment evidence
-- PR #68 final-head Flutter foundation: `34683081584` success.
-- PR #68 final-head Original Download `34683081581`, Remote CORS `34683081595`, Trusted Filename `34683081585`, CORS Boundary `34683081562`, Original Player `34683081570`, Content Runtime `34683081592`, Media Expiry `34683081576`, Web Smoke `34683081566`, Remote Movie Playback `34683081614`, Live Provider `34683081583`, Mobile WebKit `34683081569`: all success.
-- Main `868850f...` GitHub Pages deploy: `34684853908` success.
-- Main `868850f...` post-merge regression workflows started successfully; some were still in progress at state-write time.
-- PR #69 CI will start after PR creation; merge requires exact-final-head green evidence.
+For the earlier PR #72 head `1bbc11377913833b5627a78f632a39b1a8211b62`:
+- Content runtime `34686226758`: success, including the new news runtime regression.
+- Web smoke `34686226756`: success.
+- Remote movie playback `34686226749`: success.
+- CORS boundary `34686226776`: success.
+- Original Basri player `34686226763`: success.
+- Trusted download filename `34686226788`: success.
+- Remote CORS `34686226765`: success.
+- Original Basri download `34686226746`: success.
+- Media reference expiry `34686226787`: success.
+- Live provider smoke `34686226805`: success.
+- Mobile WebKit was still running when the failure was inspected.
+- Flutter foundation `34686226778`: failed only in the UTF-8 Arabic mock fixture described above; analyze passed and the other build jobs were still running at inspection time.
 
-## Artifact state
-- PR #68 Android Mobile APK: `Al-Qahtani-Mobile-APK`, 25,365,817 bytes, SHA-256 `676580ea7c7af25e60a4896e0d1812c35c4c7789075c7a4b1ee60480684c1c08`.
-- PR #68 Android TV APK: `Al-Qahtani-TV-APK`, 25,366,109 bytes, SHA-256 `ddf811d5be58720edd0413c1fbd7d279b9ace0dff659f01e6e0f369160811973`.
-- PR #68 iOS IPA UNSIGNED: `Al-Qahtani-iOS-UNSIGNED-IPA`, 7,411,353 bytes, SHA-256 `51828a369d29f86c61498b4cd4ac1e4e15b6cfdd43f915aac2a61572b91f23ef`.
-- These are CI artifacts, not GitHub Release assets. iOS remains explicitly UNSIGNED/no-codesign and requires external signing/provisioning for installation.
-- Release: none yet; no incomplete Release will be published.
+Main `973b0ea6eefa2f3809da16229868020a6f55520d` deployment evidence before PR #72:
+- GitHub Pages deploy `34685945935`: success for the exact main commit.
+- Web smoke `34685945932`: success.
+- CORS boundary `34685945926`: success.
+- Original Basri download `34685945909`: success.
+
+## Artifact / Release state
+- Current version/build: `1.0.1+1`.
+- APK Mobile: no PR #72 final-head artifact accepted yet; final-head build is mandatory.
+- APK TV: no PR #72 final-head artifact accepted yet; LEANBACK/package/signature/focus checks remain mandatory.
+- IPA UNSIGNED: no PR #72 final-head artifact accepted yet; Payload/bundle/version/no-codesign checks remain mandatory.
+- Release: none. CI artifacts are not substitutes for GitHub Release assets, and no partial Release will be published.
 
 ## Current gaps / blockers
-- PR #69 must pass Flutter Mobile/TV/iOS and protected Web/backend regressions on its exact final head.
-- Player still needs runtime evidence for MP4/HLS and especially MPEG-TS on Android ExoPlayer and iOS AVPlayer.
-- Download files remain app-private; user-visible export/share management is not yet implemented.
-- PiP/AirPlay integration remains unimplemented and must use public APIs only.
-- A release-worthy tranche has not yet been declared, so version remains `1.0.1+1` and no Release is published.
+- PR #72 must reach a final exact head with all Flutter Mobile/TV/iOS and protected Web/backend workflows green.
+- `/api/v1/news` and article runtime have regression coverage but are not yet proven on the deployed backend; post-merge remote evidence is required before calling Flutter News live-ready.
+- News images are intentionally omitted from Flutter until a restricted Al-Qahtani image contract can avoid leaking arbitrary source URLs.
+- Player still needs stronger runtime evidence for MP4/HLS and especially MPEG-TS on Android ExoPlayer and iOS AVPlayer.
+- Download management/export/share and PiP/AirPlay remain unfinished.
+- No release-worthy triplet has been declared; version remains `1.0.1+1`.
 
 ## أهداف التشغيل التالي
-1. **إغلاق PR #69 بأمان.**
-   - فحص CI على الرأس النهائي فقط.
-   - إصلاح أي failure على نفس الفرع.
+1. **إغلاق PR #72 بأمان.**
+   - انتظار جميع checks على الرأس النهائي بعد تحديث هذه الوثيقة.
+   - جلب logs لأي failure وإصلاح السبب على نفس الفرع فقط.
    - الدمج فقط بعد الخضرة الكاملة.
-2. **تثبيت TV focus restoration.**
-   - اختبار direct playback return focus.
-   - اختبار episode return focus.
-   - منع تسريب FocusNodes أو focus dead-ends.
-3. **إثبات MP4/HLS داخل Flutter.**
+2. **إثبات News runtime بعد الدمج.**
+   - اختبار `/api/v1/news` على backend المنشور.
+   - اختبار article opaque ref وعدم تسرب source URL.
+   - تسجيل عائق النشر بدل افتراض النجاح إن لم يتوفر الدليل.
+3. **حماية Flutter News UX.**
+   - اختبار loading/error/retry/refresh.
+   - اختبار فتح الخبر والرجوع بالريموت على TV.
+   - إبقاء الأخبار عربية RTL دون اعتماد مباشر على Worker.
+4. **إضافة صور الأخبار بأمان.**
+   - تصميم image ref أو proxy محدود بدل تمرير source URL.
+   - allowlist/MIME/size/timeouts للصور.
+   - fallback بصري محلي عند فشل الصورة.
+5. **إثبات MP4/HLS داخل Flutter.**
    - اختبار initialize/play/seek/resume.
-   - التحقق من Range/206 عبر proxy.
+   - التحقق من Range/206 عبر Al-Qahtani media proxy.
    - عدم اختلاق duration.
-4. **تثبيت MPEG-TS native behavior.**
+6. **تثبيت MPEG-TS native behavior.**
    - فحص Android ExoPlayer.
    - فحص iOS AVPlayer.
-   - fallback داخل Al-Qahtani فقط.
-5. **تحسين Download management.**
-   - إضافة قائمة تنزيلات محلية.
-   - إضافة export/share آمن.
-   - عدم كشف upstream URLs.
-6. **تحسين المكتبة المحلية.**
-   - عرض الحلقة والموضع بوضوح.
-   - اختبار bounded history والتنظيف.
-   - عدم تخزين media refs المنتهية.
-7. **تشديد API contracts.**
-   - توسيع mapping tests لـdetails/episodes/play/download.
-   - رفض URLs خارج العقود.
-   - تثبيت فصل episode_id عن episode_number.
-8. **حماية Android TV UX.**
-   - فحص D-Pad traversal للشاشات الرئيسية.
-   - منع touch-only controls.
-   - اختبار focus بعد retry/back/navigation.
-9. **حماية GitHub Pages.**
-   - WebKit/CORS/Range/Download regressions.
-   - عدم تحويل Pages إلى Flutter Web حاليًا.
-   - فحص نفس merge commit بعد كل دمج.
+   - أي fallback يبقى داخل Al-Qahtani فقط.
+7. **تحسين Download والمكتبة.**
+   - إضافة إدارة تنزيلات محلية/export-share آمن.
+   - تحسين عرض الحلقة والموضع في Continue Watching.
+   - عدم تخزين media refs المنتهية أو upstream URLs.
+8. **تشديد Android TV UX.**
+   - اختبار D-Pad للشريط والأخبار والتفاصيل والمشغل.
+   - منع focus dead-ends بعد back/retry/player pop.
+   - عدم الاعتماد على touch-only controls.
+9. **حماية GitHub Pages والعقود الأمنية.**
+   - إبقاء WebKit/CORS/Range/Download/SSRF regressions إلزامية.
+   - عدم تحويل Pages إلى Flutter Web قبل parity كاملة.
+   - فحص Pages على نفس merge commit بعد كل دمج.
 10. **تجهيز Release triplet عند tranche مناسبة.**
-   - رفع version/build للحزم الثلاث معًا.
-   - APK Mobile + APK TV + IPA UNSIGNED من commit واحد.
-   - SHA256SUMS/provenance وعدم نشر Release ناقص.
+   - رفع version/build للحزم الثلاث معًا عند تغييرات release-worthy.
+   - APK Mobile + APK TV + IPA UNSIGNED من commit واحد مع SHA-256/provenance.
+   - منع النشر إن غاب أي artifact أو فشل validation.
