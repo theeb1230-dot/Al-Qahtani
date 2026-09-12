@@ -79,4 +79,42 @@ void main() {
     );
     expect(root.listSync().whereType<File>(), isEmpty);
   });
+
+  test('local download list ignores partial and empty files and sorts newest first', () async {
+    final root = await Directory.systemTemp.createTemp('al-qahtani-download-list-test');
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final oldFile = File('${root.path}${Platform.pathSeparator}old.mp4')..writeAsBytesSync([1]);
+    final newFile = File('${root.path}${Platform.pathSeparator}new.mp4')..writeAsBytesSync([1, 2]);
+    File('${root.path}${Platform.pathSeparator}ignored.part').writeAsBytesSync([9]);
+    File('${root.path}${Platform.pathSeparator}empty.mp4').writeAsBytesSync(const []);
+    final now = DateTime.now();
+    await oldFile.setLastModified(now.subtract(const Duration(minutes: 2)));
+    await newFile.setLastModified(now);
+
+    final service = DownloadService(directoryProvider: () async => root);
+    addTearDown(service.close);
+
+    final items = await service.listDownloads();
+    expect(items.map((item) => item.name).toList(), ['new.mp4', 'old.mp4']);
+    expect(items.first.bytes, 2);
+  });
+
+  test('deleteDownload deletes safe local file and rejects unsafe stored names', () async {
+    final root = await Directory.systemTemp.createTemp('al-qahtani-download-delete-test');
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final file = File('${root.path}${Platform.pathSeparator}episode-1.mp4')..writeAsBytesSync([1, 2, 3]);
+    final service = DownloadService(directoryProvider: () async => root);
+    addTearDown(service.close);
+
+    expect(await service.deleteDownload('episode-1.mp4'), isTrue);
+    expect(await file.exists(), isFalse);
+
+    await expectLater(service.deleteDownload('folder/file.mp4'), throwsA(isA<DownloadException>()));
+    await expectLater(service.deleteDownload('folder\\file.mp4'), throwsA(isA<DownloadException>()));
+    await expectLater(service.deleteDownload('unfinished.part'), throwsA(isA<DownloadException>()));
+  });
 }

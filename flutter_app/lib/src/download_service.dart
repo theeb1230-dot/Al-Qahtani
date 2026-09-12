@@ -10,6 +10,18 @@ class DownloadResult {
   final int bytes;
 }
 
+class DownloadedFileInfo {
+  const DownloadedFileInfo({
+    required this.name,
+    required this.bytes,
+    required this.modifiedAt,
+  });
+
+  final String name;
+  final int bytes;
+  final DateTime modifiedAt;
+}
+
 typedef DownloadDirectoryProvider = Future<Directory> Function();
 
 class DownloadService {
@@ -36,8 +48,7 @@ class DownloadService {
       throw DownloadException('HTTP_${response.statusCode}');
     }
 
-    final directory = await _directoryProvider();
-    await directory.create(recursive: true);
+    final directory = await _downloadDirectory(create: true);
     final fileName = _trustedFileName(response.headers['content-disposition']) ?? _sanitizeFileName(fallbackName);
     final finalFile = File('${directory.path}${Platform.pathSeparator}$fileName');
     final tempFile = File('${finalFile.path}.part');
@@ -58,6 +69,52 @@ class DownloadService {
       if (await tempFile.exists()) await tempFile.delete();
       rethrow;
     }
+  }
+
+  Future<List<DownloadedFileInfo>> listDownloads() async {
+    final directory = await _downloadDirectory(create: false);
+    if (!await directory.exists()) return const [];
+
+    final items = <DownloadedFileInfo>[];
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File || entity.path.endsWith('.part')) continue;
+      final stat = await entity.stat();
+      if (stat.type != FileSystemEntityType.file || stat.size <= 0) continue;
+      items.add(DownloadedFileInfo(
+        name: _baseName(entity.path),
+        bytes: stat.size,
+        modifiedAt: stat.modified,
+      ));
+    }
+    items.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+    return List.unmodifiable(items);
+  }
+
+  Future<bool> deleteDownload(String name) async {
+    if (!_isSafeStoredName(name)) throw const DownloadException('INVALID_STORED_FILENAME');
+    final directory = await _downloadDirectory(create: false);
+    if (!await directory.exists()) return false;
+    final file = File('${directory.path}${Platform.pathSeparator}$name');
+    if (!await file.exists()) return false;
+    await file.delete();
+    return true;
+  }
+
+  Future<Directory> _downloadDirectory({required bool create}) async {
+    final directory = await _directoryProvider();
+    if (create) await directory.create(recursive: true);
+    return directory;
+  }
+
+  static bool _isSafeStoredName(String value) {
+    if (value.isEmpty || value == '.' || value == '..') return false;
+    if (value.contains('/') || value.contains('\\')) return false;
+    return _sanitizeFileName(value) == value && !value.endsWith('.part');
+  }
+
+  static String _baseName(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    return normalized.substring(normalized.lastIndexOf('/') + 1);
   }
 
   static String? _trustedFileName(String? disposition) {

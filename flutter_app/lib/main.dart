@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'src/api_client.dart';
 import 'src/app_target.dart';
 import 'src/details_page.dart';
+import 'src/download_library_section.dart';
 import 'src/library_store.dart';
 import 'src/models.dart';
 
@@ -247,6 +248,8 @@ class LibraryPage extends StatelessWidget {
                 subtitle: LinearProgressIndicator(value: entry.durationMs > 0 ? entry.progress : null),
                 onTap: () => openDetails(context, api, store, entry.catalogItem),
               )),
+          const SizedBox(height: 18),
+          const DownloadLibrarySection(),
           const SizedBox(height: 18),
           Row(children: [
             Expanded(child: Text('السجل', style: Theme.of(context).textTheme.titleLarge)),
