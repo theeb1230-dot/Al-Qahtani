@@ -1,9 +1,10 @@
-export const PRODUCT_VERSION = "1.0.13";
+export const PRODUCT_VERSION = "1.0.14";
 
 export class TtlCache {
   #entries = new Map();
   constructor({ maxEntries = 128 } = {}) { this.maxEntries = Math.max(1, Number(maxEntries) || 128); }
-  get(key, now = Date.now()) { const entry = this.#entries.get(key); if (!entry) return undefined; if (entry.expiresAt <= now) { this.#entries.delete(key); return undefined; } return entry.value; }
+  peek(key, now = Date.now()) { const entry = this.#entries.get(key); if (!entry) return undefined; return { value: entry.value, expiresAt: entry.expiresAt, expired: entry.expiresAt <= now }; }
+  get(key, now = Date.now()) { const entry = this.peek(key, now); if (!entry) return undefined; if (entry.expired) { this.#entries.delete(key); return undefined; } return entry.value; }
   set(key, value, ttlMs, now = Date.now()) { const ttl = Math.max(1, Number(ttlMs) || 1); if (this.#entries.size >= this.maxEntries && !this.#entries.has(key)) { const oldest = this.#entries.keys().next().value; if (oldest !== undefined) this.#entries.delete(oldest); } this.#entries.set(key, { value, expiresAt: now + ttl }); return value; }
   delete(key) { return this.#entries.delete(key); }
   clear() { this.#entries.clear(); }
@@ -57,4 +58,4 @@ export function normalizeMatch(match={}){
   };
 }
 
-export function buildRuntimeEnvelope({kind,data,source,health,cached=false,generatedAt=Date.now()}){return {status:"success",version:PRODUCT_VERSION,kind:asText(kind)||"unknown",source:asText(source)||"basri-original",cached:Boolean(cached),generated_at:new Date(generatedAt).toISOString(),health:health||null,data};}
+export function buildRuntimeEnvelope({kind,data,source,health,cached=false,stale=false,generatedAt=Date.now()}){return {status:"success",version:PRODUCT_VERSION,kind:asText(kind)||"unknown",source:asText(source)||"basri-original",cached:Boolean(cached),stale:Boolean(stale),generated_at:new Date(generatedAt).toISOString(),health:health||null,data};}

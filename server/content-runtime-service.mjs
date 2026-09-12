@@ -10,6 +10,8 @@ import { resolveCatalogCategory } from "./catalog-categories.mjs";
 
 const DEFAULT_MATCH_TTL_MS = 15_000;
 const DEFAULT_CATALOG_TTL_MS = 30_000;
+const DEFAULT_STALE_IF_ERROR_MS = 5 * 60_000;
+const DEFAULT_FETCH_ATTEMPTS = 2;
 const HOME_SECTION_LIMIT = 8;
 const HOME_CONCURRENCY = 2;
 const HOME_SECTIONS = Object.freeze([
@@ -57,47 +59,73 @@ export function createContentRuntimeService({
   health = new ProviderHealthRegistry({ failureThreshold: 3, cooldownMs: 30_000 }),
   matchTtlMs = DEFAULT_MATCH_TTL_MS,
   catalogTtlMs = DEFAULT_CATALOG_TTL_MS,
+  staleIfErrorMs = DEFAULT_STALE_IF_ERROR_MS,
+  fetchAttempts = DEFAULT_FETCH_ATTEMPTS,
 } = {}) {
   if (typeof fetchMatches !== "function") throw new TypeError("fetchMatches is required");
   if (typeof searchCatalog !== "function") throw new TypeError("searchCatalog is required");
   if (typeof fetchCategory !== "function") throw new TypeError("fetchCategory is required");
 
+  const maxStaleMs = Math.max(0, Number(staleIfErrorMs) || 0);
+  const attempts = Math.max(1, Math.min(3, Math.trunc(Number(fetchAttempts) || DEFAULT_FETCH_ATTEMPTS)));
+
   async function execute({ kind, key, ttlMs, fallbackProvider, fetcher, normalize }) {
     const stamp = now();
-    const cached = cache.get(key, stamp);
-    if (cached) {
+    const cachedEntry = typeof cache.peek === "function" ? cache.peek(key, stamp) : undefined;
+    if (cachedEntry && !cachedEntry.expired) {
+      const cached = cachedEntry.value;
       return buildRuntimeEnvelope({
         kind,
         data: cached.data,
         source: cached.source,
         health: health.snapshot(cached.source, stamp),
         cached: true,
+        stale: false,
         generatedAt: cached.generatedAt,
       });
     }
 
-    const started = now();
     let source = fallbackProvider;
-    try {
-      const payload = await fetcher();
-      source = providerName(payload, fallbackProvider);
-      const data = normalize(payload);
-      const finished = now();
-      health.recordSuccess(source, { latencyMs: Math.max(0, finished - started), now: finished });
-      cache.set(key, { data, source, generatedAt: finished }, ttlMs, finished);
+    let lastError = null;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const started = now();
+      try {
+        const payload = await fetcher();
+        source = providerName(payload, fallbackProvider);
+        const data = normalize(payload);
+        const finished = now();
+        health.recordSuccess(source, { latencyMs: Math.max(0, finished - started), now: finished });
+        cache.set(key, { data, source, generatedAt: finished }, ttlMs, finished);
+        return buildRuntimeEnvelope({
+          kind,
+          data,
+          source,
+          health: health.snapshot(source, finished),
+          cached: false,
+          stale: false,
+          generatedAt: finished,
+        });
+      } catch (error) {
+        lastError = error;
+        const failedAt = now();
+        health.recordFailure(source || fallbackProvider, { now: failedAt });
+      }
+    }
+
+    if (cachedEntry?.value && cachedEntry.expired && maxStaleMs > 0 && stamp - cachedEntry.expiresAt <= maxStaleMs) {
+      const stale = cachedEntry.value;
       return buildRuntimeEnvelope({
         kind,
-        data,
-        source,
-        health: health.snapshot(source, finished),
-        cached: false,
-        generatedAt: finished,
+        data: stale.data,
+        source: stale.source,
+        health: health.snapshot(stale.source, now()),
+        cached: true,
+        stale: true,
+        generatedAt: stale.generatedAt,
       });
-    } catch (error) {
-      const failedAt = now();
-      health.recordFailure(source || fallbackProvider, { now: failedAt });
-      throw error;
     }
+
+    throw lastError || new Error("RUNTIME_FETCH_FAILED");
   }
 
   const service = {
@@ -146,8 +174,8 @@ export function createContentRuntimeService({
     async home() {
       const generatedAt = now();
       const matchesPromise = service.matches()
-        .then((result) => ({ status: "ready", cached: result.cached, data: result.data.slice(0, 12) }))
-        .catch(() => ({ status: "unavailable", cached: false, data: [] }));
+        .then((result) => ({ status: result.stale ? "stale" : "ready", cached: result.cached, stale: result.stale, data: result.data.slice(0, 12) }))
+        .catch(() => ({ status: "unavailable", cached: false, stale: false, data: [] }));
 
       const sectionsPromise = mapBounded(HOME_SECTIONS, HOME_CONCURRENCY, async (section) => {
         try {
@@ -156,8 +184,9 @@ export function createContentRuntimeService({
             id: section.id,
             title: section.title,
             type: section.type,
-            status: "ready",
+            status: result.stale ? "stale" : "ready",
             cached: result.cached,
+            stale: result.stale,
             data: result.data.slice(0, HOME_SECTION_LIMIT),
           };
         } catch {
@@ -167,19 +196,22 @@ export function createContentRuntimeService({
             type: section.type,
             status: "unavailable",
             cached: false,
+            stale: false,
             data: [],
           };
         }
       });
 
       const [matches, sections] = await Promise.all([matchesPromise, sectionsPromise]);
-      const partial = matches.status !== "ready" || sections.some((section) => section.status !== "ready");
+      const partial = matches.status === "unavailable" || sections.some((section) => section.status === "unavailable");
+      const stale = matches.status === "stale" || sections.some((section) => section.status === "stale");
       return buildRuntimeEnvelope({
         kind: "home",
-        data: { matches, sections, partial },
+        data: { matches, sections, partial, stale },
         source: "al-qahtani-runtime",
         health: null,
-        cached: matches.cached && sections.every((section) => section.cached || section.status !== "ready"),
+        cached: matches.cached && sections.every((section) => section.cached || section.status === "unavailable"),
+        stale,
         generatedAt,
       });
     },
@@ -189,6 +221,10 @@ export function createContentRuntimeService({
         status: "ok",
         version: PRODUCT_VERSION,
         cache_entries: cache.size,
+        resilience: {
+          fetch_attempts: attempts,
+          stale_if_error_ms: maxStaleMs,
+        },
         providers: health.summary(now()),
       };
     },
