@@ -70,10 +70,11 @@ function renderTeam(match,side){
  const candidates=logoCandidates(match,side);
  if(candidates.length){
    const img=document.createElement('img');img.alt=team.name?`شعار ${team.name}`:'شعار الفريق';img.loading='lazy';img.decoding='async';
-   let index=0;
+   let index=0,retried=false,current='';
    const tryNext=()=>{
+     if(current&&!retried){retried=true;const retryUrl=current+(current.includes('?')?'&':'?')+'_retry='+Date.now();setTimeout(()=>{img.src=retryUrl},1600);return}
      if(index>=candidates.length){img.remove();fallback.hidden=false;return}
-     fallback.hidden=true;img.src=candidates[index++];
+     retried=false;current=candidates[index++];fallback.hidden=true;img.src=current;
    };
    img.addEventListener('error',tryNext);
    img.addEventListener('load',()=>{fallback.hidden=true});
@@ -97,10 +98,9 @@ function card(m){
  return d;
 }
 async function openMatch(m){
- if(m.priority===2){toast('المباراة لم تبدأ بعد، وسيظهر البث عند توفر السيرفر.');return}
  if(m.priority===3){toast('المباراة انتهت ولا يوجد بث مباشر الآن.');return}
  try{
-   toast('جاري فحص خوادم البث…');
+   toast(m.priority===2?'جاري التحقق من بدء البث…':'جاري فحص خوادم البث…');
    const result=await getMatchServers(m.link),j=result.data;
    if(j?.success&&Array.isArray(j.servers)&&j.servers.length){
      const payload={servers:j.servers};
@@ -109,7 +109,7 @@ async function openMatch(m){
      location.href='Player.html?intent='+encodeURIComponent('legacy://player?data='+b64);
      return;
    }
-   toast('لا يوجد مصدر بث متاح لهذه المباراة حاليًا.');
+   toast(m.priority===2?'البث لم يتوفر من المصدر بعد. أعد المحاولة بعد قليل.':'لا يوجد مصدر بث متاح لهذه المباراة حاليًا.');
  }catch(e){toast('تعذر فحص خوادم البث الآن. حاول بعد قليل.');}
 }
 async function load(){
