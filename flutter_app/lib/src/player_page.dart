@@ -156,10 +156,10 @@ class _PlayerPageState extends State<PlayerPage> {
         'url': opaqueMedia.toString(),
         'type': _resolvedMediaType.trim().isEmpty ? 'stream' : _resolvedMediaType,
         'name': widget.title,
-        if (resume >= const Duration(seconds: 5)) 'resume': '${resume.inMilliseconds / 1000}',
       },
     );
-    final controller = WebViewController()
+    late final WebViewController controller;
+    controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF101827))
       ..addJavaScriptChannel('AlQahtaniPlayer', onMessageReceived: _handleWebPlaybackMessage)
@@ -170,6 +170,7 @@ class _PlayerPageState extends State<PlayerPage> {
           final allowed = uri.host == 'theeb1230-dot.github.io' || uri.host == 'al-qahtani-api.onrender.com';
           return allowed ? NavigationDecision.navigate : NavigationDecision.prevent;
         },
+        onPageFinished: (_) => unawaited(_installWebPlaybackBridge(controller, resume)),
         onWebResourceError: (error) {
           final isMainFrame = error.isForMainFrame ?? true;
           if (!mounted || !_usingWebFallback || !isMainFrame) return;
@@ -200,6 +201,58 @@ class _PlayerPageState extends State<PlayerPage> {
       });
     });
     _nativeFailureInFlight = false;
+  }
+
+  Future<void> _installWebPlaybackBridge(WebViewController controller, Duration resume) async {
+    final resumeSeconds = resume >= const Duration(seconds: 5) ? resume.inMilliseconds / 1000 : 0;
+    await controller.runJavaScript('''
+(() => {
+  if (window.__alQahtaniPlaybackBridgeInstalled) return;
+  window.__alQahtaniPlaybackBridgeInstalled = true;
+  const resumeSeconds = $resumeSeconds;
+  const send = (payload) => {
+    try { AlQahtaniPlayer.postMessage(JSON.stringify(payload)); } catch (_) {}
+  };
+  let attempts = 0;
+  const attach = () => {
+    const video = document.querySelector('video');
+    if (!video) {
+      attempts += 1;
+      if (attempts < 100) setTimeout(attach, 200);
+      return;
+    }
+    let resumeApplied = false;
+    let lastProgressSecond = -10;
+    const applyResume = () => {
+      if (resumeApplied || !(resumeSeconds >= 5) || !Number.isFinite(video.duration) || video.duration <= 0) return;
+      if (resumeSeconds < video.duration - 1) {
+        try { video.currentTime = resumeSeconds; } catch (_) {}
+      }
+      resumeApplied = true;
+    };
+    const payload = (type, extra = {}) => ({
+      type,
+      position: Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : 0,
+      duration: Number.isFinite(video.duration) ? Math.max(0, video.duration) : 0,
+      ...extra,
+    });
+    video.addEventListener('loadedmetadata', applyResume);
+    video.addEventListener('durationchange', applyResume);
+    if (video.readyState >= 1) applyResume();
+    video.addEventListener('playing', () => send(payload('playing')));
+    video.addEventListener('timeupdate', () => {
+      const currentSecond = Math.floor(Number.isFinite(video.currentTime) ? video.currentTime : 0);
+      if (currentSecond - lastProgressSecond < 5) return;
+      lastProgressSecond = currentSecond;
+      send(payload('progress'));
+    });
+    video.addEventListener('ended', () => send(payload('ended')));
+    video.addEventListener('error', () => send(payload('error', {code: String(video.error?.code || 0)})));
+    if (!video.paused && video.currentTime > 0) send(payload('playing'));
+  };
+  attach();
+})();
+''');
   }
 
   void _handleWebPlaybackMessage(JavaScriptMessage message) {
