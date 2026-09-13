@@ -94,7 +94,7 @@ jobs:
           import json, os, subprocess, time
           required = {
               'Deploy GitHub Pages', 'Web smoke', 'Mobile WebKit smoke',
-              'Content runtime', 'Remote runtime v1 smoke',
+              'Content runtime', 'Remote runtime smoke',
               'Remote movie playback smoke', 'Remote news smoke',
               'Live provider smoke', 'Original Basri download contract',
               'Original Basri player contract', 'Independent download resolution',
