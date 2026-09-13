@@ -4,81 +4,71 @@
 GitHub is authoritative when this file disagrees with earlier reports. The preserved original `albasritv.github.io-main.zip`, live Al-Qahtani/Basri Runtime evidence, and the user's iPhone screenshots/videos remain behavioral references. CI alone does not prove physical-device playback/download behavior.
 
 ## Current state
-- Product/release commit: `ffadbb434d384e5906b27865fc221b777b85f033`, merge of PR #97 `Fix Flutter match score contract parity`.
-- PR #97 final head: `7b38378f037623fbd4785c5887beee9ae9b9d09d`; branch `fix/flutter-match-score-contract-97`.
-- Product version/build: `1.0.24+24`; Runtime `PRODUCT_VERSION` is `1.0.24`.
+- Product/release commit: `fa4414880638858b20bd329d1b50da68dc79bab8`, merge of PR #98 `Test DetailsPage download resume integration`.
+- PR #98 final head: `26fb289232dac2b1071e133674c67abe54cbfc40`; branch `test/details-download-integration-98`.
+- Product version/build: `1.0.25+25`; Runtime `PRODUCT_VERSION` is `1.0.25`.
 - Web/PWA remains GitHub Pages at `https://theeb1230-dot.github.io/Al-Qahtani/`; Flutter Web did not replace it.
 - Product boundary remains Al-Qahtani/Basri only. No akwam-indexer, Theeb Engine, THEEB_SERVICE_TOKEN, helper app, VLC/Safari/Intent fallback, provider scraping, or upstream/provider URL exposure was introduced into Flutter.
 - Official user-facing identity remains `القحطاني TV`: deep navy/black, metallic gold, circular Q/ق play mark, Arabic horizontal logo, matching icon/splash, RTL and gold-accented controls/cards.
 
-## Root cause closed in v1.0.24
-v1.0.23 fixed authoritative match-score precedence inside `server/content-runtime.mjs`, but Flutter's `MatchItem.fromJson` still preferred nested `team1.goals/team2.goals` over authoritative top-level `home_score/away_score`. That meant the app itself could undo the Runtime fix: a payload containing nested placeholder `0-0` together with authoritative `2-1` could still render as `0-0` in Flutter.
+## Root cause closed in v1.0.25
+v1.0.22 introduced stable resumable download identities and v1.0.24 preserved those contracts, but the regression coverage still tested `buildDownloadResumeKey()` separately from the real `DetailsPage -> DownloadService.download()` call path. A future UI refactor could therefore omit or alter `resumeKey`, change the `download=1` media request, or accidentally couple the partial filename to a source ref while the isolated helper test continued to pass.
 
-v1.0.24 aligns Flutter with the Runtime contract. Authoritative top-level score fields now win, nested team scores are fallback only, explicit authoritative `0-0` is preserved as legitimate, and ended nested-only `0-0` placeholders remain unknown rather than fabricated. Regressions cover authoritative 2-1 over nested placeholders, legitimate 0-0, ended placeholder-only 0-0, missing score, and live score progression from 1-0 to 1-1.
+v1.0.25 closes that integration gap. `DetailsPage` now accepts an optional injected `DownloadService` for tests while retaining ownership and cleanup of the production-created service. Widget-level regressions press the actual direct-download and episode-download controls and verify the service receives the stable identities `movie-501:direct` and `series-88:episode:ep-9:9`, respectively. The tests also prove the service receives `/api/cinema/media?...&download=1` and that source refs are not used in the resume identity. Production download behavior is otherwise unchanged.
 
-The first PR #97 CI pass also correctly caught version drift after the Flutter bump: `runtime_version_contract_test.mjs` reported Runtime `1.0.23` versus Flutter `1.0.24`. This was a real contract failure, not flaky CI, so `PRODUCT_VERSION` was updated to `1.0.24` before the final-head checks were rerun.
-
-## Changed files in PR #97
-- `flutter_app/lib/src/models.dart`
-- `flutter_app/test/models_test.dart`
+## Changed files in PR #98
+- `flutter_app/lib/src/details_page.dart`
+- `flutter_app/test/details_download_integration_test.dart`
 - `flutter_app/pubspec.yaml`
 - `server/content-runtime.mjs`
 
-## RELEASE VERIFIED v1.0.24
-- Release URL: `https://github.com/theeb1230-dot/Al-Qahtani/releases/tag/v1.0.24`.
-- Release ID: `387775770`.
-- Target commit: `ffadbb434d384e5906b27865fc221b777b85f033`.
-- Published at: `2026-09-13T03:00:18Z`.
-- `Al-Qahtani-Mobile-v1.0.24.apk`: 55,149,052 bytes; SHA-256 `38ec594b1c76cbe4cc2ded10799fb6a4aaa5f330dc95169d97b80fd14da957a4`.
-- `Al-Qahtani-TV-v1.0.24.apk`: 55,149,164 bytes; SHA-256 `d4358e00953188ecba4d8b2d09264d51bf5bafdda8ed6dce042b172165ddaeea`.
-- `Al-Qahtani-iOS-v1.0.24-UNSIGNED.ipa`: 7,782,114 bytes; SHA-256 `fe2d807b53d7631d0f1796feb23796cb0cc3f3f1d076aedb6b7d031f9774034c`; explicitly UNSIGNED/no-codesign and requires external signing/provisioning before installation.
-- `SHA256SUMS.txt`: 290 bytes; SHA-256 `e715c543235de9a0b8be93e0417c34117ef8c24b97eab286c0b11765379a22e1`.
-- `PROVENANCE.json`: 580 bytes; SHA-256 `132b20a13bf7cc93e39417c6af5fbe9b60ddaa33ead878c18a0729b176315bd2`.
-- Release Flutter triplet run `34734388184`: SUCCESS on the exact product commit.
+## RELEASE VERIFIED v1.0.25
+- Release URL: `https://github.com/theeb1230-dot/Al-Qahtani/releases/tag/v1.0.25`.
+- Release ID: `387787204`.
+- Target commit: `fa4414880638858b20bd329d1b50da68dc79bab8`.
+- Published at: `2026-09-13T04:01:59Z`.
+- `Al-Qahtani-Mobile-v1.0.25.apk`: 55,149,052 bytes; SHA-256 `b1af2d9b0670f3c440947dffe6b397aefa2a135ec980d98a4d737bb474f06919`.
+- `Al-Qahtani-TV-v1.0.25.apk`: 55,149,168 bytes; SHA-256 `7a415844b1f7b671da42f74f8bb90743aa2754e8fd4a451b749f4b22bd34fc36`.
+- `Al-Qahtani-iOS-v1.0.25-UNSIGNED.ipa`: 7,781,688 bytes; SHA-256 `5a6b91d036bbfd59ad4691aa5ca80db1ab58ae8eba0d9caaf4b8dfc6dd843f6c`; explicitly UNSIGNED/no-codesign and requires external signing/provisioning before installation.
+- `SHA256SUMS.txt`: 290 bytes; SHA-256 `a471ca6a8a7cd733f9fb21b5ed136e139bc64be67e2cee6efa5d69972d125dc4`.
+- `PROVENANCE.json`: 580 bytes; SHA-256 `7621f1b2396204fa2acf6572b14b4931f2fcc802cb7b0fc127002b0aa2c929cc`.
+- Release Flutter triplet run `34736910349`: SUCCESS on the exact product commit.
 
 ## CI / Pages evidence
-### PR #97 exact-final-head `7b38378f037623fbd4785c5887beee9ae9b9d09d`
-- Flutter foundation `34733899809`: SUCCESS; analyze/tests, Android Mobile APK identity/signature, Android TV APK LEANBACK/features, and iOS UNSIGNED/no-codesign all succeeded.
-- Content runtime `34733899848`: SUCCESS after fixing Runtime/Flutter product-version parity.
-- Match runtime `34733899785`: SUCCESS.
-- Web smoke `34733899870`: SUCCESS.
-- Remote movie playback smoke `34733899856`: SUCCESS.
-- Mobile WebKit smoke `34733899833`: SUCCESS.
-- Original Basri player contract `34733899827`: SUCCESS.
-- Original Basri download contract `34733899821`: SUCCESS.
-- Independent download resolution `34733899781`: SUCCESS.
-- CORS boundary `34733899828`: SUCCESS.
-- Remote CORS smoke `34733899804`: SUCCESS.
-- Media reference expiry `34733899835`: SUCCESS.
-- Trusted download filename `34733899769`: SUCCESS.
-- Live provider smoke `34733899866`: SUCCESS.
-- PR merged only with `expected_head_sha` pinned to this exact final head.
+### PR #98 exact-final-head `26fb289232dac2b1071e133674c67abe54cbfc40`
+- Flutter foundation `34736422178`: SUCCESS. Analyze, the new DetailsPage download integration regressions, Android Mobile build/identity/signature, Android TV LEANBACK/features, and iOS UNSIGNED/no-codesign all succeeded.
+- Contract `34736422347`: SUCCESS.
+- Archive/download contract `34736422295`: SUCCESS.
+- Provider E2E `34736422321`: SUCCESS.
+- iPhone/WebKit `34736422264`: SUCCESS.
+- Remaining required PR checks on the exact final head completed without failure before merge.
+- PR merged only with `expected_head_sha=26fb289232dac2b1071e133674c67abe54cbfc40`.
 
-### Main product commit `ffadbb434d384e5906b27865fc221b777b85f033`
-- Flutter foundation `34734165856`: SUCCESS; analyze/tests and all three package builds/validations succeeded on the exact product commit.
-- GitHub Pages build/deployment `34734165498`: SUCCESS on the same product commit.
-- Original Basri player contract `34734165838`: SUCCESS.
-- Original Basri download contract `34734165900`: SUCCESS.
-- Release Flutter triplet `34734388184`: SUCCESS and created/verified the real GitHub Release for the same SHA.
+### Main product commit `fa4414880638858b20bd329d1b50da68dc79bab8`
+- Flutter foundation `34736676653`: SUCCESS; analyze/tests and all three package builds/validations succeeded on the exact product commit.
+- GitHub Pages deployment `34736676119`: SUCCESS on the same product commit.
+- Static Web smoke `34736676652`: SUCCESS.
+- Archive/download contract `34736676725`: SUCCESS.
+- Release Flutter triplet `34736910349`: SUCCESS and created/verified the real GitHub Release for the same SHA.
 - GitHub Pages URL: `https://theeb1230-dot.github.io/Al-Qahtani/`.
 
-## P0/P1 status after v1.0.24
+## P0/P1 status after v1.0.25
 1. **Official identity `القحطاني TV`:** FIXED IN CODE / BUILD+ARTIFACT CI VERIFIED / PHYSICAL DEVICE VISUAL RECHECK PENDING.
 2. **Native-first movie/episode playback:** code/runtime path protected; Fall 2: Deadpoint on actual iPhone/Android is **NOT PHYSICAL-DEVICE VERIFIED**.
 3. **Native→internal WebView fallback:** FIXED IN CODE / CI VERIFIED; real phone playback is **NOT PHYSICAL-DEVICE VERIFIED**.
 4. **Continue Watching from internal WebView:** FIXED IN CODE / regression covered / **NOT PHYSICAL-DEVICE VERIFIED**.
 5. **External helper app:** intentionally NOT USED.
 6. **Download progress/cancel/retry/Range/content-length/trusted filename:** FIXED IN CODE / CI protected / **NOT PHYSICAL-DEVICE VERIFIED** on a complete real transfer.
-7. **Persistent partial resume across later retry/session and stable partial identity:** FIXED IN CODE / regressions covered / **NOT PHYSICAL-DEVICE VERIFIED**.
+7. **Persistent partial resume across retry/session and stable partial identity:** FIXED IN CODE / service regressions + real DetailsPage-to-DownloadService widget integration regression covered / **NOT PHYSICAL-DEVICE VERIFIED**.
 8. **Downloads Library/file existence persistence:** code path exists; real completed-file persistence remains **NOT PHYSICAL-DEVICE VERIFIED**.
-9. **Match→Player Flutter/Web + bounded failover:** code/runtime protected / **NOT PHYSICAL-DEVICE VERIFIED** after v1.0.24.
-10. **Incorrect match score precedence:** **FIXED IN CODE / CI VERIFIED IN RUNTIME + FLUTTER**. Authoritative top-level score now wins in both layers; explicit real 0-0 is preserved. A real changing live match remains **NOT PHYSICAL-DEVICE VERIFIED**.
+9. **Match→Player Flutter/Web + bounded failover:** code/runtime protected / **NOT PHYSICAL-DEVICE VERIFIED** after v1.0.25.
+10. **Incorrect match score precedence:** FIXED IN CODE / CI VERIFIED IN RUNTIME + FLUTTER. Authoritative top-level score wins in both layers; explicit real 0-0 is preserved. A real changing live match remains **NOT PHYSICAL-DEVICE VERIFIED**.
 11. **Match logos/Saudi time:** contract coverage exists; physical visual recheck pending.
 12. **Search posters/season-aware dedupe:** code/regressions protected; DEVICE VISUAL RECHECK PENDING.
 13. **Technical RuntimeHome/home item:** removed from user navigation; TV/mobile device navigation recheck pending.
 14. **Favorites / Continue Watching / History / Downloads library:** regression baseline preserved; full real-device persistence lifecycle pending.
 15. **Reacher season 4:** **NOT PHYSICAL-DEVICE VERIFIED**.
-16. **Movies Details→Watch/Download:** contract/CI covered; device recheck pending.
+16. **Movies Details→Watch/Download:** contract/CI + DetailsPage download integration covered; device recheck pending.
 17. **News parity:** baseline protected; device recheck pending.
 18. **Web player lifecycle / iPhone Safari:** Web/WebKit/runtime smokes green; real iPhone Safari playback remains **NOT PHYSICAL-DEVICE VERIFIED** in this environment.
 19. **Four-surface E2E:** PARTIAL. Pages and all three package artifacts/releases are verified; full physical-device behavior is not complete.
@@ -90,17 +80,17 @@ The first PR #97 CI pass also correctly caught version drift after the Flutter b
 - providers.js v2 / api-client.js health/retry/circuit-breaker/cache work remains behind remaining P0 evidence/hardening priorities and must stay inside Al-Qahtani/Basri boundaries.
 
 ## Protected regressions
-Protect authoritative-vs-placeholder match score precedence in both Runtime and Flutter, explicit real 0-0, live mutable scores, native→internal WebView playback evidence and timeout, Range/206/Content-Range/Accept-Ranges, stable resumable/cancellable partial identity and strict cleanup/integrity, exact known-length completion, MP4/HLS/MPEG-TS classification, HLS child/key/init opaque refs, independent Watch/Download resolution, trusted filenames, Match source discovery/failover/logos/Saudi time, `episode_id` vs `episode_number`, Search posters/season-aware dedupe, 30+30 infinite pagination with stale/concurrency guards, CORS/SSRF/allowlists, media-ref expiry/sweeper, no ads/popups/unneeded tracking, no external playback Intent/deep-links, Favorites/History/Downloads semantics, TV D-Pad/focus + LEANBACK, Arabic RTL branding, and iOS UNSIGNED/no-codesign labeling.
+Protect DetailsPage-to-DownloadService resume identity, no source-ref leakage into partial identity, `download=1`, authoritative-vs-placeholder match score precedence in both Runtime and Flutter, explicit real 0-0, live mutable scores, native→internal WebView playback evidence and timeout, Range/206/Content-Range/Accept-Ranges, stable resumable/cancellable partial identity and strict cleanup/integrity, exact known-length completion, MP4/HLS/MPEG-TS classification, HLS child/key/init opaque refs, independent Watch/Download resolution, trusted filenames, Match source discovery/failover/logos/Saudi time, `episode_id` vs `episode_number`, Search posters/season-aware dedupe, 30+30 infinite pagination with stale/concurrency guards, CORS/SSRF/allowlists, media-ref expiry/sweeper, no ads/popups/unneeded tracking, no external playback Intent/deep-links, Favorites/History/Downloads semantics, TV D-Pad/focus + LEANBACK, Arabic RTL branding, and iOS UNSIGNED/no-codesign labeling.
 
 ## أهداف التشغيل التالي
 1. **إثبات score حي من المصدر إلى الواجهة.**
    - التقاط مباراة live ذات score متغير من Runtime.
    - مقارنة home/away والترتيب والحالة على Web وFlutter.
    - إبقاء أي نتيجة غير مثبتة NOT VERIFIED بدل hardcode.
-2. **تعزيز DetailsPage→DownloadService integration.**
-   - إضافة widget/integration regression لهوية resume الفعلية.
-   - اختبار same-title movies وmulti-episode collisions.
-   - منع provider refs من partial names/logs.
+2. **تعزيز تنزيل DetailsPage بعد إغلاق فجوة resume identity.**
+   - إضافة regression لتصادم فيلمين بنفس العنوان لكن IDs مختلفة.
+   - إضافة regression لحلقتين بنفس الرقم من مسلسلين مختلفين.
+   - التحقق أن failed/cancelled attempts لا تسجل في Downloads Library.
 3. **إثبات persistent resume على جهاز فعلي عند توفر دليل.**
    - قطع تنزيل طويل ثم إعادة المحاولة.
    - التحقق أن Range يبدأ من حجم `.part`.
