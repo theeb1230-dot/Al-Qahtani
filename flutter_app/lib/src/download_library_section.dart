@@ -1,17 +1,34 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'app_target.dart';
 import 'download_service.dart';
+import 'local_download_player_page.dart';
+
+typedef DownloadOpenHandler = Future<void> Function(DownloadedFileInfo item);
+typedef DownloadShareHandler = Future<void> Function(DownloadedFileInfo item);
 
 class DownloadLibrarySection extends StatefulWidget {
-  const DownloadLibrarySection({super.key});
+  const DownloadLibrarySection({
+    super.key,
+    this.service,
+    this.onOpen,
+    this.onShare,
+  });
+
+  final DownloadService? service;
+  final DownloadOpenHandler? onOpen;
+  final DownloadShareHandler? onShare;
 
   @override
   State<DownloadLibrarySection> createState() => _DownloadLibrarySectionState();
 }
 
 class _DownloadLibrarySectionState extends State<DownloadLibrarySection> {
-  late final DownloadService _service = DownloadService();
+  late final DownloadService _service;
+  late final bool _ownsService;
   List<DownloadedFileInfo> _items = const [];
   bool _loading = true;
   String? _error;
@@ -19,12 +36,14 @@ class _DownloadLibrarySectionState extends State<DownloadLibrarySection> {
   @override
   void initState() {
     super.initState();
+    _ownsService = widget.service == null;
+    _service = widget.service ?? DownloadService();
     _reload();
   }
 
   @override
   void dispose() {
-    _service.close();
+    if (_ownsService) _service.close();
     super.dispose();
   }
 
@@ -38,6 +57,45 @@ class _DownloadLibrarySectionState extends State<DownloadLibrarySection> {
       if (!mounted) return;
       setState(() { _loading = false; _error = 'تعذر قراءة التنزيلات المحلية'; });
     }
+  }
+
+  Future<File?> _verifiedFile(DownloadedFileInfo item) async {
+    final file = await _service.verifiedDownload(item.name);
+    if (file != null) return file;
+    if (!mounted) return null;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('الملف المحمّل غير موجود على الجهاز. حدّث القائمة أو أعد التنزيل.')),
+    );
+    await _reload();
+    return null;
+  }
+
+  Future<void> _open(DownloadedFileInfo item) async {
+    final file = await _verifiedFile(item);
+    if (file == null || !mounted) return;
+    final handler = widget.onOpen;
+    if (handler != null) {
+      await handler(item);
+      return;
+    }
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => LocalDownloadPlayerPage(file: file, title: item.name),
+    ));
+  }
+
+  Future<void> _share(DownloadedFileInfo item) async {
+    final file = await _verifiedFile(item);
+    if (file == null) return;
+    final handler = widget.onShare;
+    if (handler != null) {
+      await handler(item);
+      return;
+    }
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      subject: item.name,
+      text: 'ملف محمّل من القحطاني TV',
+    );
   }
 
   Future<void> _delete(DownloadedFileInfo item) async {
@@ -73,12 +131,25 @@ class _DownloadLibrarySectionState extends State<DownloadLibrarySection> {
               child: ListTile(
                 leading: const Icon(Icons.download_done),
                 title: Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-                subtitle: Text(_formatBytes(item.bytes)),
-                trailing: IconButton(
-                  autofocus: false,
-                  tooltip: 'حذف من الجهاز',
-                  onPressed: () => _delete(item),
-                  icon: const Icon(Icons.delete_outline),
+                subtitle: Text('${_formatBytes(item.bytes)} • اضغط للتشغيل بدون إنترنت'),
+                onTap: () => _open(item),
+                trailing: Wrap(
+                  spacing: isTvTarget ? 8 : 0,
+                  children: [
+                    if (!isTvTarget)
+                      IconButton(
+                        autofocus: false,
+                        tooltip: 'حفظ في الملفات / مشاركة',
+                        onPressed: () => _share(item),
+                        icon: const Icon(Icons.ios_share),
+                      ),
+                    IconButton(
+                      autofocus: false,
+                      tooltip: 'حذف من الجهاز',
+                      onPressed: () => _delete(item),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
                 ),
                 contentPadding: EdgeInsets.symmetric(horizontal: isTvTarget ? 20 : 12, vertical: isTvTarget ? 8 : 2),
               ),
