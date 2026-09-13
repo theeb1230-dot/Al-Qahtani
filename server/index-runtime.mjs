@@ -8,6 +8,13 @@ const ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:8000",
 ]);
 
+const TMDB_ROUTES = new Set([
+  "/api/v1/tmdb/status",
+  "/api/v1/tmdb/search",
+  "/api/v1/tmdb/details",
+  "/api/v1/tmdb/season",
+]);
+
 function applyCors(req, res) {
   const origin = String(req.headers.origin || "");
   if (ALLOWED_ORIGINS.has(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
@@ -26,6 +33,13 @@ function sendJson(req, res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function errorStatus(message) {
+  if (message === "TMDB_NOT_CONFIGURED") return 503;
+  if (message === "TMDB_TIMEOUT") return 504;
+  if (["TMDB_BAD_REFERENCE", "TMDB_BAD_SEASON", "TMDB_SEASON_REQUIRES_SERIES"].includes(message)) return 400;
+  return 502;
+}
+
 export function createAlQahtaniRuntimeServer({
   baseServer = createProductionServer(),
   tmdbRuntime = createTmdbRuntime(),
@@ -41,7 +55,7 @@ export function createAlQahtaniRuntimeServer({
       return baseHandler(req, res);
     }
 
-    if (url.pathname === "/api/v1/tmdb/status" || url.pathname === "/api/v1/tmdb/search") {
+    if (TMDB_ROUTES.has(url.pathname)) {
       applyCors(req, res);
       if (req.method === "OPTIONS") {
         res.writeHead(204);
@@ -51,16 +65,20 @@ export function createAlQahtaniRuntimeServer({
         return sendJson(req, res, 405, { status: "error", message: "METHOD_NOT_ALLOWED" });
       }
       try {
-        if (url.pathname === "/api/v1/tmdb/status") {
-          return sendJson(req, res, 200, tmdbRuntime.status());
+        if (url.pathname === "/api/v1/tmdb/status") return sendJson(req, res, 200, tmdbRuntime.status());
+        if (url.pathname === "/api/v1/tmdb/search") {
+          const query = String(url.searchParams.get("q") || "").trim();
+          if (query.length < 2) return sendJson(req, res, 200, { status: "success", source: "tmdb", data: [] });
+          return sendJson(req, res, 200, await tmdbRuntime.search(query));
         }
-        const query = String(url.searchParams.get("q") || "").trim();
-        if (query.length < 2) return sendJson(req, res, 200, { status: "success", source: "tmdb", data: [] });
-        return sendJson(req, res, 200, await tmdbRuntime.search(query));
+        const ref = String(url.searchParams.get("ref") || "").trim();
+        if (!ref) return sendJson(req, res, 400, { status: "error", message: "TMDB_BAD_REFERENCE" });
+        if (url.pathname === "/api/v1/tmdb/details") return sendJson(req, res, 200, await tmdbRuntime.details(ref));
+        const season = String(url.searchParams.get("season") || "").trim();
+        return sendJson(req, res, 200, await tmdbRuntime.season(ref, season));
       } catch (error) {
         const message = String(error?.message || "TMDB_FAILED");
-        const status = message === "TMDB_NOT_CONFIGURED" ? 503 : message === "TMDB_TIMEOUT" ? 504 : 502;
-        return sendJson(req, res, status, { status: "error", message });
+        return sendJson(req, res, errorStatus(message), { status: "error", message });
       }
     }
 
