@@ -4,22 +4,21 @@
 GitHub is authoritative. Live Runtime behavior and the user's physical-device evidence are behavioral references. CI never upgrades a device-only item to PHYSICAL-DEVICE VERIFIED.
 
 ## Current GitHub state
-- `main`: `66e919245d4501428c7a4dbd4a76a47daaa6fa9b` (merged PR #104).
-- Open PR: #105 `Fix exact release commit binding`.
-- PR #105 branch: `fix/release-gate-reruns-104`.
-- PR #105 head before this state update: `ced9c952c47d81b3ca5d80a65fd6204c5266eb07`.
+- `main`: `d6bff2d3af0e74ce1fbe310e4f841875736121bb` (merged PR #106).
+- Open PR: #107 `Fix exact-SHA download release gate`.
+- PR #107 branch: `fix/release-path-gate-107`.
+- PR #107 head before this state update: `ff9b584df5a6161289dff84d5246bcd3a02eae63`.
+- Functional workflow fix commit: `70bb9cdd2ac7c876eaabddd229e8f3b358ba1926`.
 - Product version/build remains `1.0.29+29`.
 - Latest verified GitHub Release remains `v1.0.28`, target `d388f9f6cacf9ebe2be2fb12fe7e22cffd4d5ee8`.
 - v1.0.29 is NOT PUBLISHED.
 
-## Release root cause and fix
-The post-merge Flutter foundation run `34769363756` succeeded on `66e919245d4501428c7a4dbd4a76a47daaa6fa9b`, but Release run `34769649598` resolved `SOURCE_SHA` backward to `ee8bc98ba02421f753cb4ff313bdb174bcd66b15` solely because that was the last commit that changed `flutter_app/pubspec.yaml`.
+## Release root cause and current fix
+PRs #103-#106 repaired exact product/run binding, rerun handling, Runtime version alignment, and runtime-gate naming. On final main SHA `d6bff2d3af0e74ce1fbe310e4f841875736121bb`, Flutter foundation run `34781535343` succeeded and the protected Web/runtime workflows that actually ran were green, including `Deploy GitHub Pages`, `Remote runtime smoke`, `Remote movie playback smoke`, `Remote news smoke`, `Live provider smoke`, `Mobile WebKit smoke`, `Remote CORS smoke`, `Original Basri download contract`, `Trusted download filename`, and other exact-SHA gates.
 
-That old SHA cannot satisfy the current protected `Content runtime` gate because the Runtime version correction landed later. Release run `34769649598` therefore failed at `Wait for protected Web and runtime gates` with `Content runtime:failure`. Rerunning that old SHA cannot fix the contract mismatch.
+Release run `34781837418` still failed in `Wait for protected Web and runtime gates on exact release commit`. The confirmed root cause is trigger topology: release requires `Independent download resolution` on the exact release SHA, while `.github/workflows/download-resolution.yml` only ran on main pushes touching `server/**`, `scripts/download_resolution_test.mjs`, or itself. PR #106 changed the release workflow only, so the required download-resolution workflow did not run at all on the release SHA. The release job therefore waited until its bounded poll timed out even though the application/build gates were healthy.
 
-PR #105 changes the invariant: the exact successful main-push `Flutter foundation` run that triggers Release is the release source. `SOURCE_SHA = TRIGGER_SHA` and `SOURCE_RUN_ID = TRIGGER_RUN_ID`, with fail-closed checks for workflow name, push event, main branch, completed/success status, and exact SHA equality. Mobile APK, TV APK, iOS UNSIGNED IPA, protected gates, provenance and GitHub Release target must therefore all refer to the same commit.
-
-For an existing tag, workflow/docs-only changes may safely skip republishing only when the non-doc/non-workflow product tree is unchanged. Product changes without a version bump fail closed.
+PR #107 fixes this without bypassing the gate: keep PR path filtering for focused pull-request CI, but make `Independent download resolution` run on every push to `main`. This preserves exact-SHA release evidence. On PR head `ff9b584d...`, `Independent download resolution` run `34785039279` completed SUCCESS, proving the contract and workflow remain healthy after the trigger change.
 
 ## Physical-device P0 evidence
 The user verified on iPhone v1.0.25 that `Spider Man Brand New Day` appeared as a completed 838.4 MB download with ✓ in Library, but Files did not show it and tapping the completed card did nothing. This remains the authoritative historical PHYSICAL-DEVICE VERIFIED BUG for v1.0.25.
@@ -73,8 +72,8 @@ Still pending:
 8. TMDB search/details/seasons: MERGED; user-facing source selector pending.
 9. 27-provider health/circuit/opaque refs: MERGED; probing/player integration pending.
 10. Favorites/Continue Watching/Downloads/History: baseline present; full physical persistence lifecycle pending.
-11. TV LEANBACK/D-Pad/focus: CI verified in released builds; v1.0.29 release pending.
-12. Web/PWA: maintained on GitHub Pages; release alignment pending v1.0.29.
+11. TV LEANBACK/D-Pad/focus: CI verified in prior release/build gates; v1.0.29 release pending.
+12. Web/PWA: exact-main `Deploy GitHub Pages` succeeded on `d6bff2d3...`; release alignment still pending v1.0.29.
 
 ## UX decisions
 - Al-Qahtani/Basri stays primary; TMDB is explicit fallback.
@@ -113,52 +112,59 @@ Current completion: #11 has registry/health/opaque-ref foundation but is not use
 Protect completed-file verification before ✓, local-only export/playback, `.part` rules, resume identity, Range/206/Content-Range/Accept-Ranges, MP4/HLS/MPEG-TS, independent Watch/Download resolution, trusted filenames, score precedence, match failover/logos/Saudi time, episode_id vs episode_number, search dedupe, 30+30 pagination, CORS/SSRF/allowlists, media-ref expiry, Arabic RTL, TV LEANBACK/D-Pad/focus, and iOS UNSIGNED/no-codesign labeling.
 
 ## CI / delivery evidence
-- main Flutter foundation run `34769363756`: SUCCESS on `66e919245d4501428c7a4dbd4a76a47daaa6fa9b`.
-- Release run `34769649598`: FAILURE because old source resolution selected `ee8bc98...`; exact log failure was `Content runtime:failure`.
+- main Flutter foundation run `34781535343`: SUCCESS on `d6bff2d3af0e74ce1fbe310e4f841875736121bb`.
+- main Pages workflow `Deploy GitHub Pages` run `34781535366`: SUCCESS on the same SHA.
+- main `Remote runtime smoke` run `34781535307`: SUCCESS on the same SHA.
+- main `Remote movie playback smoke` run `34781535341`: SUCCESS on the same SHA.
+- main `Original Basri download contract` run `34781535353`: SUCCESS on the same SHA.
+- Release run `34781837418`: FAILURE at protected-gate waiting because `Independent download resolution` had no exact-SHA run due its main-push `paths` filter.
+- PR #107 `Independent download resolution` run `34785039279`: SUCCESS on `ff9b584df5a6161289dff84d5246bcd3a02eae63`.
+- PR #107 early exact-head successes also include Content runtime, Media reference expiry, CORS boundary, Original Basri player/download contracts, Trusted download filename, Remote CORS smoke, and Web smoke. Mobile WebKit, Remote movie playback, Live provider and remaining gates were still running at the last snapshot before this state commit.
 - Latest release API still returns v1.0.28 as latest published release.
-- PR #105 exact-head CI must be green before merge.
 
 ## Release state
 - v1.0.28: RELEASE VERIFIED with Mobile APK + TV APK + iOS UNSIGNED IPA + SHA256SUMS + PROVENANCE.
-- v1.0.29: RELEASE NOT PUBLISHED. Root cause is fixed in PR #105 but PR exact-head CI/merge and post-merge release verification remain pending.
+- v1.0.29: RELEASE NOT PUBLISHED. Current blocker is fixed in PR #107; final exact-head CI, merge, post-merge exact-SHA download gate, and release verification remain pending.
 
 ## أهداف التشغيل التالي
-1. Finish PR #105 exact-head CI.
-   - Inspect every failing job/log.
+1. Finish PR #107 exact-head CI.
+   - Verify `Independent download resolution` remains green on final head.
+   - Inspect every exact-head failure from logs.
    - Fix only on the same branch.
-   - Merge only after all required checks are green.
-2. Verify post-merge exact-release SHA.
-   - Confirm Flutter foundation success on final main SHA.
-   - Confirm protected Web/runtime gates on the same SHA.
-   - Confirm artifacts originate from that exact Flutter run.
+   - Merge only when all required checks are green.
+2. Verify the post-merge release trigger topology.
+   - Confirm Flutter foundation succeeds on final main SHA.
+   - Confirm `Independent download resolution` now runs on that same SHA.
+   - Confirm every protected gate is success on exact SHA.
 3. Publish and verify v1.0.29.
-   - Mobile APK, TV APK, iOS UNSIGNED IPA.
-   - SHA256SUMS + PROVENANCE.
-   - Re-read Release API, target SHA, asset sizes/digests/downloadability.
-4. Verify Pages on release SHA.
-   - Pages deploy/smoke/WebKit/CORS.
+   - Mobile APK, TV APK, iOS UNSIGNED IPA from one Flutter run.
+   - Verify SHA256SUMS + PROVENANCE.
+   - Re-read Release API, target SHA, sizes/digests/downloadability.
+4. Verify Web/PWA on the release SHA.
+   - Pages deployment and Web smoke.
+   - Mobile WebKit/CORS.
    - Range/download/Safari regressions.
 5. Add bounded provider probing.
    - Per-provider timeout and total budget.
-   - Reachability separate from playable evidence.
-   - Health/latency recording without HTTP-200 promotion.
+   - Separate reachability from playable evidence.
+   - Record latency/failure without HTTP-200 promotion.
 6. Add media/embed classification.
    - Detect MP4/HLS/MPEG-TS safely.
    - Classify embed HTML separately.
    - Reject unsupported/suspicious responses fail-closed.
 7. Connect opaque refs to internal player.
-   - Keep targets server-side.
+   - Keep upstream targets server-side.
    - Preserve Range/206 for direct media.
    - Add origin-restricted embed/media hand-off.
-8. Add real player evidence and failover.
-   - playing/media signal required for success.
-   - bounded failure report.
-   - rotate automatically after real failure.
-9. Add TMDB fallback UX after playback path is safe.
-   - القحطاني default.
-   - explicit fallback CTA/source selector.
-   - fallback label, no mixed lists.
+8. Add real player evidence and automatic failover.
+   - Require playing/media signal for success.
+   - Report bounded failures server-side.
+   - Rotate after real playback failure.
+9. Add TMDB fallback UX only after playback is safe.
+   - Keep القحطاني default.
+   - Add explicit fallback CTA/source selector.
+   - Mark fallback results clearly without mixed lists.
 10. Continue P0 physical validation tracking.
-   - completed download → offline local player.
-   - seek/pause/resume/duration/missing-file recovery.
-   - Save to Files/share local file only.
+   - Completed download → offline local player.
+   - Verify seek/pause/resume/duration/missing-file recovery.
+   - Verify Save to Files/share from local file only.
