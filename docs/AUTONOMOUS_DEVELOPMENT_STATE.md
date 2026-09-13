@@ -5,8 +5,10 @@ GitHub is authoritative. Live Runtime behavior and the user's physical-device ev
 
 ## Current GitHub state
 - `main`: `d6bff2d3af0e74ce1fbe310e4f841875736121bb` (merged PR #106).
-- Open PR: pending creation for branch `fix/release-path-gate-107`.
-- Functional fix commit on that branch before this state update: `70bb9cdd2ac7c876eaabddd229e8f3b358ba1926`.
+- Open PR: #107 `Fix exact-SHA download release gate`.
+- PR #107 branch: `fix/release-path-gate-107`.
+- PR #107 head before this state update: `ff9b584df5a6161289dff84d5246bcd3a02eae63`.
+- Functional workflow fix commit: `70bb9cdd2ac7c876eaabddd229e8f3b358ba1926`.
 - Product version/build remains `1.0.29+29`.
 - Latest verified GitHub Release remains `v1.0.28`, target `d388f9f6cacf9ebe2be2fb12fe7e22cffd4d5ee8`.
 - v1.0.29 is NOT PUBLISHED.
@@ -14,9 +16,9 @@ GitHub is authoritative. Live Runtime behavior and the user's physical-device ev
 ## Release root cause and current fix
 PRs #103-#106 repaired exact product/run binding, rerun handling, Runtime version alignment, and runtime-gate naming. On final main SHA `d6bff2d3af0e74ce1fbe310e4f841875736121bb`, Flutter foundation run `34781535343` succeeded and the protected Web/runtime workflows that actually ran were green, including `Deploy GitHub Pages`, `Remote runtime smoke`, `Remote movie playback smoke`, `Remote news smoke`, `Live provider smoke`, `Mobile WebKit smoke`, `Remote CORS smoke`, `Original Basri download contract`, `Trusted download filename`, and other exact-SHA gates.
 
-Release run `34781837418` still failed in `Wait for protected Web and runtime gates on exact release commit`. The newly confirmed root cause is trigger topology: release requires `Independent download resolution` on the exact release SHA, while `.github/workflows/download-resolution.yml` only ran on main pushes touching `server/**`, `scripts/download_resolution_test.mjs`, or itself. PR #106 changed the release workflow only, so the required download-resolution workflow did not run at all on the release SHA. The release job therefore waited until its bounded poll timed out even though the application/build gates were healthy.
+Release run `34781837418` still failed in `Wait for protected Web and runtime gates on exact release commit`. The confirmed root cause is trigger topology: release requires `Independent download resolution` on the exact release SHA, while `.github/workflows/download-resolution.yml` only ran on main pushes touching `server/**`, `scripts/download_resolution_test.mjs`, or itself. PR #106 changed the release workflow only, so the required download-resolution workflow did not run at all on the release SHA. The release job therefore waited until its bounded poll timed out even though the application/build gates were healthy.
 
-Current fix on `fix/release-path-gate-107`: keep PR path filtering for focused pull-request CI, but make `Independent download resolution` run on every push to `main`. This preserves exact-SHA release evidence and avoids weakening or bypassing the download gate.
+PR #107 fixes this without bypassing the gate: keep PR path filtering for focused pull-request CI, but make `Independent download resolution` run on every push to `main`. This preserves exact-SHA release evidence. On PR head `ff9b584d...`, `Independent download resolution` run `34785039279` completed SUCCESS, proving the contract and workflow remain healthy after the trigger change.
 
 ## Physical-device P0 evidence
 The user verified on iPhone v1.0.25 that `Spider Man Brand New Day` appeared as a completed 838.4 MB download with ✓ in Library, but Files did not show it and tapping the completed card did nothing. This remains the authoritative historical PHYSICAL-DEVICE VERIFIED BUG for v1.0.25.
@@ -116,18 +118,20 @@ Protect completed-file verification before ✓, local-only export/playback, `.pa
 - main `Remote movie playback smoke` run `34781535341`: SUCCESS on the same SHA.
 - main `Original Basri download contract` run `34781535353`: SUCCESS on the same SHA.
 - Release run `34781837418`: FAILURE at protected-gate waiting because `Independent download resolution` had no exact-SHA run due its main-push `paths` filter.
+- PR #107 `Independent download resolution` run `34785039279`: SUCCESS on `ff9b584df5a6161289dff84d5246bcd3a02eae63`.
+- PR #107 early exact-head successes also include Content runtime, Media reference expiry, CORS boundary, Original Basri player/download contracts, Trusted download filename, Remote CORS smoke, and Web smoke. Mobile WebKit, Remote movie playback, Live provider and remaining gates were still running at the last snapshot before this state commit.
 - Latest release API still returns v1.0.28 as latest published release.
 
 ## Release state
 - v1.0.28: RELEASE VERIFIED with Mobile APK + TV APK + iOS UNSIGNED IPA + SHA256SUMS + PROVENANCE.
-- v1.0.29: RELEASE NOT PUBLISHED. Current blocker is fixed in branch `fix/release-path-gate-107`; exact-head PR CI, merge, post-merge exact-SHA download gate, and release verification remain pending.
+- v1.0.29: RELEASE NOT PUBLISHED. Current blocker is fixed in PR #107; final exact-head CI, merge, post-merge exact-SHA download gate, and release verification remain pending.
 
 ## أهداف التشغيل التالي
-1. Finish the single PR for the path-scoped release gate.
-   - Verify `Independent download resolution` runs and passes on the PR head.
+1. Finish PR #107 exact-head CI.
+   - Verify `Independent download resolution` remains green on final head.
    - Inspect every exact-head failure from logs.
    - Fix only on the same branch.
-   - Merge only when required checks are green.
+   - Merge only when all required checks are green.
 2. Verify the post-merge release trigger topology.
    - Confirm Flutter foundation succeeds on final main SHA.
    - Confirm `Independent download resolution` now runs on that same SHA.
