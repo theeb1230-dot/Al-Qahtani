@@ -23,11 +23,13 @@ class DownloadProgress {
 class DownloadedFileInfo {
   const DownloadedFileInfo({
     required this.name,
+    required this.path,
     required this.bytes,
     required this.modifiedAt,
   });
 
   final String name;
+  final String path;
   final int bytes;
   final DateTime modifiedAt;
 }
@@ -88,9 +90,7 @@ class DownloadService {
     File? finalFile;
 
     Future<void> cleanupPartial() async {
-      if (await tempFile.exists()) {
-        await tempFile.delete();
-      }
+      if (await tempFile.exists()) await tempFile.delete();
     }
 
     try {
@@ -131,7 +131,6 @@ class DownloadService {
         }
 
         total = _mergeTotal(total, _responseLength(response.headers));
-
         final fileName = _trustedFileName(response.headers['content-disposition']) ?? _sanitizeFileName(fallbackName);
         finalFile ??= File('${directory.path}${Platform.pathSeparator}$fileName');
 
@@ -157,12 +156,8 @@ class DownloadService {
           sink = null;
         } catch (error) {
           streamError = error;
-          try {
-            await iterator?.cancel();
-          } catch (_) {}
-          try {
-            await sink?.close();
-          } catch (_) {}
+          try { await iterator?.cancel(); } catch (_) {}
+          try { await sink?.close(); } catch (_) {}
         }
 
         if (streamError != null) {
@@ -188,35 +183,29 @@ class DownloadService {
         final completedFile = finalFile;
         if (await completedFile.exists()) await completedFile.delete();
         await tempFile.rename(completedFile.path);
-        return DownloadResult(path: completedFile.path, bytes: bytes);
+        final verifiedBytes = await completedFile.length();
+        if (verifiedBytes <= 0 || verifiedBytes != bytes || (total != null && verifiedBytes != total)) {
+          try { await completedFile.delete(); } catch (_) {}
+          throw const DownloadException('FINAL_FILE_VERIFICATION_FAILED');
+        }
+        return DownloadResult(path: completedFile.path, bytes: verifiedBytes);
       }
     } catch (error) {
-      if (!_preservePartial(error, bytes)) {
-        await cleanupPartial();
-      }
+      if (!_preservePartial(error, bytes)) await cleanupPartial();
       rethrow;
     }
   }
 
-  Future<http.StreamedResponse> _send(
-    Uri uri, {
-    required int offset,
-    DownloadCancellationToken? cancellationToken,
-  }) {
+  Future<http.StreamedResponse> _send(Uri uri, {required int offset, DownloadCancellationToken? cancellationToken}) {
     final request = http.Request('GET', uri)..headers['accept'] = '*/*';
     if (offset > 0) request.headers['range'] = 'bytes=$offset-';
-    return _awaitOrCancel(
-      _client.send(request).timeout(const Duration(seconds: 30)),
-      cancellationToken,
-    );
+    return _awaitOrCancel(_client.send(request).timeout(const Duration(seconds: 30)), cancellationToken);
   }
 
   static bool _canReconnect(Object error, int attempts, int bytes) {
     if (attempts >= _maxReconnectAttempts || bytes <= 0) return false;
     if (error is DownloadException) {
-      if (error.code == 'DOWNLOAD_CANCELLED' || error.code == 'RESUME_NOT_SUPPORTED') {
-        return false;
-      }
+      if (error.code == 'DOWNLOAD_CANCELLED' || error.code == 'RESUME_NOT_SUPPORTED') return false;
       if (error.code == 'DOWNLOAD_STALLED' || error.code == 'INCOMPLETE_DOWNLOAD') return true;
       if (error.code.startsWith('HTTP_5') || error.code == 'HTTP_408' || error.code == 'HTTP_429') return true;
       return false;
@@ -269,10 +258,7 @@ class DownloadService {
     return (result as _DownloadValue<T>).value;
   }
 
-  static Future<bool> _moveNextOrCancel(
-    StreamIterator<List<int>> iterator,
-    DownloadCancellationToken? token,
-  ) async {
+  static Future<bool> _moveNextOrCancel(StreamIterator<List<int>> iterator, DownloadCancellationToken? token) async {
     if (token == null) return iterator.moveNext();
     _throwIfCancelled(token);
     final result = await Future.any<Object>([
@@ -301,20 +287,32 @@ class DownloadService {
   Future<List<DownloadedFileInfo>> listDownloads() async {
     final directory = await _downloadDirectory(create: false);
     if (!await directory.exists()) return const [];
-
     final items = <DownloadedFileInfo>[];
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is! File || entity.path.endsWith('.part')) continue;
       final stat = await entity.stat();
       if (stat.type != FileSystemEntityType.file || stat.size <= 0) continue;
-      items.add(DownloadedFileInfo(
-        name: _baseName(entity.path),
-        bytes: stat.size,
-        modifiedAt: stat.modified,
-      ));
+      items.add(DownloadedFileInfo(name: _baseName(entity.path), path: entity.path, bytes: stat.size, modifiedAt: stat.modified));
     }
     items.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
     return List.unmodifiable(items);
+  }
+
+  Future<File?> verifiedDownload(String name) async {
+    if (!_isSafeStoredName(name)) throw const DownloadException('INVALID_STORED_FILENAME');
+    final directory = await _downloadDirectory(create: false);
+    if (!await directory.exists()) return null;
+    final file = File('${directory.path}${Platform.pathSeparator}$name');
+    if (!await file.exists()) return null;
+    final stat = await file.stat();
+    if (stat.type != FileSystemEntityType.file || stat.size <= 0) return null;
+    try {
+      final handle = await file.open(mode: FileMode.read);
+      await handle.close();
+    } catch (_) {
+      return null;
+    }
+    return file;
   }
 
   Future<bool> deleteDownload(String name) async {
@@ -379,11 +377,7 @@ class _DownloadValue<T> {
   const _DownloadValue(this.value);
   final T value;
 }
-
-class _DownloadCancelled {
-  const _DownloadCancelled();
-}
-
+class _DownloadCancelled { const _DownloadCancelled(); }
 class DownloadException implements Exception {
   const DownloadException(this.code);
   final String code;
