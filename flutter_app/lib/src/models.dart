@@ -6,6 +6,8 @@ class CatalogItem {
     required this.type,
     required this.ref,
     this.year,
+    this.rating = 0,
+    this.source = 'qahtani',
   });
   final String id;
   final String title;
@@ -13,6 +15,8 @@ class CatalogItem {
   final String type;
   final String ref;
   final int? year;
+  final double rating;
+  final String source;
 
   factory CatalogItem.fromJson(Map<String, dynamic> json) => CatalogItem(
         id: '${json['id'] ?? ''}',
@@ -21,6 +25,8 @@ class CatalogItem {
         type: '${json['type'] ?? 'series'}',
         ref: '${json['ref'] ?? ''}',
         year: int.tryParse('${json['year'] ?? ''}'),
+        rating: (json['rating'] as num?)?.toDouble() ?? 0,
+        source: '${json['source'] ?? 'qahtani'}',
       );
 }
 
