@@ -8,10 +8,6 @@ on:
       - '.github/workflows/download-resolution.yml'
   push:
     branches: [main]
-    paths:
-      - 'server/**'
-      - 'scripts/download_resolution_test.mjs'
-      - '.github/workflows/download-resolution.yml'
 
 jobs:
   contract:
