@@ -52,8 +52,10 @@ assert.equal(episode.watch_available, true);
 
 const match = normalizeMatch({
   id: "m1",
-  team1: { name: "راسينج سانتاندير", logo: "logo1.png", goals: "2" },
-  team2: { name: "ألافيس", image: "logo2.png", goals: 1 },
+  team1: { name: "راسينج سانتاندير", logo: "logo1.png", goals: "0" },
+  team2: { name: "ألافيس", image: "logo2.png", goals: 0 },
+  home_score: "2",
+  away_score: 1,
   time: "03:00",
   priority: 3,
   competition: "لا ليغا",
@@ -87,10 +89,23 @@ assert.equal(placeholderEndedScore.status, "ended");
 assert.equal(placeholderEndedScore.team1.goals, null);
 assert.equal(placeholderEndedScore.team2.goals, null);
 
+const authoritativeNilNil = normalizeMatch({
+  id: "m-ended-nil",
+  team1: { name: "فريق أ", goals: "0" },
+  team2: { name: "فريق ب", goals: "0" },
+  home_score: "0",
+  away_score: 0,
+  status: "finished",
+  priority: 3,
+});
+assert.equal(authoritativeNilNil.status, "ended");
+assert.equal(authoritativeNilNil.team1.goals, 0);
+assert.equal(authoritativeNilNil.team2.goals, 0);
+
 const topLevelScore = normalizeMatch({
   id: "m3",
-  team1: { name: "الزمالك" },
-  team2: { name: "إيه إس بورت" },
+  team1: { name: "الزمالك", goals: "0" },
+  team2: { name: "إيه إس بورت", goals: "0" },
   home_score: "2",
   away_score: "0",
   priority: 1,
