@@ -1,4 +1,4 @@
-export const PRODUCT_VERSION = "1.0.22";
+export const PRODUCT_VERSION = "1.0.23";
 
 export class TtlCache {
   #entries = new Map();
@@ -38,9 +38,12 @@ export function normalizeMatch(match={}){
   const rawStatus=asText(match.status).toLowerCase();
   const inferredPriority=/(?:ended|finished|انته)/i.test(rawStatus)?3:/(?:live|جاري|مباشر)/i.test(rawStatus)?1:2;
   const priority=asNumber(match.priority,inferredPriority);
-  let homeGoals=firstScore(team1.goals,team1.score,match.home_score,match.homeScore,match.team1_goals,match.team1Goals,match.score1);
-  let awayGoals=firstScore(team2.goals,team2.score,match.away_score,match.awayScore,match.team2_goals,match.team2Goals,match.score2);
-  if(priority===3&&homeGoals===0&&awayGoals===0){homeGoals=null;awayGoals=null;}
+  const homeTopLevel=firstScore(match.home_score,match.homeScore,match.team1_goals,match.team1Goals,match.score1);
+  const awayTopLevel=firstScore(match.away_score,match.awayScore,match.team2_goals,match.team2Goals,match.score2);
+  let homeGoals=homeTopLevel??firstScore(team1.goals,team1.score);
+  let awayGoals=awayTopLevel??firstScore(team2.goals,team2.score);
+  const hasAuthoritativeTopLevelScore=homeTopLevel!==null||awayTopLevel!==null;
+  if(priority===3&&!hasAuthoritativeTopLevelScore&&homeGoals===0&&awayGoals===0){homeGoals=null;awayGoals=null;}
   return {
     id:asText(match.id||match.link),
     team1:{name:asText(team1.name),logo:asText(team1.logo||team1.image||team1.img),goals:homeGoals},
