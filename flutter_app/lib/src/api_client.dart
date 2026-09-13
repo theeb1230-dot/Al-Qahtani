@@ -70,6 +70,8 @@ class AlQahtaniApi {
       type: item.type,
       ref: item.ref,
       year: item.year,
+      rating: item.rating,
+      source: item.source,
     );
   }
 
@@ -93,13 +95,28 @@ class AlQahtaniApi {
 
   Future<List<CatalogItem>> search(String query) async {
     final json = await _getJson('/api/v1/search', {'q': query.trim()});
+    return _dedupeCatalog(_list(json['data']).map(_catalogItem));
+  }
+
+  Future<bool> tmdbAvailable() async {
+    final json = await _getJson('/api/v1/tmdb/status');
+    return json['configured'] == true;
+  }
+
+  Future<List<CatalogItem>> searchTmdb(String query) async {
+    final value = query.trim();
+    if (value.length < 2) return const [];
+    final json = await _getJson('/api/v1/tmdb/search', {'q': value});
+    return _dedupeCatalog(_list(json['data']).map(_catalogItem));
+  }
+
+  List<CatalogItem> _dedupeCatalog(Iterable<CatalogItem> values) {
     final seenRefs = <String>{};
     final seenFallback = <String>{};
     final out = <CatalogItem>[];
-    for (final raw in _list(json['data'])) {
-      final item = _catalogItem(raw);
+    for (final item in values) {
       final ref = item.ref.trim();
-      final fallback = '${item.type}|${item.title.trim().toLowerCase()}|${item.year ?? ''}';
+      final fallback = '${item.source}|${item.type}|${item.title.trim().toLowerCase()}|${item.year ?? ''}';
       if (ref.isNotEmpty) {
         if (!seenRefs.add(ref)) continue;
       } else if (!seenFallback.add(fallback)) {
