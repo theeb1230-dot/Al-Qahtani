@@ -3,12 +3,14 @@
 ## Source of truth
 GitHub is authoritative when this file disagrees with earlier reports. The preserved original `albasritv.github.io-main.zip`, live Al-Qahtani/Basri Runtime evidence, and the user's physical-device evidence remain behavioral references. CI never upgrades a device-only item to PHYSICAL-DEVICE VERIFIED.
 
-## Current GitHub state at start of this run
+## Current GitHub state
 - `main`: `4028c95762b9e3d704c97457c14d66a5387af9d5`.
 - Latest merged product PR: #99 `Fix completed download playback and local export`.
-- Latest verified release before this PR: `v1.0.26`, target `4028c95762b9e3d704c97457c14d66a5387af9d5`.
+- Latest verified release: `v1.0.26`, target `4028c95762b9e3d704c97457c14d66a5387af9d5`.
 - Current development branch: `feat/tmdb-fallback-search-100`.
-- Open PR at run start: none.
+- Open PR: #100 `Add server-side TMDB fallback search foundation`.
+- PR #100 was mergeable on the current branch lineage. Its earlier head `d0d91027b6120230ccd04a2c2496578896e63f53` passed all required workflows, including Flutter foundation. A direct merge attempt from the automation tool was blocked before reaching GitHub by the tool safety layer; repository auto-merge is disabled. Development therefore continued on the same PR only, per the one-open-PR rule.
+- Latest product-code head before this state update: `31d772b6a0e11dd54509b82ad885b632b107d7ff`.
 - Product version/build on this branch: `1.0.27+27`; Runtime `PRODUCT_VERSION`: `1.0.27`.
 - Web/PWA remains GitHub Pages at `https://theeb1230-dot.github.io/Al-Qahtani/`; Flutter Web does not replace it.
 - Product boundary remains Al-Qahtani/Basri. No akwam-indexer, Theeb Engine, THEEB_SERVICE_TOKEN, helper player app, VLC/Safari/Intent playback fallback, or upstream/provider URL exposure is permitted in Flutter.
@@ -18,23 +20,29 @@ The user verified on iPhone v1.0.25 that `Spider Man Brand New Day` appeared as 
 
 PR #99 / v1.0.26 added completed-file verification, local-path enumeration, internal offline playback, missing-file recovery, and local share/export. Those changes are FIXED IN CODE / CI VERIFIED only. They remain PHYSICAL-DEVICE RECHECK PENDING until a real device proves that tapping a completed download starts local playback and export works from the local file.
 
-## Current development slice: TMDB fallback search foundation
-This run starts the optional TMDB fallback without changing the default Al-Qahtani/Basri search.
+## Current development slice: TMDB fallback foundation
+The optional TMDB fallback remains additive. Al-Qahtani/Basri search stays the default.
 
-Implemented on `feat/tmdb-fallback-search-100` so far:
+Implemented on PR #100:
 - `server/tmdb-runtime.mjs`: server-side-only TMDB adapter. `TMDB_API_KEY` is read only from the server environment and is never returned to clients.
-- `server/index-runtime.mjs`: wrapper exposing `/api/v1/tmdb/status` and `/api/v1/tmdb/search` while delegating all existing routes to the production server.
-- `package.json`: production start points to the wrapper and `npm run check` validates the new runtime plus deterministic TMDB tests.
-- `scripts/tmdb_runtime_test.mjs`: normalization, Arabic locale, adult-filter, cache, missing-key fail-closed, movie/tv filtering, and opaque `tmdb:*` identity tests.
-- Flutter `CatalogItem` now has backward-compatible `rating` and `source` fields for future fallback result rendering. Existing constructors keep defaults.
-- Version/build raised to `1.0.27+27`; Runtime version raised to `1.0.27`.
+- `/api/v1/tmdb/status` and `/api/v1/tmdb/search` with bounded timeout, Arabic locale, adult filtering, cache, normalization and fail-closed errors.
+- `/api/v1/tmdb/details` for validated `tmdb:movie:{id}` / `tmdb:tv:{id}` references.
+- `/api/v1/tmdb/season` for validated TV references and bounded season numbers.
+- Details normalize title/original title/overview/poster/backdrop/year/rating/runtime/season counts without exposing the TMDB credential.
+- Season normalization produces stable opaque episode identity `tmdb:tv:{id}:s{season}:e{episode}` and preserves `season_number` separately from `episode_number`.
+- `scripts/tmdb_runtime_test.mjs` now covers search cache, details cache, ref validation, movie-vs-series validation, seasons, episode identity, locale and missing-key fail-closed behavior.
+- Flutter `CatalogItem` has backward-compatible `rating` and `source` fields.
+- `AlQahtaniApi._catalogItem()` now preserves `source` and `rating` instead of silently discarding them.
+- Flutter API now has Runtime-only `tmdbAvailable()` and `searchTmdb()` methods; Flutter still receives no TMDB API key or raw provider URL.
+- Search dedupe now includes source in its no-ref fallback key so future Basri/TMDB results cannot accidentally collapse solely because title/type/year match.
+- Version/build remains `1.0.27+27`; Runtime remains `1.0.27` because these commits are still inside the same unreleased product PR.
 
-Not yet implemented in this slice:
-- User-facing search source toggle/button.
-- TMDB details/season endpoints.
+Not yet user-complete:
+- User-facing search source selector/toggle and `ابحث في المصدر الاحتياطي` CTA.
+- TMDB details UI and season/episode UI.
 - Basri-ref↔TMDB mapping cache.
 - 27-provider playback resolver and health-ranked failover.
-- TMDB result playback. TMDB search is not considered complete for users until these are connected safely.
+- TMDB-result playback. No TMDB result should become a dead-end clickable playback card before fallback playback exists.
 
 ## 27-provider fallback pool state
 NOT IMPLEMENTED YET. Design remains:
@@ -55,19 +63,21 @@ NOT IMPLEMENTED YET. Design remains:
 6. **Ended/live scores without fake 0-0:** FIXED IN CODE / CI VERIFIED; changing live score remains NOT PHYSICAL-DEVICE VERIFIED.
 7. **Match logos/Saudi time:** baseline covered; physical visual recheck pending.
 8. **Search poster/type/year/dedupe:** baseline covered; physical visual recheck pending.
-9. **TMDB optional search:** SERVER FOUNDATION IN PROGRESS on this branch; NOT USER-COMPLETE.
-10. **27-provider fallback:** NOT IMPLEMENTED.
-11. **Favorites/Continue Watching/Downloads/History:** baseline present; full device persistence lifecycle pending.
-12. **Continue Watching/History only after playback event:** regression baseline preserved.
-13. **TV LEANBACK/D-Pad/focus:** build/CI baseline preserved; physical Android TV recheck pending.
-14. **Web/PWA:** must remain deployed independently on Pages.
+9. **TMDB optional search:** SERVER + FLUTTER CLIENT BOUNDARY IN PROGRESS on PR #100; NOT USER-COMPLETE.
+10. **TMDB details/seasons:** IMPLEMENTED IN CODE on PR #100; exact-head CI pending after latest commits.
+11. **27-provider fallback:** NOT IMPLEMENTED.
+12. **Favorites/Continue Watching/Downloads/History:** baseline present; full device persistence lifecycle pending.
+13. **Continue Watching/History only after playback event:** regression baseline preserved.
+14. **TV LEANBACK/D-Pad/focus:** build/CI baseline preserved; physical Android TV recheck pending.
+15. **Web/PWA:** must remain deployed independently on Pages.
 
 ## UX / behavioral analysis guiding the next UI changes
 - Default search remains Al-Qahtani to preserve learned behavior and avoid surprising source changes.
 - Fallback discovery should appear only when useful: an explicit source control and a clear CTA after empty/error primary results.
 - Do not silently mix Basri and TMDB results initially. Separate source states reduce duplicate ambiguity and cognitive load.
 - Primary CTA in search remains the text field/search action. Source selection is secondary.
-- Mobile targets must remain thumb-reachable with at least comfortable touch sizes; TV controls must remain D-Pad focusable with visible focus state.
+- Do not make TMDB cards actionable for playback until the 27-provider resolver returns safe opaque playback refs; a dead-end details/play button is worse UX than a temporarily absent button.
+- Mobile targets must remain thumb-reachable with comfortable touch sizes; TV controls must remain D-Pad focusable with visible focus state.
 - Technical provider/runtime names stay out of normal UI. A simple `احتياطي` badge is enough for TMDB-origin results.
 - New UI must preserve RTL, navy/black + metallic-gold identity, readable contrast, predictable back behavior, and page state.
 - No dark patterns, forced fallback, fake success, auto-opening external apps, or hidden network/provider behavior.
@@ -99,27 +109,28 @@ Ordered by user value first and regression risk second. Implement incrementally,
 ## Protected regressions
 Protect completed-download verification before ✓, local file path/URI only, offline local playback, missing-file recovery, export/share from local file only, `.part` cleanup rules, stable resume identity, `download=1`, Range/206/Content-Range/Accept-Ranges, MP4/HLS/MPEG-TS, HLS child/key/init opaque refs, independent Watch/Download resolution, trusted filenames, Match source discovery/failover/logos/Saudi time, authoritative score precedence and explicit real 0-0, `episode_id` vs `episode_number`, Search posters/season-aware dedupe, 30+30 pagination with stale/concurrency guards, CORS/SSRF/allowlists, media-ref expiry/sweeper, Arabic RTL identity, TV LEANBACK/D-Pad/focus, and iOS UNSIGNED/no-codesign labeling.
 
-## Release gate for this branch
+## Release gate for PR #100
 Before merge:
-- New Node runtime tests and all existing required workflows must be green on the exact final head.
-- Flutter analyze/tests/build gates must remain green despite backward-compatible model additions.
+- All required workflows must be green on the exact final head after the latest TMDB details/client changes.
+- Flutter analyze/tests/build gates must remain green.
 - No TMDB credential may appear in source, Flutter bundle, logs, API payloads, or release assets.
-- If merged, release must contain same-commit/version Mobile APK + TV APK + iOS UNSIGNED IPA + SHA256SUMS + provenance.
+- Merge only when the tool can perform a verified exact-head merge or GitHub repository settings permit an equivalent safe path. Do not claim merge while the tool safety layer blocks it.
+- After merge, release must contain same-commit/version Mobile APK + TV APK + iOS UNSIGNED IPA + SHA256SUMS + provenance.
 - Re-read Releases API and Pages deployment after merge.
 
 ## أهداف التشغيل التالي
-1. **Finish TMDB client boundary.**
-   - Add Flutter Runtime-only TMDB search method.
-   - Preserve `source/rating/poster/year/type` metadata.
-   - Normalize `TMDB_NOT_CONFIGURED` into a useful Arabic state.
-2. **Add user-facing optional fallback search.**
+1. **Close exact-head CI for PR #100.**
+   - Inspect all workflows on the final docs/code head.
+   - Fetch logs for any failed job and root-cause it on the same branch.
+   - Merge only after exact-head green proof.
+2. **Add user-facing optional fallback search without dead ends.**
    - Keep Basri search default.
-   - Add explicit source selector/toggle.
+   - Add explicit source selector/toggle only when TMDB Runtime is configured.
    - Add `ابحث في المصدر الاحتياطي` CTA after zero primary results.
-3. **Add TMDB details/season runtime.**
-   - `/movie/{id}`, `/tv/{id}`, `/tv/{id}/season/{s}` server-side.
-   - Cache bounded responses.
-   - Validate IDs and season ranges fail-closed.
+3. **Connect TMDB details UI safely.**
+   - Render metadata, seasons and episodes with an `احتياطي` badge.
+   - Keep playback action disabled/absent until an opaque fallback resolver exists.
+   - Preserve RTL, focus and back behavior.
 4. **Build canonical identity mapper.**
    - Direct TMDB/IMDb identity first.
    - Then title+year+type matching.
@@ -136,7 +147,7 @@ Before merge:
    - Movie `tmdb_id` resolution.
    - Series `tmdb_id + season + episode` resolution.
    - Never return raw provider/session URLs.
-8. **Recheck download P0 on a physical device when evidence exists.**
+8. **Recheck download P0 on physical-device evidence when available.**
    - Tap completed item → local player.
    - Offline seek/pause/resume/duration.
    - Save/share the local file only.
@@ -145,6 +156,6 @@ Before merge:
    - Mobile/TV/IPA builds.
    - LEANBACK/D-Pad/focus and no-codesign checks.
 10. **Release only after exact-head proof.**
-   - Merge one PR only after green gates.
    - Verify release triplet + hashes + provenance.
-   - Verify Pages on the merged product commit.
+   - Verify Pages on merged product commit.
+   - Record RELEASE VERIFIED only after API re-read proves assets exist and are downloadable.
