@@ -75,6 +75,69 @@ void main() {
     expect(match.ref, 'match:opaque');
   });
 
+  test('authoritative top-level match score wins over nested placeholders in Flutter', () {
+    final match = MatchItem.fromJson({
+      'team1': {'name': 'راسينج سانتاندير', 'goals': 0},
+      'team2': {'name': 'ألافيس', 'goals': 0},
+      'home_score': 2,
+      'away_score': 1,
+      'status': 'ended',
+      'ref': 'match:authoritative',
+    });
+    expect(match.homeGoals, 2);
+    expect(match.awayGoals, 1);
+    expect(match.hasScore, true);
+  });
+
+  test('explicit authoritative 0-0 remains a legitimate ended result in Flutter', () {
+    final match = MatchItem.fromJson({
+      'team1': {'name': 'فريق أ', 'goals': 7},
+      'team2': {'name': 'فريق ب', 'goals': 4},
+      'home_score': 0,
+      'away_score': 0,
+      'status': 'ended',
+      'ref': 'match:draw',
+    });
+    expect(match.homeGoals, 0);
+    expect(match.awayGoals, 0);
+    expect(match.hasScore, true);
+  });
+
+  test('ended nested-only 0-0 placeholder stays unknown in Flutter', () {
+    final match = MatchItem.fromJson({
+      'team1': {'name': 'فريق أ', 'goals': 0},
+      'team2': {'name': 'فريق ب', 'goals': 0},
+      'status': 'ended',
+      'ref': 'match:placeholder',
+    });
+    expect(match.homeGoals, isNull);
+    expect(match.awayGoals, isNull);
+    expect(match.hasScore, false);
+  });
+
+  test('live authoritative score stays mutable and non-zero in Flutter', () {
+    final first = MatchItem.fromJson({
+      'team1': {'name': 'فريق أ', 'goals': 0},
+      'team2': {'name': 'فريق ب', 'goals': 0},
+      'homeScore': 1,
+      'awayScore': 0,
+      'status': 'live',
+      'ref': 'match:live',
+    });
+    final second = MatchItem.fromJson({
+      'team1': {'name': 'فريق أ', 'goals': 0},
+      'team2': {'name': 'فريق ب', 'goals': 0},
+      'homeScore': 1,
+      'awayScore': 1,
+      'status': 'live',
+      'ref': 'match:live',
+    });
+    expect(first.homeGoals, 1);
+    expect(first.awayGoals, 0);
+    expect(second.homeGoals, 1);
+    expect(second.awayGoals, 1);
+  });
+
   test('missing match score stays absent instead of becoming 0-0', () {
     final match = MatchItem.fromJson({
       'team1': {'name': 'فريق أ', 'goals': ''},
