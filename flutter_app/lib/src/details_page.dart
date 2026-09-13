@@ -7,6 +7,14 @@ import 'models.dart';
 import 'player_page.dart';
 import 'route_focus_restorer.dart';
 
+String buildDownloadResumeKey(CatalogItem item, String key) {
+  final catalogId = item.id.trim();
+  final stableItem = catalogId.isNotEmpty
+      ? catalogId
+      : '${item.type.trim()}:${item.title.trim()}:${item.year ?? ''}';
+  return '$stableItem:$key';
+}
+
 class DetailsPage extends StatefulWidget {
   const DetailsPage({super.key, required this.api, required this.store, required this.item});
   final AlQahtaniApi api;
@@ -146,6 +154,7 @@ class _DetailsPageState extends State<DetailsPage> {
       final result = await _downloads.download(
         uri,
         fallbackName: title,
+        resumeKey: buildDownloadResumeKey(widget.item, key),
         cancellationToken: token,
         onProgress: (progress) => _onDownloadProgress(key, progress),
       );
@@ -157,9 +166,9 @@ class _DetailsPageState extends State<DetailsPage> {
       if (!mounted) return;
       final code = error is DownloadException ? error.code : '';
       final message = switch (code) {
-        'DOWNLOAD_CANCELLED' => 'تم إلغاء التنزيل ولم يُحتفظ بملف جزئي.',
-        'DOWNLOAD_STALLED' => 'توقف وصول البيانات لمدة 30 ثانية. أعد المحاولة؛ لم يُترك ملف ناقص.',
-        'INCOMPLETE_DOWNLOAD' => 'انقطع التنزيل قبل اكتمال الملف. أعد المحاولة.',
+        'DOWNLOAD_CANCELLED' => 'تم إلغاء التنزيل وحذف الملف الجزئي.',
+        'DOWNLOAD_STALLED' => 'توقف وصول البيانات لمدة 30 ثانية. تم الاحتفاظ بالتقدم ويمكن استكماله عند إعادة المحاولة.',
+        'INCOMPLETE_DOWNLOAD' => 'انقطع التنزيل قبل اكتمال الملف. تم الاحتفاظ بالتقدم للاستكمال عند إعادة المحاولة.',
         'EMPTY_DOWNLOAD' => 'وصل رد فارغ من خادم التنزيل. أعد المحاولة لاحقًا.',
         _ => 'تعذر تنزيل هذا المصدر حاليًا. لم يتم فتح رابط خارجي.',
       };
