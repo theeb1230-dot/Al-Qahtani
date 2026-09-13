@@ -9,11 +9,6 @@ on:
       - '.github/workflows/release-triplet.yml'
   push:
     branches: [main]
-    paths:
-      - 'flutter_app/**'
-      - 'scripts/apply_native_branding.py'
-      - '.github/workflows/flutter-foundation.yml'
-      - '.github/workflows/release-triplet.yml'
   workflow_dispatch:
 
 permissions:
