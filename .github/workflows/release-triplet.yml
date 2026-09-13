@@ -17,10 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
-      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+      TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - name: Checkout exact source commit
+      - name: Checkout triggering main commit
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
@@ -30,12 +30,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          EVENT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" --jq .event)"
-          BRANCH="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" --jq .head_branch)"
-          SHA="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" --jq .head_sha)"
+          EVENT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .event)"
+          BRANCH="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .head_branch)"
+          SHA="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .head_sha)"
           test "$EVENT" = push
           test "$BRANCH" = main
-          test "$SHA" = "$SOURCE_SHA"
+          test "$SHA" = "$TRIGGER_SHA"
+
+      - name: Resolve exact product commit and Flutter artifact run
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRODUCT_SHA="$(git rev-list -n 1 "$TRIGGER_SHA" -- flutter_app/pubspec.yaml)"
+          test -n "$PRODUCT_SHA"
+          SOURCE_RUN_ID="$(
+            gh run list --repo "$GITHUB_REPOSITORY" --commit "$PRODUCT_SHA" --limit 100 \
+              --json name,event,headBranch,status,conclusion,databaseId \
+              --jq '[.[] | select(.name == "Flutter foundation" and .event == "push" and .headBranch == "main" and .status == "completed" and .conclusion == "success")] | sort_by(.databaseId) | last | .databaseId // empty'
+          )"
+          if [ -z "$SOURCE_RUN_ID" ]; then
+            echo "No successful main-push Flutter foundation run exists for product commit $PRODUCT_SHA" >&2
+            exit 1
+          fi
+          echo "source_sha=$PRODUCT_SHA" >> "$GITHUB_OUTPUT"
+          echo "source_run_id=$SOURCE_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_SHA=$PRODUCT_SHA" >> "$GITHUB_ENV"
+          echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> "$GITHUB_ENV"
+          echo "Resolved trigger $TRIGGER_SHA to product $PRODUCT_SHA using Flutter run $SOURCE_RUN_ID"
+
+      - name: Checkout exact product commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.source_sha }}
+          fetch-depth: 0
 
       - name: Read and validate release version
         id: version
@@ -48,15 +76,23 @@ jobs:
           BUILD="${RAW##*+}"
           test -n "$VERSION" && test -n "$BUILD" && test "$RAW" != "$VERSION"
           TAG="v$VERSION"
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; version/build must be bumped for every product-impacting merge." >&2
-            exit 1
-          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            EXISTING_TARGET="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+            if [ "$EXISTING_TARGET" != "$SOURCE_SHA" ]; then
+              echo "Release $TAG exists but targets $EXISTING_TARGET instead of $SOURCE_SHA" >&2
+              exit 1
+            fi
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists on exact product commit $SOURCE_SHA; nothing to publish."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Wait for protected Web and runtime gates on exact commit
+      - name: Wait for protected Web and runtime gates on exact product commit
+        if: steps.version.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -91,9 +127,7 @@ jobs:
               by_name = {}
               for run in runs:
                   by_name.setdefault(run['name'], []).append(run)
-              missing = []
-              pending = []
-              failed = []
+              missing, pending, failed = [], [], []
               for name in sorted(required):
                   candidates = by_name.get(name, [])
                   if not candidates:
@@ -109,13 +143,14 @@ jobs:
               if not missing and not pending:
                   print('All protected Web/runtime gates succeeded on', sha)
                   break
-              print('Waiting for exact-commit gates. Missing:', missing, 'Pending:', pending)
+              print('Waiting for exact-product gates. Missing:', missing, 'Pending:', pending)
               time.sleep(10)
           else:
-              raise SystemExit('Timed out waiting for protected exact-commit gates')
+              raise SystemExit('Timed out waiting for protected exact-product gates')
           PY
 
       - name: Download exact-run Mobile, TV and iOS artifacts
+        if: steps.version.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -131,6 +166,7 @@ jobs:
           (cd release-input/ios && sha256sum -c Al-Qahtani-UNSIGNED.ipa.sha256)
 
       - name: Stage release assets and provenance
+        if: steps.version.outputs.publish == 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
           BUILD: ${{ steps.version.outputs.build }}
@@ -171,6 +207,7 @@ jobs:
           EOF
 
       - name: Publish complete GitHub Release
+        if: steps.version.outputs.publish == 'true'
         env:
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -189,6 +226,7 @@ jobs:
             release/PROVENANCE.json
 
       - name: Verify published Release is complete
+        if: steps.version.outputs.publish == 'true'
         env:
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -206,6 +244,8 @@ jobs:
               'SHA256SUMS.txt',
               'PROVENANCE.json',
           }
+          if data.get('targetCommitish') != os.environ['SOURCE_SHA']:
+              raise SystemExit(f"Release target mismatch: {data.get('targetCommitish')} != {os.environ['SOURCE_SHA']}")
           actual = {item['name'] for item in data['assets'] if item.get('size', 0) > 0}
           missing = expected - actual
           if missing:
