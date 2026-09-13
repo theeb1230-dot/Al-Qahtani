@@ -133,15 +133,18 @@ jobs:
                   if not candidates:
                       missing.append(name)
                       continue
-                  run = max(candidates, key=lambda item: item['databaseId'])
-                  if run['status'] != 'completed':
+                  if any(run['status'] == 'completed' and run['conclusion'] == 'success' for run in candidates):
+                      continue
+                  active = [run for run in candidates if run['status'] != 'completed']
+                  if active:
                       pending.append(name)
-                  elif run['conclusion'] != 'success':
-                      failed.append(f"{name}:{run['conclusion']}")
+                      continue
+                  latest = max(candidates, key=lambda item: item['databaseId'])
+                  failed.append(f"{name}:{latest['conclusion']}")
               if failed:
-                  raise SystemExit('Protected gate failure(s): ' + ', '.join(failed))
+                  raise SystemExit('Protected gate failure(s) with no successful rerun: ' + ', '.join(failed))
               if not missing and not pending:
-                  print('All protected Web/runtime gates succeeded on', sha)
+                  print('All protected Web/runtime gates have at least one successful exact-product run on', sha)
                   break
               print('Waiting for exact-product gates. Missing:', missing, 'Pending:', pending)
               time.sleep(10)
