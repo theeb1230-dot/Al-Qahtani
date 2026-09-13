@@ -26,40 +26,29 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
-      - name: Verify triggering run is a main push
-        shell: bash
-        run: |
-          set -euo pipefail
-          EVENT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .event)"
-          BRANCH="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .head_branch)"
-          SHA="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .head_sha)"
-          test "$EVENT" = push
-          test "$BRANCH" = main
-          test "$SHA" = "$TRIGGER_SHA"
-
-      - name: Resolve exact product commit and Flutter artifact run
+      - name: Verify and bind exact successful Flutter run
         id: source
         shell: bash
         run: |
           set -euo pipefail
-          PRODUCT_SHA="$(git rev-list -n 1 "$TRIGGER_SHA" -- flutter_app/pubspec.yaml)"
-          test -n "$PRODUCT_SHA"
-          SOURCE_RUN_ID="$(
-            gh run list --repo "$GITHUB_REPOSITORY" --commit "$PRODUCT_SHA" --limit 100 \
-              --json name,event,headBranch,status,conclusion,databaseId \
-              --jq '[.[] | select(.name == "Flutter foundation" and .event == "push" and .headBranch == "main" and .status == "completed" and .conclusion == "success")] | sort_by(.databaseId) | last | .databaseId // empty'
-          )"
-          if [ -z "$SOURCE_RUN_ID" ]; then
-            echo "No successful main-push Flutter foundation run exists for product commit $PRODUCT_SHA" >&2
-            exit 1
-          fi
-          echo "source_sha=$PRODUCT_SHA" >> "$GITHUB_OUTPUT"
-          echo "source_run_id=$SOURCE_RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "SOURCE_SHA=$PRODUCT_SHA" >> "$GITHUB_ENV"
-          echo "SOURCE_RUN_ID=$SOURCE_RUN_ID" >> "$GITHUB_ENV"
-          echo "Resolved trigger $TRIGGER_SHA to product $PRODUCT_SHA using Flutter run $SOURCE_RUN_ID"
+          RUN_NAME="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .name)"
+          EVENT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .event)"
+          BRANCH="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .head_branch)"
+          STATUS="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .status)"
+          CONCLUSION="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .conclusion)"
+          RUN_SHA="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID" --jq .head_sha)"
+          test "$RUN_NAME" = "Flutter foundation"
+          test "$EVENT" = "push"
+          test "$BRANCH" = "main"
+          test "$STATUS" = "completed"
+          test "$CONCLUSION" = "success"
+          test "$RUN_SHA" = "$TRIGGER_SHA"
+          echo "source_sha=$TRIGGER_SHA" >> "$GITHUB_OUTPUT"
+          echo "source_run_id=$TRIGGER_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_SHA=$TRIGGER_SHA" >> "$GITHUB_ENV"
+          echo "SOURCE_RUN_ID=$TRIGGER_RUN_ID" >> "$GITHUB_ENV"
 
-      - name: Checkout exact product commit
+      - name: Checkout exact release commit
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.source.outputs.source_sha }}
@@ -81,17 +70,22 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             EXISTING_TARGET="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
-            if [ "$EXISTING_TARGET" != "$SOURCE_SHA" ]; then
-              echo "Release $TAG exists but targets $EXISTING_TARGET instead of $SOURCE_SHA" >&2
-              exit 1
+            if [ "$EXISTING_TARGET" = "$SOURCE_SHA" ]; then
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "Release $TAG already exists on exact release commit $SOURCE_SHA."
+              exit 0
             fi
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "Release $TAG already exists on exact product commit $SOURCE_SHA; nothing to publish."
-          else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
+            if git diff --quiet "$EXISTING_TARGET" "$SOURCE_SHA" -- . ':(exclude).github/**' ':(exclude)docs/**'; then
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "Release $TAG already exists and product tree is unchanged between $EXISTING_TARGET and $SOURCE_SHA."
+              exit 0
+            fi
+            echo "Release $TAG exists on $EXISTING_TARGET but product files changed without a version bump." >&2
+            exit 1
           fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for protected Web and runtime gates on exact product commit
+      - name: Wait for protected Web and runtime gates on exact release commit
         if: steps.version.outputs.publish == 'true'
         shell: bash
         run: |
@@ -99,29 +93,20 @@ jobs:
           python3 - <<'PY'
           import json, os, subprocess, time
           required = {
-              'Deploy GitHub Pages',
-              'Web smoke',
-              'Mobile WebKit smoke',
-              'Content runtime',
-              'Remote runtime v1 smoke',
-              'Remote movie playback smoke',
-              'Remote news smoke',
-              'Live provider smoke',
-              'Original Basri download contract',
-              'Original Basri player contract',
-              'Independent download resolution',
-              'Match runtime',
-              'Remote CORS smoke',
-              'CORS boundary',
-              'Media reference expiry',
-              'Trusted download filename',
+              'Deploy GitHub Pages', 'Web smoke', 'Mobile WebKit smoke',
+              'Content runtime', 'Remote runtime v1 smoke',
+              'Remote movie playback smoke', 'Remote news smoke',
+              'Live provider smoke', 'Original Basri download contract',
+              'Original Basri player contract', 'Independent download resolution',
+              'Match runtime', 'Remote CORS smoke', 'CORS boundary',
+              'Media reference expiry', 'Trusted download filename',
           }
           sha = os.environ['SOURCE_SHA']
           repo = os.environ['GITHUB_REPOSITORY']
           for _ in range(36):
               raw = subprocess.check_output([
-                  'gh', 'run', 'list', '--repo', repo, '--commit', sha, '--limit', '100',
-                  '--json', 'name,status,conclusion,databaseId'
+                  'gh', 'run', 'list', '--repo', repo, '--commit', sha,
+                  '--limit', '100', '--json', 'name,status,conclusion,databaseId'
               ], text=True)
               runs = json.loads(raw)
               by_name = {}
@@ -133,23 +118,22 @@ jobs:
                   if not candidates:
                       missing.append(name)
                       continue
-                  if any(run['status'] == 'completed' and run['conclusion'] == 'success' for run in candidates):
+                  if any(r['status'] == 'completed' and r['conclusion'] == 'success' for r in candidates):
                       continue
-                  active = [run for run in candidates if run['status'] != 'completed']
-                  if active:
+                  if any(r['status'] != 'completed' for r in candidates):
                       pending.append(name)
                       continue
-                  latest = max(candidates, key=lambda item: item['databaseId'])
+                  latest = max(candidates, key=lambda r: r['databaseId'])
                   failed.append(f"{name}:{latest['conclusion']}")
               if failed:
                   raise SystemExit('Protected gate failure(s) with no successful rerun: ' + ', '.join(failed))
               if not missing and not pending:
-                  print('All protected Web/runtime gates have at least one successful exact-product run on', sha)
+                  print('All protected gates are green on exact release commit', sha)
                   break
-              print('Waiting for exact-product gates. Missing:', missing, 'Pending:', pending)
+              print('Waiting. Missing:', missing, 'Pending:', pending)
               time.sleep(10)
           else:
-              raise SystemExit('Timed out waiting for protected exact-product gates')
+              raise SystemExit('Timed out waiting for protected exact-release gates')
           PY
 
       - name: Download exact-run Mobile, TV and iOS artifacts
@@ -217,16 +201,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$SOURCE_SHA" \
-            --title "Al-Qahtani v${VERSION}" \
-            --notes-file release-notes.md \
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" \
+            --title "Al-Qahtani v${VERSION}" --notes-file release-notes.md \
             release/Al-Qahtani-Mobile-v${VERSION}.apk \
             release/Al-Qahtani-TV-v${VERSION}.apk \
             release/Al-Qahtani-iOS-v${VERSION}-UNSIGNED.ipa \
-            release/SHA256SUMS.txt \
-            release/PROVENANCE.json
+            release/SHA256SUMS.txt release/PROVENANCE.json
 
       - name: Verify published Release is complete
         if: steps.version.outputs.publish == 'true'
@@ -244,14 +224,13 @@ jobs:
               f"Al-Qahtani-Mobile-v{os.environ['VERSION']}.apk",
               f"Al-Qahtani-TV-v{os.environ['VERSION']}.apk",
               f"Al-Qahtani-iOS-v{os.environ['VERSION']}-UNSIGNED.ipa",
-              'SHA256SUMS.txt',
-              'PROVENANCE.json',
+              'SHA256SUMS.txt', 'PROVENANCE.json',
           }
           if data.get('targetCommitish') != os.environ['SOURCE_SHA']:
               raise SystemExit(f"Release target mismatch: {data.get('targetCommitish')} != {os.environ['SOURCE_SHA']}")
-          actual = {item['name'] for item in data['assets'] if item.get('size', 0) > 0}
+          actual = {a['name'] for a in data['assets'] if a.get('size', 0) > 0}
           missing = expected - actual
           if missing:
-              raise SystemExit('Incomplete GitHub Release; missing/non-empty assets: ' + ', '.join(sorted(missing)))
-          print('Release assets verified:', ', '.join(sorted(expected)))
+              raise SystemExit('Incomplete Release: ' + ', '.join(sorted(missing)))
+          print('Release verified:', ', '.join(sorted(expected)))
           PY
