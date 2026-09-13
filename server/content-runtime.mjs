@@ -38,20 +38,21 @@ export function normalizeMatch(match={}){
   const rawStatus=asText(match.status).toLowerCase();
   const inferredPriority=/(?:ended|finished|انته)/i.test(rawStatus)?3:/(?:live|جاري|مباشر)/i.test(rawStatus)?1:2;
   const priority=asNumber(match.priority,inferredPriority);
-  const homeScore=firstScore(match.home_score,match.homeGoals,match.team1_score,team1.score,team1.goals);
-  const awayScore=firstScore(match.away_score,match.awayGoals,match.team2_score,team2.score,team2.goals);
+  let homeGoals=firstScore(team1.goals,team1.score,match.home_score,match.homeScore,match.team1_goals,match.team1Goals,match.score1);
+  let awayGoals=firstScore(team2.goals,team2.score,match.away_score,match.awayScore,match.team2_goals,match.team2Goals,match.score2);
+  if(priority===3&&homeGoals===0&&awayGoals===0){homeGoals=null;awayGoals=null;}
   return {
-    id:asText(match.id||match.ref||match.link),
-    home:asText(match.home_name||team1.name||match.home||match.team1_name)||"الفريق الأول",
-    away:asText(match.away_name||team2.name||match.away||match.team2_name)||"الفريق الثاني",
-    home_logo:asText(match.home_logo||team1.logo||team1.image),
-    away_logo:asText(match.away_logo||team2.logo||team2.image),
-    home_score:homeScore,
-    away_score:awayScore,
-    time:asText(match.time||match.match_time),
-    status:rawStatus||"scheduled",
-    competition:asText(match.competition||match.league),
+    id:asText(match.id||match.link),
+    team1:{name:asText(team1.name),logo:asText(team1.logo||team1.image||team1.img),goals:homeGoals},
+    team2:{name:asText(team2.name),logo:asText(team2.logo||team2.image||team2.img),goals:awayGoals},
+    time:asText(match.time),
+    status:priority===1?"live":priority===3?"ended":"scheduled",
     priority,
-    ref:asText(match.ref||match.link||match.href)
+    competition:asText(match.competition||match.league),
+    channel:asText(match.channel),
+    commentator:asText(match.commentator),
+    ref:asText(match.ref||match.link),
   };
 }
+
+export function buildRuntimeEnvelope({kind,data,source,health,cached=false,stale=false,generatedAt=Date.now()}){return {status:"success",version:PRODUCT_VERSION,kind:asText(kind)||"unknown",source:asText(source)||"basri-original",cached:Boolean(cached),stale:Boolean(stale),generated_at:new Date(generatedAt).toISOString(),health:health||null,data};}
