@@ -16,10 +16,18 @@ String buildDownloadResumeKey(CatalogItem item, String key) {
 }
 
 class DetailsPage extends StatefulWidget {
-  const DetailsPage({super.key, required this.api, required this.store, required this.item});
+  const DetailsPage({
+    super.key,
+    required this.api,
+    required this.store,
+    required this.item,
+    this.downloads,
+  });
+
   final AlQahtaniApi api;
   final LocalLibraryStore store;
   final CatalogItem item;
+  final DownloadService? downloads;
 
   @override
   State<DetailsPage> createState() => _DetailsPageState();
@@ -27,7 +35,8 @@ class DetailsPage extends StatefulWidget {
 
 class _DetailsPageState extends State<DetailsPage> {
   late Future<TitleDetails> future;
-  final DownloadService _downloads = DownloadService();
+  late final DownloadService _downloads;
+  late final bool _ownsDownloads;
   final Set<String> _activeDownloads = <String>{};
   final Map<String, DownloadCancellationToken> _downloadTokens = <String, DownloadCancellationToken>{};
   final Map<String, DownloadProgress> _downloadProgress = <String, DownloadProgress>{};
@@ -39,6 +48,8 @@ class _DetailsPageState extends State<DetailsPage> {
   @override
   void initState() {
     super.initState();
+    _downloads = widget.downloads ?? DownloadService();
+    _ownsDownloads = widget.downloads == null;
     future = widget.api.details(widget.item.ref);
   }
 
@@ -54,7 +65,7 @@ class _DetailsPageState extends State<DetailsPage> {
     for (final node in _episodeDownloadFocusNodes.values) {
       node.dispose();
     }
-    _downloads.close();
+    if (_ownsDownloads) _downloads.close();
     super.dispose();
   }
 
