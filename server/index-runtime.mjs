@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { createProductionServer } from "./index.mjs";
 import { createTmdbRuntime } from "./tmdb-runtime.mjs";
+import { createFallbackPlaybackRuntime } from "./fallback-runtime.mjs";
 
 const ALLOWED_ORIGINS = new Set([
   "https://theeb1230-dot.github.io",
@@ -13,6 +14,12 @@ const TMDB_ROUTES = new Set([
   "/api/v1/tmdb/search",
   "/api/v1/tmdb/details",
   "/api/v1/tmdb/season",
+]);
+
+const FALLBACK_ROUTES = new Set([
+  "/api/v1/fallback/status",
+  "/api/v1/fallback/resolve",
+  "/api/v1/fallback/next",
 ]);
 
 function applyCors(req, res) {
@@ -37,12 +44,25 @@ function errorStatus(message) {
   if (message === "TMDB_NOT_CONFIGURED") return 503;
   if (message === "TMDB_TIMEOUT") return 504;
   if (["TMDB_BAD_REFERENCE", "TMDB_BAD_SEASON", "TMDB_SEASON_REQUIRES_SERIES"].includes(message)) return 400;
+  if (["INVALID_TMDB_ID", "INVALID_MEDIA_TYPE", "INVALID_SEASON", "INVALID_EPISODE", "BAD_FALLBACK_REFERENCE"].includes(message)) return 400;
+  if (message === "FALLBACK_REFERENCE_EXPIRED") return 410;
+  if (message === "NO_FALLBACK_PROVIDER_AVAILABLE") return 503;
   return 502;
+}
+
+function fallbackIdentity(url) {
+  return {
+    tmdbId: url.searchParams.get("tmdb_id"),
+    type: url.searchParams.get("type"),
+    season: url.searchParams.get("season"),
+    episode: url.searchParams.get("episode"),
+  };
 }
 
 export function createAlQahtaniRuntimeServer({
   baseServer = createProductionServer(),
   tmdbRuntime = createTmdbRuntime(),
+  fallbackRuntime = createFallbackPlaybackRuntime(),
 } = {}) {
   const [baseHandler] = baseServer.listeners("request");
   if (typeof baseHandler !== "function") throw new Error("BASE_REQUEST_HANDLER_MISSING");
@@ -61,9 +81,7 @@ export function createAlQahtaniRuntimeServer({
         res.writeHead(204);
         return res.end();
       }
-      if (req.method !== "GET") {
-        return sendJson(req, res, 405, { status: "error", message: "METHOD_NOT_ALLOWED" });
-      }
+      if (req.method !== "GET") return sendJson(req, res, 405, { status: "error", message: "METHOD_NOT_ALLOWED" });
       try {
         if (url.pathname === "/api/v1/tmdb/status") return sendJson(req, res, 200, tmdbRuntime.status());
         if (url.pathname === "/api/v1/tmdb/search") {
@@ -78,6 +96,24 @@ export function createAlQahtaniRuntimeServer({
         return sendJson(req, res, 200, await tmdbRuntime.season(ref, season));
       } catch (error) {
         const message = String(error?.message || "TMDB_FAILED");
+        return sendJson(req, res, errorStatus(message), { status: "error", message });
+      }
+    }
+
+    if (FALLBACK_ROUTES.has(url.pathname)) {
+      applyCors(req, res);
+      if (req.method === "OPTIONS") {
+        res.writeHead(204);
+        return res.end();
+      }
+      if (req.method !== "GET") return sendJson(req, res, 405, { status: "error", message: "METHOD_NOT_ALLOWED" });
+      try {
+        if (url.pathname === "/api/v1/fallback/status") return sendJson(req, res, 200, fallbackRuntime.status());
+        if (url.pathname === "/api/v1/fallback/resolve") return sendJson(req, res, 200, fallbackRuntime.resolve(fallbackIdentity(url)));
+        const ref = String(url.searchParams.get("ref") || "").trim();
+        return sendJson(req, res, 200, fallbackRuntime.recordFailure(ref));
+      } catch (error) {
+        const message = String(error?.message || "FALLBACK_FAILED");
         return sendJson(req, res, errorStatus(message), { status: "error", message });
       }
     }
