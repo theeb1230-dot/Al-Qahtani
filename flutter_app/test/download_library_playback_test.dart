@@ -32,51 +32,91 @@ void main() {
   });
 
   testWidgets('tap on completed download invokes local open path', (tester) async {
-    final file = File('${temp.path}${Platform.pathSeparator}Spider Man Brand New Day.mp4');
-    await file.writeAsBytes(List<int>.filled(64, 3));
+    final item = DownloadedFileInfo(
+      name: 'Spider Man Brand New Day.mp4',
+      path: '/private/app/Downloads/Spider Man Brand New Day.mp4',
+      bytes: 64,
+      modifiedAt: DateTime(2026, 9, 13),
+    );
+    final fake = _FakeDownloadService(item: item);
     DownloadedFileInfo? opened;
 
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: DownloadLibrarySection(
-          service: service,
-          onOpen: (item) async => opened = item,
+          service: fake,
+          onOpen: (value) async { opened = value; },
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump();
 
     expect(find.textContaining('Spider Man Brand New Day'), findsOneWidget);
     await tester.tap(find.textContaining('Spider Man Brand New Day'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(opened, isNotNull);
-    expect(opened!.path, file.path);
+    expect(opened!.path, item.path);
     expect(opened!.bytes, 64);
+    fake.close();
   });
 
   testWidgets('missing file is removed from visible completed list instead of opening', (tester) async {
-    final file = File('${temp.path}${Platform.pathSeparator}gone.mp4');
-    await file.writeAsBytes(List<int>.filled(32, 1));
+    final item = DownloadedFileInfo(
+      name: 'gone.mp4',
+      path: '/private/app/Downloads/gone.mp4',
+      bytes: 32,
+      modifiedAt: DateTime(2026, 9, 13),
+    );
+    final fake = _FakeDownloadService(item: item, missing: true);
     var opened = false;
 
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: DownloadLibrarySection(
-          service: service,
-          onOpen: (_) async => opened = true,
+          service: fake,
+          onOpen: (_) async { opened = true; },
         ),
       ),
     ));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump();
     expect(find.text('gone.mp4'), findsOneWidget);
 
-    await file.delete();
     await tester.tap(find.text('gone.mp4'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
 
     expect(opened, isFalse);
     expect(find.text('gone.mp4'), findsNothing);
     expect(find.textContaining('الملف المحمّل غير موجود'), findsOneWidget);
+    fake.close();
   });
+}
+
+class _FakeDownloadService extends DownloadService {
+  _FakeDownloadService({required this.item, this.missing = false});
+
+  final DownloadedFileInfo item;
+  final bool missing;
+  bool _missingObserved = false;
+
+  @override
+  Future<List<DownloadedFileInfo>> listDownloads() async {
+    if (_missingObserved) return const [];
+    return [item];
+  }
+
+  @override
+  Future<File?> verifiedDownload(String name) async {
+    if (missing) {
+      _missingObserved = true;
+      return null;
+    }
+    return File(item.path);
+  }
+
+  @override
+  Future<bool> deleteDownload(String name) async => true;
 }
