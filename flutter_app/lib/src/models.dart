@@ -100,6 +100,14 @@ int? _nullableScore(dynamic value) {
   return int.tryParse(text);
 }
 
+int? _firstScore(Iterable<dynamic> values) {
+  for (final value in values) {
+    final score = _nullableScore(value);
+    if (score != null) return score < 0 ? 0 : score;
+  }
+  return null;
+}
+
 class MatchItem {
   const MatchItem({
     required this.home,
@@ -129,16 +137,39 @@ class MatchItem {
   factory MatchItem.fromJson(Map<String, dynamic> json) {
     final team1 = (json['team1'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
     final team2 = (json['team2'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
+    final homeTopLevel = _firstScore([
+      json['home_score'],
+      json['homeScore'],
+      json['team1_goals'],
+      json['team1Goals'],
+      json['score1'],
+    ]);
+    final awayTopLevel = _firstScore([
+      json['away_score'],
+      json['awayScore'],
+      json['team2_goals'],
+      json['team2Goals'],
+      json['score2'],
+    ]);
+    var homeGoals = homeTopLevel ?? _firstScore([team1['goals'], team1['score']]);
+    var awayGoals = awayTopLevel ?? _firstScore([team2['goals'], team2['score']]);
+    final status = '${json['status'] ?? 'scheduled'}';
+    final ended = RegExp(r'ended|finished|انته', caseSensitive: false).hasMatch(status);
+    final hasAuthoritativeTopLevelScore = homeTopLevel != null || awayTopLevel != null;
+    if (ended && !hasAuthoritativeTopLevelScore && homeGoals == 0 && awayGoals == 0) {
+      homeGoals = null;
+      awayGoals = null;
+    }
     return MatchItem(
       home: '${team1['name'] ?? ''}',
       away: '${team2['name'] ?? ''}',
       time: '${json['time'] ?? ''}',
-      status: '${json['status'] ?? 'scheduled'}',
+      status: status,
       ref: '${json['ref'] ?? ''}',
       homeLogo: '${team1['logo'] ?? team1['image'] ?? team1['img'] ?? ''}',
       awayLogo: '${team2['logo'] ?? team2['image'] ?? team2['img'] ?? ''}',
-      homeGoals: _nullableScore(team1['goals'] ?? json['home_score'] ?? json['homeScore']),
-      awayGoals: _nullableScore(team2['goals'] ?? json['away_score'] ?? json['awayScore']),
+      homeGoals: homeGoals,
+      awayGoals: awayGoals,
       competition: '${json['competition'] ?? json['league'] ?? ''}',
     );
   }
