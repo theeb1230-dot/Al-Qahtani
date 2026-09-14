@@ -16,7 +16,7 @@ concurrency:
 jobs:
   validate-policy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout PR head
         uses: actions/checkout@v4
@@ -52,7 +52,7 @@ jobs:
             exit 1
           fi
 
-      - name: Locate successful Triage run for this exact PR head
+      - name: Wait for successful Triage run for this exact PR head
         id: triage
         env:
           GH_TOKEN: ${{ github.token }}
@@ -63,21 +63,38 @@ jobs:
           set -euo pipefail
           mkdir -p smoke-evidence triage-artifact
 
-          gh api "repos/$REPO/actions/runs?event=pull_request&per_page=100" > smoke-evidence/runs.json
-          TRIAGE_RUN_ID="$(jq -r --arg sha "$TARGET_SHA" '
-            [.workflow_runs[]
-             | select(.name == "Autonomous Agent Triage")
-             | select(.head_sha == $sha)
-             | select(.status == "completed" and .conclusion == "success")]
-            | sort_by(.created_at)
-            | last
-            | .id // empty
-          ' smoke-evidence/runs.json)"
+          max_wait_seconds=600
+          poll_seconds=20
+          start_epoch="$(date +%s)"
+          TRIAGE_RUN_ID=""
 
-          if [ -z "$TRIAGE_RUN_ID" ]; then
-            echo 'No completed successful Triage run exists yet for this exact SHA.' >&2
-            exit 1
-          fi
+          while true; do
+            gh api "repos/$REPO/actions/runs?event=pull_request&per_page=100" > smoke-evidence/runs.json
+            TRIAGE_RUN_ID="$(jq -r --arg sha "$TARGET_SHA" '
+              [.workflow_runs[]
+               | select(.name == "Autonomous Agent Triage")
+               | select(.head_sha == $sha)
+               | select(.status == "completed" and .conclusion == "success")]
+              | sort_by(.created_at)
+              | last
+              | .id // empty
+            ' smoke-evidence/runs.json)"
+
+            if [ -n "$TRIAGE_RUN_ID" ]; then
+              break
+            fi
+
+            elapsed="$(( $(date +%s) - start_epoch ))"
+            active_triage="$(jq -r --arg sha "$TARGET_SHA" '[.workflow_runs[] | select(.name == "Autonomous Agent Triage") | select(.head_sha == $sha) | select(.status != "completed")] | length' smoke-evidence/runs.json)"
+            echo "triage_wait elapsed=${elapsed}s active_triage=${active_triage}"
+
+            if [ "$elapsed" -ge "$max_wait_seconds" ]; then
+              echo 'No completed successful Triage run appeared for this exact SHA within the bounded wait window.' >&2
+              exit 1
+            fi
+
+            sleep "$poll_seconds"
+          done
 
           echo "triage_run_id=$TRIAGE_RUN_ID" >> "$GITHUB_OUTPUT"
 
