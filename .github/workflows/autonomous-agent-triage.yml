@@ -130,7 +130,10 @@ jobs:
               [.workflow_runs[]
                 | select(.head_sha == $sha)
                 | select((.id|tostring) != $current)
-                | select(.name != "Autonomous Agent Triage")]
+                | select(.name != "Autonomous Agent Triage")
+                | select(.name != "Autonomous Agent Self-Healing Smoke")
+                | select(.name != "Autonomous Agent Self-Healing CI")
+                | select(.name != "Autonomous Agent Observer")]
             ' triage-report/recent-runs.json > triage-report/target-runs.json
 
             total="$(jq 'length' triage-report/target-runs.json)"
