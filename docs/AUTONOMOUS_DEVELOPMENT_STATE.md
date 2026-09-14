@@ -5,9 +5,11 @@ GitHub is authoritative. Live Runtime behavior and the user's physical-device ev
 
 ## Current GitHub state
 - `main`: `634f3e324adeebb06bcf8bac4272104df19f6c0e` (merged PR #109).
-- No open PR existed at the start of this run.
-- Active development branch: `feat/bounded-fallback-probing-110`.
+- Open PR: #110 `Add bounded fallback media probing`.
+- Active branch: `feat/bounded-fallback-probing-110`.
+- Current functional head after CI repair: `b70649cadda3634a4b90d80b9211034cf0726cc8`.
 - Product version/build on this branch: `1.0.30+30`.
+- Runtime `PRODUCT_VERSION` is aligned to `1.0.30` on the same branch.
 - v1.0.29 is RELEASE VERIFIED from exact main SHA `634f3e324adeebb06bcf8bac4272104df19f6c0e`.
 
 ## Release v1.0.29 evidence
@@ -82,10 +84,17 @@ Still pending:
 6. Match scores without fake 0-0: FIXED IN CODE / CI VERIFIED.
 7. Search posters/type/year/dedupe: baseline present.
 8. TMDB search/details/seasons: MERGED; user-facing source selector pending.
-9. 27-provider health/circuit/opaque refs: MERGED; bounded probe classifier now IN PR / CI PENDING.
+9. 27-provider health/circuit/opaque refs: MERGED; bounded probe classifier is IN PR; exact-head CI rerun pending after version-contract repair.
 10. Favorites/Continue Watching/Downloads/History: baseline present; full physical persistence lifecycle pending.
 11. TV LEANBACK/D-Pad/focus: CI VERIFIED in v1.0.29.
 12. Web/PWA: protected Web gates remain enabled; live Pages recheck is required after each product merge.
+
+## PR #110 CI evidence / root cause
+Initial head `d5b90f242cf367a60166c95733b43ef2677fbea2` produced a nearly-green exact-head matrix. Flutter foundation, Match runtime, Independent download resolution, Web smoke, Mobile WebKit, Remote movie playback, Live provider, HLS media proxy, CORS, Basri contracts, media-ref expiry and trusted-filename checks all succeeded. `Content runtime` run `34796988089` failed in the `Run content runtime regressions` step.
+
+Root cause was a version-contract mismatch introduced by correctly bumping Flutter to `1.0.30+30` while leaving `server/content-runtime.mjs` at `PRODUCT_VERSION = "1.0.29"`. `scripts/runtime_version_contract_test.mjs` explicitly requires Runtime `PRODUCT_VERSION` to match the Flutter semantic product version. This is a valid fail-closed release guard, not a flaky test.
+
+Fix committed on the same PR branch as `b70649cadda3634a4b90d80b9211034cf0726cc8`: Runtime `PRODUCT_VERSION` is now `1.0.30`. Exact-head CI must rerun and become green before merge.
 
 ## UX decisions
 - Al-Qahtani/Basri stays primary; TMDB is explicit fallback.
@@ -118,7 +127,7 @@ Still pending:
 19. Simplified grouped settings.
 20. Image/cache/memory/cancellation performance budget.
 
-Current completion: #11 is in progress. Registry/health/opaque refs are merged and the bounded probe/classifier is now being added as the next small regression-tested slice.
+Current completion: #11 is in progress. Registry/health/opaque refs are merged and the bounded probe/classifier is the active regression-tested slice in PR #110.
 
 ## Protected regressions
 Protect completed-file verification before ✓, local-only export/playback, `.part` rules, resume identity, Range/206/Content-Range/Accept-Ranges, MP4/HLS/MPEG-TS, independent Watch/Download resolution, trusted filenames, score precedence, match failover/logos/Saudi time, episode_id vs episode_number, search dedupe, 30+30 pagination, CORS/SSRF/allowlists, media-ref expiry, Arabic RTL, TV LEANBACK/D-Pad/focus, and iOS UNSIGNED/no-codesign labeling.
@@ -128,16 +137,17 @@ Protect completed-file verification before ✓, local-only export/playback, `.pa
 - `scripts/fallback_probe_test.mjs` — deterministic probe/classification regression coverage.
 - `package.json` — includes probe syntax/test coverage in `npm run check`.
 - `flutter_app/pubspec.yaml` — version/build `1.0.30+30`.
-- `docs/AUTONOMOUS_DEVELOPMENT_STATE.md` — release evidence and current branch handoff.
+- `server/content-runtime.mjs` — Runtime product version aligned to `1.0.30` after Content runtime CI caught the mismatch.
+- `docs/AUTONOMOUS_DEVELOPMENT_STATE.md` — v1.0.29 evidence, PR #110 CI root cause/fix, P0/P1 state and next goals.
 
 ## أهداف التشغيل التالي
 1. Finish PR #110 exact-head CI.
-   - Require all triggered checks green on final head.
-   - Inspect failures from logs and fix on the same branch only.
-   - Merge only when exact-head checks and mergeability are green.
+   - Require all triggered checks green on the final head after the state update.
+   - Confirm Content runtime version-contract regression passes with Runtime `1.0.30`.
+   - Fix any new failure on this same branch only; merge only when exact-head green and mergeable.
 2. Verify v1.0.30 same-SHA delivery after merge.
    - Flutter foundation Mobile/TV/iOS triplet on final main SHA.
-   - Match and Independent download gates on same SHA.
+   - Match and Independent download gates on the same SHA.
    - Release tag/assets/SHA256/PROVENANCE after all protected gates.
 3. Wire bounded probe through Runtime safely.
    - Accept opaque fallback ref only.
