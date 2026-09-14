@@ -29,7 +29,7 @@ The user verified on a real iPhone running v1.0.25 that `Spider Man Brand New Da
 
 v1.0.26+ contains final-file checks, local-path persistence/enumeration, internal offline playback, missing-file recovery and local share/export. The status remains `FIXED IN CODE / CI VERIFIED; PHYSICAL-DEVICE RECHECK PENDING` until a newer build is validated on a real iPhone end-to-end.
 
-PR #115 strengthens the P0 contract further: a native/background transfer reporting `completed` is now forced through a `verifying` state and cannot become user-visible `completed` unless an explicit completion verifier confirms the final local file. With no verifier, completion fails closed as `FINAL_FILE_VERIFICATION_FAILED`.
+PR #115 strengthens the P0 contract further: a native/background transfer reporting `completed` is forced through a `verifying` state and cannot become user-visible `completed` unless an explicit completion verifier confirms the final local file. With no verifier, completion fails closed as `FINAL_FILE_VERIFICATION_FAILED`.
 
 Required physical retest: download -> restart app -> Library -> tap completed item -> disable network -> local internal playback -> start/seek/pause/resume/duration -> missing-file recovery -> Save to Files/share from the local file only.
 
@@ -129,8 +129,8 @@ Protect file existence/readability/size before ✓, local-only export/playback, 
 
 ## Blockers / decisions
 - No permission blocker is known.
-- PR #115 must now be treated as a product PR because it contains Flutter behavior/contracts, not merely documentation.
-- Product version was bumped to `1.0.33+33` and Runtime to `1.0.33` before merge.
+- PR #115 must be treated as a product PR because it contains Flutter behavior/contracts, not merely documentation.
+- Product version is `1.0.33+33` and Runtime is `1.0.33` before merge.
 - The v1.0.25 iPhone bug remains authoritative physical evidence until a newer real-device retest passes.
 
 ## أهداف التشغيل التالي
