@@ -4,27 +4,32 @@
 GitHub is authoritative. Live Runtime behavior and the user's physical-device evidence are behavioral references. CI never upgrades a device-only item to PHYSICAL-DEVICE VERIFIED.
 
 ## Current GitHub state
-- `main`: `6c218ba2aa48da164d6b1864d351446faaddaef4` (merged PR #108).
-- Open PR: #109 `Run Match runtime on every main SHA`.
-- PR #109 branch: `fix-match-main-trigger-109`.
-- PR #109 functional head before this state update: `28eed2367271c6baa01321ffe897fa6ea133914e`.
-- Product version/build remains `1.0.29+29`.
-- Latest verified GitHub Release remains `v1.0.28`, target `d388f9f6cacf9ebe2be2fb12fe7e22cffd4d5ee8`.
-- v1.0.29 is NOT PUBLISHED.
+- `main`: `634f3e324adeebb06bcf8bac4272104df19f6c0e` (merged PR #109).
+- Open PR: #110 `Add bounded fallback media probing`.
+- Active branch: `feat/bounded-fallback-probing-110`.
+- Current functional head after CI repair: `b70649cadda3634a4b90d80b9211034cf0726cc8`.
+- Product version/build on this branch: `1.0.30+30`.
+- Runtime `PRODUCT_VERSION` is aligned to `1.0.30` on the same branch.
+- v1.0.29 is RELEASE VERIFIED from exact main SHA `634f3e324adeebb06bcf8bac4272104df19f6c0e`.
 
-## Release root-cause chain and current fix
-PRs #103-#108 repaired exact release binding, rerun handling, Runtime version alignment, release gate naming, Independent download resolution on every main SHA, and Flutter foundation on every main SHA.
-
-After PR #108 merged, exact-main Flutter foundation run `34787600300` succeeded on `6c218ba2aa48da164d6b1864d351446faaddaef4` and correctly triggered Release run `34787888148`. The release bound to the same SHA/run and passed version validation, but protected-gate polling timed out because `Match runtime` had no run on that exact final-main SHA. The release log repeatedly reported `Missing: ['Match runtime']` with no pending or failed candidate.
-
-Root cause: `.github/workflows/match-runtime.yml` still path-filtered pushes to `main` to `server/**`, `scripts/match_runtime_test.mjs`, or its own workflow file. Workflow/docs-only merges therefore produced no Match runtime check, while Release requires that check on the exact release SHA.
-
-PR #109 fixes the topology without bypassing validation: pull requests remain path-filtered, but every push to `main` runs Match runtime. Its first functional head `28eed2367271c6baa01321ffe897fa6ea133914e` already produced a successful PR Match runtime run `34790569437`; the remaining exact-head PR checks are still completing.
+## Release v1.0.29 evidence
+- Flutter foundation run `34793591027`: SUCCESS on exact SHA `634f3e324adeebb06bcf8bac4272104df19f6c0e`.
+- Release Flutter triplet run `34793925780`: SUCCESS on the same SHA.
+- Release tag: `v1.0.29`.
+- Release target: `634f3e324adeebb06bcf8bac4272104df19f6c0e`.
+- Assets:
+  - `Al-Qahtani-Mobile-v1.0.29.apk` — 55,887,352 bytes — SHA-256 `93b024cbc37446dc218ed3185b33765e7b2539148477b675e29b04c55dde5a13`.
+  - `Al-Qahtani-TV-v1.0.29.apk` — 55,887,456 bytes — SHA-256 `4618c2beae15ff0b3b6843bcafa6248f656c5616e532a830ee4f22a06a395aeb`.
+  - `Al-Qahtani-iOS-v1.0.29-UNSIGNED.ipa` — 7,896,071 bytes — SHA-256 `77aea71b64c4b2123c14676803af83e58e4d75db042353d08b2915e53d7a97cc`.
+  - `SHA256SUMS.txt` and `PROVENANCE.json` are published with the release.
+- Android Mobile identity/signature verification passed in Flutter foundation.
+- Android TV LEANBACK/source requirements, packaged features, identity and signature checks passed.
+- iOS bundle verification explicitly confirmed UNSIGNED/no-codesign packaging.
 
 ## Physical-device P0 evidence
 The user verified on iPhone v1.0.25 that `Spider Man Brand New Day` appeared as a completed 838.4 MB download with ✓ in Library, but Files did not show it and tapping the completed card did nothing. This remains the authoritative historical `FAILED / PHYSICAL-DEVICE VERIFIED BUG` for v1.0.25.
 
-v1.0.26+ contains completed-file verification, local-path enumeration, internal offline playback, missing-file recovery, and local share/export. Status remains `FIXED IN CODE / CI VERIFIED; PHYSICAL-DEVICE RECHECK PENDING` until a newer release is tested on a real iPhone.
+v1.0.26+ contains completed-file verification, local-path enumeration, internal offline playback, missing-file recovery, and local share/export. Status remains `FIXED IN CODE / CI VERIFIED; PHYSICAL-DEVICE RECHECK PENDING` until v1.0.29 or later is tested on a real iPhone.
 
 ## TMDB fallback state
 Merged foundation:
@@ -41,26 +46,34 @@ Pending user-complete UX:
 - no TMDB playback CTA until safe fallback playback hand-off is complete.
 
 ## 27-provider fallback pool
-Merged:
+Merged before this run:
 - exactly 27 server-side provider adapters;
 - positive TMDB/season/episode validation;
-- HTTPS-only URL generation and hostname allowlists;
-- provider templates and upstream URLs remain server-side;
-- `ProviderHealthRegistry` scoring, latency, failures and circuit breaker;
+- HTTPS-only generated URLs and hostname allowlists;
+- provider templates/upstream URLs remain server-side;
+- `ProviderHealthRegistry` scoring, latency, failure tracking and circuit breaker;
 - deterministic ranking;
 - TTL-bound opaque refs `fallback:<opaque-id>`;
 - bounded ref storage/expiry cleanup;
 - fallback resolve/next routes;
-- success requires explicit playback signal, never HTTP 200 alone;
-- failure records and next-provider selection;
-- regression tests for URL leakage, expiry, malformed identity/ref, health/circuit behavior and rotation.
+- success requires explicit playback signal and never HTTP 200 alone.
+
+Current v1.0.30 branch adds the first bounded probing/classification layer:
+- byte-bounded GET probe using `Range: bytes=0-1023`;
+- per-probe timeout clamped to 250–5000 ms;
+- redirects are `manual` and are not followed during probing;
+- MP4/HLS/MPEG-TS classification by response content type;
+- HTML/embed classification remains non-playable until real player evidence exists;
+- HTTP 200 with unsupported content remains non-playable;
+- response bodies are cancelled after header classification;
+- probe result never exposes an upstream URL;
+- deterministic unit/regression coverage added in `scripts/fallback_probe_test.mjs`.
 
 Still pending:
-- bounded live network probing;
-- direct MP4/HLS/MPEG-TS vs embed classification;
-- safe opaque-ref hand-off/proxy to internal player;
-- real player success/failure evidence;
-- automatic in-session next-provider failover.
+- safe Runtime endpoint/integration from opaque ref to probe result;
+- redirect allowlist policy if selected providers require a redirect hop;
+- internal-player proxy/hand-off for classified direct media;
+- real player success/failure evidence and automatic in-session next-provider failover.
 
 ## P0/P1 status
 1. Completed iPhone download tap bug: FIXED IN CODE / CI VERIFIED; PHYSICAL-DEVICE RECHECK PENDING.
@@ -71,10 +84,17 @@ Still pending:
 6. Match scores without fake 0-0: FIXED IN CODE / CI VERIFIED.
 7. Search posters/type/year/dedupe: baseline present.
 8. TMDB search/details/seasons: MERGED; user-facing source selector pending.
-9. 27-provider health/circuit/opaque refs: MERGED; probing/player integration pending.
+9. 27-provider health/circuit/opaque refs: MERGED; bounded probe classifier is IN PR; exact-head CI rerun pending after version-contract repair.
 10. Favorites/Continue Watching/Downloads/History: baseline present; full physical persistence lifecycle pending.
-11. TV LEANBACK/D-Pad/focus: CI verified in prior build gates; v1.0.29 release pending.
-12. Web/PWA: Pages and Web gates remain protected; final v1.0.29 release-SHA verification pending.
+11. TV LEANBACK/D-Pad/focus: CI VERIFIED in v1.0.29.
+12. Web/PWA: protected Web gates remain enabled; live Pages recheck is required after each product merge.
+
+## PR #110 CI evidence / root cause
+Initial head `d5b90f242cf367a60166c95733b43ef2677fbea2` produced a nearly-green exact-head matrix. Flutter foundation, Match runtime, Independent download resolution, Web smoke, Mobile WebKit, Remote movie playback, Live provider, HLS media proxy, CORS, Basri contracts, media-ref expiry and trusted-filename checks all succeeded. `Content runtime` run `34796988089` failed in the `Run content runtime regressions` step.
+
+Root cause was a version-contract mismatch introduced by correctly bumping Flutter to `1.0.30+30` while leaving `server/content-runtime.mjs` at `PRODUCT_VERSION = "1.0.29"`. `scripts/runtime_version_contract_test.mjs` explicitly requires Runtime `PRODUCT_VERSION` to match the Flutter semantic product version. This is a valid fail-closed release guard, not a flaky test.
+
+Fix committed on the same PR branch as `b70649cadda3634a4b90d80b9211034cf0726cc8`: Runtime `PRODUCT_VERSION` is now `1.0.30`. Exact-head CI must rerun and become green before merge.
 
 ## UX decisions
 - Al-Qahtani/Basri stays primary; TMDB is explicit fallback.
@@ -107,63 +127,57 @@ Still pending:
 19. Simplified grouped settings.
 20. Image/cache/memory/cancellation performance budget.
 
-Current completion: #11 has registry/health/opaque-ref foundation but is not user-complete. Local share/export and offline playback exist in code but still require physical-device recheck.
+Current completion: #11 is in progress. Registry/health/opaque refs are merged and the bounded probe/classifier is the active regression-tested slice in PR #110.
 
 ## Protected regressions
 Protect completed-file verification before ✓, local-only export/playback, `.part` rules, resume identity, Range/206/Content-Range/Accept-Ranges, MP4/HLS/MPEG-TS, independent Watch/Download resolution, trusted filenames, score precedence, match failover/logos/Saudi time, episode_id vs episode_number, search dedupe, 30+30 pagination, CORS/SSRF/allowlists, media-ref expiry, Arabic RTL, TV LEANBACK/D-Pad/focus, and iOS UNSIGNED/no-codesign labeling.
 
-## CI / delivery evidence
-- PR #108 merged as `6c218ba2aa48da164d6b1864d351446faaddaef4`.
-- Exact-main Flutter foundation run `34787600300`: SUCCESS on `6c218ba2...` and produced the release trigger.
-- Release run `34787888148`: FAILURE only at protected-gate polling; exact Flutter-run binding and version validation succeeded.
-- Release failure evidence: `Match runtime` was the sole missing protected gate on `6c218ba2...`.
-- PR #109 functional head `28eed2367271c6baa01321ffe897fa6ea133914e`.
-- PR #109 Match runtime run `34790569437`: SUCCESS.
-- On that functional head, Web smoke, Original Basri download/player, Media reference expiry, Remote CORS, Content runtime, CORS boundary and Trusted download filename completed SUCCESS; Remote movie playback, Live provider and Mobile WebKit were still running when this state update was prepared.
-- Latest Release API still returns v1.0.28; v1.0.29 remains absent.
-
-## Release state
-- v1.0.28: RELEASE VERIFIED with Mobile APK + TV APK + iOS UNSIGNED IPA + SHA256SUMS + PROVENANCE.
-- v1.0.29: RELEASE NOT PUBLISHED. Current root cause is fixed in PR #109, but final exact-head CI, merge, post-merge Match/Flutter/download gates and Release API verification remain pending.
+## Changed files in current branch
+- `server/fallback-probe.mjs` — bounded probe and media/embed classifier.
+- `scripts/fallback_probe_test.mjs` — deterministic probe/classification regression coverage.
+- `package.json` — includes probe syntax/test coverage in `npm run check`.
+- `flutter_app/pubspec.yaml` — version/build `1.0.30+30`.
+- `server/content-runtime.mjs` — Runtime product version aligned to `1.0.30` after Content runtime CI caught the mismatch.
+- `docs/AUTONOMOUS_DEVELOPMENT_STATE.md` — v1.0.29 evidence, PR #110 CI root cause/fix, P0/P1 state and next goals.
 
 ## أهداف التشغيل التالي
-1. Finish PR #109 exact-head CI.
-   - Require every triggered check to complete green on final head.
-   - Inspect failures from logs and fix only on the same branch.
-   - Merge only when mergeable and final-head checks are green.
-2. Verify final-main trigger topology.
-   - Confirm Flutter foundation runs on merge SHA.
-   - Confirm Independent download resolution runs on same SHA.
-   - Confirm Match runtime runs on same SHA.
-3. Publish and verify v1.0.29.
-   - Require one-SHA Mobile APK, TV APK and iOS UNSIGNED IPA.
-   - Verify SHA256SUMS + PROVENANCE.
-   - Re-read Release API, target SHA, asset sizes/digests/downloadability.
-4. Verify Web/PWA on release SHA.
-   - Pages + Web smoke.
-   - Mobile WebKit + CORS.
-   - Range/download/Safari regressions.
-5. Add bounded provider probing.
-   - Per-provider timeout and total budget.
-   - Separate reachability from playable evidence.
-   - Never promote HTTP 200 alone to success.
-6. Add media/embed classification.
-   - Detect MP4/HLS/MPEG-TS safely.
-   - Classify embed HTML separately.
-   - Reject unsupported responses fail-closed.
-7. Connect opaque refs to internal player.
-   - Keep upstream targets server-side.
-   - Preserve Range/206 for direct media.
-   - Add origin-restricted hand-off.
-8. Add player evidence and automatic failover.
-   - Require playing/media signal for success.
-   - Report bounded failures server-side.
-   - Rotate after real playback failure.
-9. Add TMDB fallback UX after safe playback.
+1. Finish PR #110 exact-head CI.
+   - Require all triggered checks green on the final head after the state update.
+   - Confirm Content runtime version-contract regression passes with Runtime `1.0.30`.
+   - Fix any new failure on this same branch only; merge only when exact-head green and mergeable.
+2. Verify v1.0.30 same-SHA delivery after merge.
+   - Flutter foundation Mobile/TV/iOS triplet on final main SHA.
+   - Match and Independent download gates on the same SHA.
+   - Release tag/assets/SHA256/PROVENANCE after all protected gates.
+3. Wire bounded probe through Runtime safely.
+   - Accept opaque fallback ref only.
+   - Never expose target/provider URL.
+   - Keep redirect handling fail-closed until allowlist policy is explicit.
+4. Add direct-media hand-off.
+   - Preserve Range/206.
+   - Support MP4/HLS/MPEG-TS.
+   - Reject unsupported responses before player launch.
+5. Add automatic in-session fallback.
+   - Record real playback failure.
+   - Move to next healthy provider within a bounded attempt budget.
+   - Stop after budget/circuit limits.
+6. Add real playback evidence.
+   - Do not mark provider success on reachability alone.
+   - Require media/playing signal.
+   - Record latency/container/range capability after actual playback.
+7. Add TMDB fallback UX after playback safety.
    - Keep القحطاني default.
    - Add explicit fallback CTA/source selector.
-   - Clearly label fallback results without mixed lists.
-10. Continue P0 physical validation tracking.
+   - Label fallback results without mixed lists.
+8. Continue P0 physical-device validation tracking.
    - Completed download → offline local player.
-   - Verify seek/pause/resume/duration/missing-file recovery.
+   - Verify seek/pause/resume/duration and missing-file recovery.
    - Verify Save to Files/share from local file only.
+9. Verify Web/PWA after merge.
+   - Pages + Web smoke + Mobile WebKit.
+   - CORS/Range/download regressions.
+   - Confirm no product regression from Runtime-only changes.
+10. Continue incremental UX improvements only after P0/P1 gates.
+   - Prefer fewer taps and clear recovery CTAs.
+   - Preserve TV focus and Arabic RTL.
+   - Avoid decorative changes without user value.
