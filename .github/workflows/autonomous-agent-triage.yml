@@ -1,6 +1,8 @@
 name: Autonomous Agent Triage
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_run:
     workflows: ["Autonomous Agent Observer"]
     types: [completed]
@@ -146,7 +148,6 @@ jobs:
           state_path = Path('docs/AUTONOMOUS_DEVELOPMENT_STATE.md')
           state = state_path.read_text(encoding='utf-8', errors='replace') if state_path.exists() else ''
 
-          # Device verification is tracked independently from CI failure classification.
           device_pending = bool(re.search(
               r'PHYSICAL-DEVICE (?:RECHECK )?PENDING|PHYSICAL-DEVICE NOT VERIFIED|DEVICE_REQUIRED',
               state,
