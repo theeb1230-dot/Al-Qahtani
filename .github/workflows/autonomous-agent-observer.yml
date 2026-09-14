@@ -1,0 +1,152 @@
+name: Autonomous Agent Observer
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: autonomous-agent-observer
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect repository snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p agent-report
+
+          MAIN_SHA="$(git rev-parse HEAD)"
+          OPEN_PRS="$(gh api "repos/$REPO/pulls?state=open&per_page=20")"
+          LATEST_RELEASE="$(gh api "repos/$REPO/releases/latest" 2>/dev/null || printf '{}')"
+          RUNS="$(gh api "repos/$REPO/actions/runs?per_page=50")"
+
+          python3 - <<'PY'
+          import json, os, subprocess, datetime
+          from pathlib import Path
+
+          def sh(*args):
+              return subprocess.check_output(args, text=True).strip()
+
+          repo = os.environ['REPO']
+          main_sha = sh('git', 'rev-parse', 'HEAD')
+          state_file = Path('docs/AUTONOMOUS_DEVELOPMENT_STATE.md')
+          state_excerpt = state_file.read_text(encoding='utf-8')[:12000] if state_file.exists() else ''
+
+          snapshot = {
+              'generated_at_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'repository': repo,
+              'main_sha': main_sha,
+              'state_document_present': state_file.exists(),
+              'state_excerpt': state_excerpt,
+              'policy': {
+                  'source_of_truth': 'github',
+                  'single_open_pr': True,
+                  'exact_head_ci_required': True,
+                  'device_verification_cannot_be_inferred_from_ci': True,
+              },
+          }
+          Path('agent-report/state-snapshot.json').write_text(
+              json.dumps(snapshot, ensure_ascii=False, indent=2), encoding='utf-8'
+          )
+          PY
+
+      - name: Collect open PR metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/pulls?state=open&per_page=20" > agent-report/open-prs.json
+
+      - name: Collect recent workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/actions/runs?per_page=50" > agent-report/workflow-runs.json
+
+      - name: Collect latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/releases/latest" > agent-report/latest-release.json 2>/dev/null || printf '{}\n' > agent-report/latest-release.json
+
+      - name: Produce Markdown health summary
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          prs = json.loads(Path('agent-report/open-prs.json').read_text())
+          runs = json.loads(Path('agent-report/workflow-runs.json').read_text()).get('workflow_runs', [])
+          release = json.loads(Path('agent-report/latest-release.json').read_text())
+          snap = json.loads(Path('agent-report/state-snapshot.json').read_text())
+
+          failed = [r for r in runs if r.get('conclusion') == 'failure'][:10]
+          in_progress = [r for r in runs if r.get('status') != 'completed'][:10]
+
+          lines = [
+              '# Autonomous Agent Observer Report',
+              '',
+              f"- Generated: `{snap['generated_at_utc']}`",
+              f"- Main SHA: `{snap['main_sha']}`",
+              f"- Open PRs: `{len(prs)}`",
+              f"- Latest release: `{release.get('tag_name', 'none')}`",
+              f"- Recent failed runs: `{len(failed)}`",
+              f"- Recent in-progress runs: `{len(in_progress)}`",
+              '',
+          ]
+
+          if len(prs) > 1:
+              lines += ['## Policy warning', '- More than one open PR exists; autonomous executor must not create another PR.', '']
+
+          if failed:
+              lines += ['## Recent failures']
+              for r in failed:
+                  lines.append(f"- `{r.get('name')}` on `{str(r.get('head_sha',''))[:12]}`: {r.get('html_url')}")
+              lines.append('')
+
+          if in_progress:
+              lines += ['## In progress']
+              for r in in_progress:
+                  lines.append(f"- `{r.get('name')}` on `{str(r.get('head_sha',''))[:12]}`: `{r.get('status')}`")
+              lines.append('')
+
+          lines += [
+              '## Safety status',
+              '- Observer is read-only.',
+              '- No code mutation or merge is performed by this workflow.',
+              '- CI does not promote physical-device checks to verified.',
+          ]
+          Path('agent-report/report.md').write_text('\n'.join(lines), encoding='utf-8')
+
+      - name: Upload observer report
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomous-agent-observer-report
+          path: agent-report/
+          if-no-files-found: error
+          retention-days: 14
