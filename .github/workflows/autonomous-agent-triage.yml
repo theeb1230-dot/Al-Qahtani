@@ -26,6 +26,7 @@ concurrency:
 jobs:
   triage:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -104,7 +105,8 @@ jobs:
             --name autonomous-agent-observer-report \
             --dir observer-report
 
-      - name: Collect exact-SHA workflow evidence
+      - name: Wait for exact-SHA evidence to settle
+        id: settle
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -113,16 +115,64 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh api "repos/$REPO/actions/runs?per_page=100" > triage-report/recent-runs.json
 
-          jq --arg sha "$TARGET_SHA" --arg current "$CURRENT_RUN_ID" '
-            [.workflow_runs[]
-              | select(.head_sha == $sha)
-              | select((.id|tostring) != $current)]
-          ' triage-report/recent-runs.json > triage-report/target-runs.json
+          max_wait_seconds=720
+          poll_seconds=20
+          min_observation_seconds=60
+          stable_required=2
+          start_epoch="$(date +%s)"
+          stable_complete=0
+          settled=false
+
+          while true; do
+            gh api "repos/$REPO/actions/runs?per_page=100" > triage-report/recent-runs.json
+            jq --arg sha "$TARGET_SHA" --arg current "$CURRENT_RUN_ID" '
+              [.workflow_runs[]
+                | select(.head_sha == $sha)
+                | select((.id|tostring) != $current)
+                | select(.name != "Autonomous Agent Triage")]
+            ' triage-report/recent-runs.json > triage-report/target-runs.json
+
+            total="$(jq 'length' triage-report/target-runs.json)"
+            active="$(jq '[.[] | select(.status != "completed")] | length' triage-report/target-runs.json)"
+            now_epoch="$(date +%s)"
+            elapsed="$((now_epoch - start_epoch))"
+
+            echo "evidence_poll elapsed=${elapsed}s total=${total} active=${active} stable=${stable_complete}/${stable_required}"
+
+            if [ "$active" -eq 0 ] && [ "$elapsed" -ge "$min_observation_seconds" ]; then
+              stable_complete="$((stable_complete + 1))"
+            else
+              stable_complete=0
+            fi
+
+            if [ "$stable_complete" -ge "$stable_required" ]; then
+              settled=true
+              break
+            fi
+
+            if [ "$elapsed" -ge "$max_wait_seconds" ]; then
+              break
+            fi
+
+            sleep "$poll_seconds"
+          done
 
           jq '[.[] | select(.status == "completed" and .conclusion == "failure")]' \
             triage-report/target-runs.json > triage-report/failed-runs.json
+          jq '[.[] | select(.status != "completed")]' \
+            triage-report/target-runs.json > triage-report/unsettled-runs.json
+
+          total="$(jq 'length' triage-report/target-runs.json)"
+          failed="$(jq 'length' triage-report/failed-runs.json)"
+          unsettled="$(jq 'length' triage-report/unsettled-runs.json)"
+
+          {
+            echo "settled=$settled"
+            echo "total_run_count=$total"
+            echo "failed_run_count=$failed"
+            echo "unsettled_run_count=$unsettled"
+          } >> "$GITHUB_OUTPUT"
 
           : > triage-report/failed-logs.txt
           jq -r '.[].id' triage-report/failed-runs.json | while read -r run_id; do
@@ -136,6 +186,9 @@ jobs:
         id: classify
         env:
           TARGET_SHA: ${{ steps.context.outputs.target_sha }}
+          EVIDENCE_SETTLED: ${{ steps.settle.outputs.settled }}
+          TOTAL_RUN_COUNT: ${{ steps.settle.outputs.total_run_count }}
+          UNSETTLED_RUN_COUNT: ${{ steps.settle.outputs.unsettled_run_count }}
         shell: python
         run: |
           import json
@@ -147,6 +200,9 @@ jobs:
           logs = Path('triage-report/failed-logs.txt').read_text(encoding='utf-8', errors='replace')
           state_path = Path('docs/AUTONOMOUS_DEVELOPMENT_STATE.md')
           state = state_path.read_text(encoding='utf-8', errors='replace') if state_path.exists() else ''
+          evidence_settled = os.environ.get('EVIDENCE_SETTLED', 'false').lower() == 'true'
+          total_runs = int(os.environ.get('TOTAL_RUN_COUNT', '0'))
+          unsettled_runs = int(os.environ.get('UNSETTLED_RUN_COUNT', '0'))
 
           device_pending = bool(re.search(
               r'PHYSICAL-DEVICE (?:RECHECK )?PENDING|PHYSICAL-DEVICE NOT VERIFIED|DEVICE_REQUIRED',
@@ -184,11 +240,16 @@ jobs:
               r'SyntaxError', r'TypeError', r'ReferenceError',
           ]
 
-          if not failed:
+          if not evidence_settled:
               classification = 'UNKNOWN'
-              reason = 'No completed failed workflow run was found for the exact target SHA; there is no CI defect to classify.'
-              evidence = 'failed_runs=0 for target_sha=' + os.environ['TARGET_SHA']
-              proposed = 'Take no code action. Preserve any physical-device pending items as separate verification gates.'
+              reason = 'The exact-SHA workflow set did not settle within the bounded observation window.'
+              evidence = f'total_runs={total_runs}; unsettled_runs={unsettled_runs}; target_sha=' + os.environ['TARGET_SHA']
+              proposed = 'Do not modify code. Re-evaluate after remaining exact-SHA runs complete.'
+          elif not failed:
+              classification = 'NO_CI_FAILURE'
+              reason = 'The observed exact-SHA workflow set settled with no completed failed runs.'
+              evidence = f'total_runs={total_runs}; failed_runs=0; target_sha=' + os.environ['TARGET_SHA']
+              proposed = 'Take no code action. Keep physical-device verification as an independent gate.'
           elif hit(security_patterns):
               classification = 'SECURITY_BOUNDARY'
               reason = 'Failure evidence indicates an authorization, secret, OIDC, provisioning, or signing boundary.'
@@ -226,7 +287,10 @@ jobs:
               'reason': reason,
               'evidence': evidence,
               'proposed_action': proposed,
+              'total_run_count': total_runs,
               'failed_run_count': len(failed),
+              'unsettled_run_count': unsettled_runs,
+              'evidence_settled': evidence_settled,
               'device_verification_pending': device_pending,
               'guardrails': {
                   'code_mutation': False,
@@ -240,11 +304,9 @@ jobs:
               json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8'
           )
 
-          output = os.environ['GITHUB_OUTPUT']
-          with open(output, 'a', encoding='utf-8') as f:
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
               for key in ('classification', 'reason', 'evidence', 'proposed_action'):
-                  value = result[key].replace('\n', ' ')
-                  f.write(f'{key}={value}\n')
+                  f.write(f"{key}={result[key].replace(chr(10), ' ')}\n")
               f.write(f"failed_run_count={result['failed_run_count']}\n")
               f.write(f"device_pending={'true' if device_pending else 'false'}\n")
 
@@ -254,6 +316,9 @@ jobs:
           TARGET_SHA: ${{ steps.context.outputs.target_sha }}
           ACTIVE_PR: ${{ steps.context.outputs.active_pr }}
           PR_COUNT: ${{ steps.context.outputs.pr_count }}
+          EVIDENCE_SETTLED: ${{ steps.settle.outputs.settled }}
+          TOTAL_COUNT: ${{ steps.settle.outputs.total_run_count }}
+          UNSETTLED_COUNT: ${{ steps.settle.outputs.unsettled_run_count }}
           CLASSIFICATION: ${{ steps.classify.outputs.classification }}
           REASON: ${{ steps.classify.outputs.reason }}
           EVIDENCE: ${{ steps.classify.outputs.evidence }}
@@ -276,6 +341,9 @@ jobs:
               f"- Target exact SHA: `{os.environ['TARGET_SHA']}`",
               f'- Open PR count: `{os.environ["PR_COUNT"]}`',
               f'- Active PR: `{active_pr}`',
+              f'- Evidence settled: `{os.environ["EVIDENCE_SETTLED"]}`',
+              f'- Exact-SHA runs observed: `{os.environ["TOTAL_COUNT"]}`',
+              f'- Unsettled exact-SHA runs: `{os.environ["UNSETTLED_COUNT"]}`',
               f'- Failed exact-SHA runs: `{os.environ["FAILED_COUNT"]}`',
               '',
               '## Classification',
