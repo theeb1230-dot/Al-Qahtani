@@ -1,0 +1,364 @@
+name: Autonomous Agent Self-Healing CI
+
+on:
+  workflow_run:
+    workflows: ["Autonomous Agent Triage"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      triage_run_id:
+        description: "Optional completed Triage run ID to evaluate"
+        required: false
+        type: string
+      dry_run:
+        description: "Evaluate policy without rerunning failed jobs"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: autonomous-agent-self-heal-${{ github.event.workflow_run.id || inputs.triage_run_id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  self-heal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Resolve triggering Triage run
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_TRIAGE_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_TRIAGE_RUN_ID: ${{ inputs.triage_run_id }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p self-heal-report triage-artifact
+
+          TRIAGE_RUN_ID="${INPUT_TRIAGE_RUN_ID:-${EVENT_TRIAGE_RUN_ID:-}}"
+          if [ -z "$TRIAGE_RUN_ID" ]; then
+            echo "No Triage run ID available." >&2
+            exit 1
+          fi
+
+          gh api "repos/$REPO/actions/runs/$TRIAGE_RUN_ID" > self-heal-report/triage-run.json
+          TRIAGE_NAME="$(jq -r '.name' self-heal-report/triage-run.json)"
+          TRIAGE_STATUS="$(jq -r '.status' self-heal-report/triage-run.json)"
+          TRIAGE_CONCLUSION="$(jq -r '.conclusion // ""' self-heal-report/triage-run.json)"
+
+          if [ "$TRIAGE_NAME" != "Autonomous Agent Triage" ]; then
+            echo "Refusing non-Triage run: $TRIAGE_NAME" >&2
+            exit 1
+          fi
+          if [ "$TRIAGE_STATUS" != "completed" ]; then
+            echo "Triage run is not completed." >&2
+            exit 1
+          fi
+          if [ "$TRIAGE_CONCLUSION" != "success" ]; then
+            echo "Triage run did not succeed; self-healing is blocked." >&2
+            exit 1
+          fi
+
+          DRY_RUN=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY_RUN="${INPUT_DRY_RUN:-true}"
+          fi
+
+          {
+            echo "triage_run_id=$TRIAGE_RUN_ID"
+            echo "dry_run=$DRY_RUN"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download Triage evidence artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIAGE_RUN_ID: ${{ steps.context.outputs.triage_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$TRIAGE_RUN_ID" \
+            --name autonomous-agent-triage-report \
+            --dir triage-artifact
+
+          test -s triage-artifact/classification.json
+          test -s triage-artifact/context.json
+          test -s triage-artifact/failed-runs.json
+
+      - name: Validate exact-SHA and global policy
+        id: policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TARGET_SHA="$(jq -r '.target_sha' triage-artifact/classification.json)"
+          GLOBAL_CLASSIFICATION="$(jq -r '.classification' triage-artifact/classification.json)"
+          EVIDENCE_SETTLED="$(jq -r '.evidence_settled // false' triage-artifact/classification.json)"
+          DEVICE_PENDING="$(jq -r '.device_verification_pending // false' triage-artifact/classification.json)"
+          ACTIVE_PR="$(jq -r '.active_pr // ""' triage-artifact/context.json)"
+
+          gh api "repos/$REPO/commits/$TARGET_SHA" >/dev/null
+
+          ALLOWED_GLOBAL=false
+          case "$GLOBAL_CLASSIFICATION" in
+            UPSTREAM_TRANSIENT|INFRA_FAILURE) ALLOWED_GLOBAL=true ;;
+            *) ALLOWED_GLOBAL=false ;;
+          esac
+
+          if [ "$EVIDENCE_SETTLED" != "true" ]; then
+            ALLOWED_GLOBAL=false
+          fi
+
+          {
+            echo "target_sha=$TARGET_SHA"
+            echo "global_classification=$GLOBAL_CLASSIFICATION"
+            echo "evidence_settled=$EVIDENCE_SETTLED"
+            echo "device_pending=$DEVICE_PENDING"
+            echo "active_pr=$ACTIVE_PR"
+            echo "allowed_global=$ALLOWED_GLOBAL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Reclassify each failed run independently
+        id: classify_runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ steps.policy.outputs.target_sha }}
+          ALLOWED_GLOBAL: ${{ steps.policy.outputs.allowed_global }}
+        shell: python
+        run: |
+          import json, os, re, subprocess
+          from pathlib import Path
+
+          failed_runs = json.loads(Path('triage-artifact/failed-runs.json').read_text(encoding='utf-8'))
+          target_sha = os.environ['TARGET_SHA']
+          globally_allowed = os.environ.get('ALLOWED_GLOBAL', 'false').lower() == 'true'
+
+          patterns = {
+              'SECURITY_BOUNDARY': [r'permission denied', r'resource not accessible by integration', r'HTTP 403', r'bad credentials', r'oidc', r'provisioning profile', r'code.?sign(?:ing)?', r'not authorized'],
+              'CODE_DEFECT': [r'flutter analyze.*(?:error|failed)', r'error: .*\\.dart:', r'compilation failed', r'build failed', r'uncaught exception', r'assertion(?:error| failed)', r'expected:.*actual:', r'Test failed', r'SyntaxError', r'TypeError', r'ReferenceError'],
+              'TEST_DEFECT': [r'fixture (?:not found|missing)', r'test harness', r'golden file .* missing', r'mock .* (?:missing|invalid)', r'test setup failed'],
+              'INFRA_FAILURE': [r'no space left on device', r'runner (?:was )?lost', r'the operation was canceled', r'hosted runner', r'failed to start runner', r'actions service is unavailable'],
+              'UPSTREAM_TRANSIENT': [r'ETIMEDOUT', r'ECONNRESET', r'ECONNREFUSED', r'socket hang up', r'timed? out', r'HTTP (?:429|502|503|504)', r'bad gateway', r'service unavailable', r'gateway timeout', r'TLS handshake timeout', r'temporary failure in name resolution', r'network is unreachable'],
+          }
+
+          def has(kind, text):
+              return any(re.search(p, text, re.I | re.M) for p in patterns[kind])
+
+          results = []
+          for run in failed_runs:
+              run_id = int(run['id'])
+              meta = json.loads(subprocess.check_output(['gh','api',f"repos/{os.environ['REPO']}/actions/runs/{run_id}"], text=True))
+              head_sha = meta.get('head_sha', '')
+              attempt = int(meta.get('run_attempt') or 1)
+              name = meta.get('name', '')
+
+              proc = subprocess.run(['gh','run','view',str(run_id),'--log-failed'], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+              logs = proc.stdout or ''
+              Path(f'self-heal-report/run-{run_id}-failed.log').write_text(logs, encoding='utf-8', errors='replace')
+
+              forbidden = None
+              for kind in ('SECURITY_BOUNDARY','CODE_DEFECT','TEST_DEFECT'):
+                  if has(kind, logs):
+                      forbidden = kind
+                      break
+
+              eligible_kind = None
+              if forbidden is None:
+                  if has('INFRA_FAILURE', logs):
+                      eligible_kind = 'INFRA_FAILURE'
+                  elif has('UPSTREAM_TRANSIENT', logs):
+                      eligible_kind = 'UPSTREAM_TRANSIENT'
+
+              eligible = bool(
+                  globally_allowed
+                  and head_sha == target_sha
+                  and attempt == 1
+                  and eligible_kind in ('INFRA_FAILURE','UPSTREAM_TRANSIENT')
+                  and forbidden is None
+              )
+
+              if head_sha != target_sha:
+                  reason = 'HEAD_SHA_MISMATCH'
+              elif attempt > 1:
+                  reason = 'ALREADY_RERUN'
+              elif forbidden:
+                  reason = f'BLOCKED_{forbidden}'
+              elif not globally_allowed:
+                  reason = 'GLOBAL_TRIAGE_NOT_ELIGIBLE'
+              elif not eligible_kind:
+                  reason = 'NO_ELIGIBLE_TRANSIENT_OR_INFRA_EVIDENCE'
+              else:
+                  reason = 'ELIGIBLE_SINGLE_RERUN'
+
+              results.append({
+                  'run_id': run_id,
+                  'name': name,
+                  'head_sha': head_sha,
+                  'run_attempt': attempt,
+                  'individual_classification': eligible_kind or forbidden or 'UNKNOWN',
+                  'eligible': eligible,
+                  'reason': reason,
+              })
+
+          Path('self-heal-report/run-policy.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
+          eligible = [r for r in results if r['eligible']]
+          blocked = [r for r in results if not r['eligible']]
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+              f.write(f'eligible_count={len(eligible)}\n')
+              f.write(f'blocked_count={len(blocked)}\n')
+
+      - name: Rerun eligible failed runs once
+        id: rerun
+        if: steps.classify_runs.outputs.eligible_count != '0' && steps.context.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > self-heal-report/rerun-ids.txt
+
+          jq -r '.[] | select(.eligible == true) | .run_id' self-heal-report/run-policy.json | while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh api --method POST "repos/$REPO/actions/runs/$run_id/rerun-failed-jobs"
+            echo "$run_id" >> self-heal-report/rerun-ids.txt
+          done
+
+      - name: Wait for bounded rerun completion
+        id: wait_reruns
+        if: steps.classify_runs.outputs.eligible_count != '0' && steps.context.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_wait_seconds=900
+          poll_seconds=20
+          start="$(date +%s)"
+          settled=false
+
+          while true; do
+            active=0
+            failed_after=0
+            total=0
+            while read -r run_id; do
+              [ -n "$run_id" ] || continue
+              total=$((total + 1))
+              meta="$(gh api "repos/$REPO/actions/runs/$run_id")"
+              status="$(jq -r '.status' <<<"$meta")"
+              conclusion="$(jq -r '.conclusion // ""' <<<"$meta")"
+              attempt="$(jq -r '.run_attempt // 1' <<<"$meta")"
+              if [ "$status" != "completed" ]; then active=$((active + 1)); fi
+              if [ "$status" = "completed" ] && [ "$conclusion" != "success" ]; then failed_after=$((failed_after + 1)); fi
+              printf '%s\t%s\t%s\t%s\n' "$run_id" "$attempt" "$status" "$conclusion"
+            done < self-heal-report/rerun-ids.txt > self-heal-report/rerun-status.tsv
+
+            elapsed=$(( $(date +%s) - start ))
+            echo "rerun_poll elapsed=${elapsed}s total=${total} active=${active} failed_after=${failed_after}"
+            if [ "$active" -eq 0 ]; then settled=true; break; fi
+            if [ "$elapsed" -ge "$max_wait_seconds" ]; then break; fi
+            sleep "$poll_seconds"
+          done
+
+          failed_after="$(awk -F '\t' '$3=="completed" && $4!="success" {c++} END {print c+0}' self-heal-report/rerun-status.tsv 2>/dev/null || echo 0)"
+          {
+            echo "settled=$settled"
+            echo "failed_after=$failed_after"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Request Re-Triage on same exact SHA
+        if: steps.classify_runs.outputs.eligible_count != '0' && steps.context.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.policy.outputs.target_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run autonomous-agent-triage.yml -f target_sha="$TARGET_SHA"
+
+      - name: Build Self-Healing report
+        env:
+          TARGET_SHA: ${{ steps.policy.outputs.target_sha }}
+          GLOBAL_CLASSIFICATION: ${{ steps.policy.outputs.global_classification }}
+          EVIDENCE_SETTLED: ${{ steps.policy.outputs.evidence_settled }}
+          DEVICE_PENDING: ${{ steps.policy.outputs.device_pending }}
+          ACTIVE_PR: ${{ steps.policy.outputs.active_pr }}
+          DRY_RUN: ${{ steps.context.outputs.dry_run }}
+          ELIGIBLE_COUNT: ${{ steps.classify_runs.outputs.eligible_count }}
+          BLOCKED_COUNT: ${{ steps.classify_runs.outputs.blocked_count }}
+          RERUN_SETTLED: ${{ steps.wait_reruns.outputs.settled }}
+          FAILED_AFTER: ${{ steps.wait_reruns.outputs.failed_after }}
+        shell: python
+        run: |
+          import datetime, json, os
+          from pathlib import Path
+
+          policies = json.loads(Path('self-heal-report/run-policy.json').read_text())
+          lines = [
+              '# Autonomous Agent Self-Healing CI Report', '',
+              f"- Timestamp: `{datetime.datetime.now(datetime.timezone.utc).isoformat()}`",
+              f"- Target exact SHA: `{os.environ['TARGET_SHA']}`",
+              f"- Active PR: `#{os.environ['ACTIVE_PR']}`" if os.environ.get('ACTIVE_PR') else '- Active PR: `none/ambiguous`',
+              f"- Global Triage classification: `{os.environ['GLOBAL_CLASSIFICATION']}`",
+              f"- Evidence settled: `{os.environ['EVIDENCE_SETTLED']}`",
+              f"- Dry run: `{os.environ['DRY_RUN']}`",
+              f"- Eligible failed runs: `{os.environ['ELIGIBLE_COUNT']}`",
+              f"- Blocked failed runs: `{os.environ['BLOCKED_COUNT']}`",
+              f"- Physical-device gate pending: `{os.environ['DEVICE_PENDING']}`",
+              '', '## Per-run policy',
+          ]
+          if policies:
+              for p in policies:
+                  lines.append(f"- `{p['name']}` run `{p['run_id']}` attempt `{p['run_attempt']}`: `{p['individual_classification']}` -> `{p['reason']}`")
+          else:
+              lines.append('- No failed runs were supplied by Triage.')
+
+          lines += ['', '## Rerun result']
+          if os.environ.get('ELIGIBLE_COUNT') == '0':
+              lines.append('- No automatic rerun performed.')
+          elif os.environ.get('DRY_RUN') == 'true':
+              lines.append('- Eligible runs detected, but dry-run policy prevented mutation.')
+          else:
+              lines.append(f"- Bounded rerun settled: `{os.environ.get('RERUN_SETTLED','')}`")
+              lines.append(f"- Failed again after the single rerun: `{os.environ.get('FAILED_AFTER','')}`")
+              lines.append('- A Re-Triage dispatch was requested for the same exact SHA.')
+
+          lines += ['', '## Guardrails',
+                    '- Exactly one rerun attempt is allowed (`run_attempt == 1` before retry).',
+                    '- Only individually confirmed `UPSTREAM_TRANSIENT` or `INFRA_FAILURE` runs are eligible.',
+                    '- `CODE_DEFECT`, `TEST_DEFECT`, `SECURITY_BOUNDARY`, `UNKNOWN`, SHA mismatch, and prior reruns are blocked.',
+                    '- No repository contents write permission.',
+                    '- No code changes, PR creation, merge, or device-verification promotion.',
+                    '- A repeated failure is escalated; it is never retried in a loop.']
+          Path('self-heal-report/report.md').write_text('\n'.join(lines), encoding='utf-8')
+
+      - name: Update Control Plane issue 116
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue comment 116 --repo "$REPO" --body-file self-heal-report/report.md
+
+      - name: Upload Self-Healing evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomous-agent-self-heal-report
+          path: self-heal-report/
+          if-no-files-found: error
+          retention-days: 14
