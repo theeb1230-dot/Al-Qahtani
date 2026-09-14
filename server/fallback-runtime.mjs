@@ -4,6 +4,10 @@ import { probeFallbackTarget } from "./fallback-probe.mjs";
 
 const DEFAULT_TTL_MS = 10 * 60_000;
 const MAX_REFS = 256;
+const DIRECT_MEDIA_TYPES = new Map([
+  ["video/mp4", "mp4"],
+  ["video/mp2t", "mpeg-ts"],
+]);
 
 function positiveInt(value, field) {
   const number = Number(value);
@@ -21,6 +25,17 @@ function normalizeIdentity({ tmdbId, type, season, episode } = {}) {
     season: positiveInt(season, "season"),
     episode: positiveInt(episode, "episode"),
   });
+}
+
+function normalizeRange(value) {
+  const range = String(value || "").trim();
+  if (!range) return "bytes=0-";
+  if (!/^bytes=\d*-\d*$/.test(range) || range === "bytes=-") throw new Error("BAD_FALLBACK_RANGE");
+  return range;
+}
+
+function contentTypeOf(response) {
+  return String(response?.headers?.get?.("content-type") || "").split(";", 1)[0].trim().toLowerCase();
 }
 
 export class FallbackPlaybackRuntime {
@@ -87,6 +102,74 @@ export class FallbackPlaybackRuntime {
         redirect: result.redirect === true,
         latency_ms: result.latencyMs,
         status_code: result.statusCode,
+      },
+    };
+  }
+
+  async openDirectMedia(ref, { fetchImpl = globalThis.fetch, range, timeoutMs = 8_000 } = {}) {
+    const entry = this.inspect(ref);
+    const probe = await probeFallbackTarget(entry.target, {
+      fetchImpl,
+      timeoutMs: Math.min(Math.max(Number(timeoutMs) || 2_500, 250), 5_000),
+      now: this.now,
+    });
+    if (probe.redirect) throw new Error("FALLBACK_MEDIA_REDIRECT_REJECTED");
+    if (!probe.playable || probe.kind !== "direct") throw new Error("FALLBACK_MEDIA_NOT_DIRECT");
+    if (probe.container === "hls") throw new Error("FALLBACK_HLS_PROXY_PENDING");
+    if (!["mp4", "mpeg-ts"].includes(probe.container)) throw new Error("FALLBACK_MEDIA_UNSUPPORTED");
+
+    const controller = new AbortController();
+    const timeout = Math.min(Math.max(Number(timeoutMs) || 8_000, 500), 15_000);
+    const timer = setTimeout(() => controller.abort(), timeout);
+    let response;
+    try {
+      response = await fetchImpl(entry.target, {
+        method: "GET",
+        redirect: "manual",
+        cache: "no-store",
+        signal: controller.signal,
+        headers: {
+          Accept: "video/mp4,video/mp2t,application/octet-stream;q=0.8,*/*;q=0.1",
+          Range: normalizeRange(range),
+        },
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") throw new Error("FALLBACK_MEDIA_TIMEOUT");
+      throw new Error("FALLBACK_MEDIA_NETWORK_ERROR");
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const status = Number(response?.status || 0);
+    if ([301, 302, 303, 307, 308].includes(status)) {
+      await response?.body?.cancel?.().catch?.(() => {});
+      throw new Error("FALLBACK_MEDIA_REDIRECT_REJECTED");
+    }
+    if (status !== 200 && status !== 206) {
+      await response?.body?.cancel?.().catch?.(() => {});
+      throw new Error("FALLBACK_MEDIA_BAD_STATUS");
+    }
+    const contentType = contentTypeOf(response);
+    const container = DIRECT_MEDIA_TYPES.get(contentType);
+    if (!container) {
+      await response?.body?.cancel?.().catch?.(() => {});
+      throw new Error("FALLBACK_MEDIA_UNSUPPORTED");
+    }
+    if (probe.container !== container) {
+      await response?.body?.cancel?.().catch?.(() => {});
+      throw new Error("FALLBACK_MEDIA_CLASSIFICATION_CHANGED");
+    }
+    return {
+      response,
+      meta: {
+        ref: String(ref),
+        expiresAt: entry.expiresAt,
+        container,
+        status,
+        contentType,
+        contentLength: response.headers.get("content-length"),
+        contentRange: response.headers.get("content-range"),
+        acceptRanges: response.headers.get("accept-ranges"),
       },
     };
   }
