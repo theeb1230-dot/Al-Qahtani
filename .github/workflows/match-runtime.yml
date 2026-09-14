@@ -8,10 +8,6 @@ on:
       - '.github/workflows/match-runtime.yml'
   push:
     branches: [main]
-    paths:
-      - 'server/**'
-      - 'scripts/match_runtime_test.mjs'
-      - '.github/workflows/match-runtime.yml'
 
 jobs:
   contract:

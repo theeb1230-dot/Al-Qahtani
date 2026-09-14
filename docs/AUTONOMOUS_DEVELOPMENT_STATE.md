@@ -4,20 +4,22 @@
 GitHub is authoritative. Live Runtime behavior and the user's physical-device evidence are behavioral references. CI never upgrades a device-only item to PHYSICAL-DEVICE VERIFIED.
 
 ## Current GitHub state
-- `main`: `18b9ff0e6d582f31894b7fbee6030e50de5f7738` (merged PR #107).
-- Open PR: #108 `Guarantee Flutter release build on every main SHA`.
-- PR #108 branch: `fix/flutter-main-release-trigger-108`.
-- PR #108 functional head before this state update: `f4935b7025cbfd0f04bb4552e89a1eea60193d67`.
+- `main`: `6c218ba2aa48da164d6b1864d351446faaddaef4` (merged PR #108).
+- Open PR: #109 `Run Match runtime on every main SHA`.
+- PR #109 branch: `fix-match-main-trigger-109`.
+- PR #109 functional head before this state update: `28eed2367271c6baa01321ffe897fa6ea133914e`.
 - Product version/build remains `1.0.29+29`.
 - Latest verified GitHub Release remains `v1.0.28`, target `d388f9f6cacf9ebe2be2fb12fe7e22cffd4d5ee8`.
 - v1.0.29 is NOT PUBLISHED.
 
-## Release root cause chain and current fix
-PRs #103-#106 repaired exact product/run binding, rerun handling, Runtime version alignment, and the runtime-gate workflow name. Release run `34781837418` on `d6bff2d3af0e74ce1fbe310e4f841875736121bb` then exposed a trigger-topology defect: `Independent download resolution` was required on the exact release SHA but its main-push trigger was path-filtered. PR #107 fixed that by keeping pull-request path filtering while running `Independent download resolution` on every push to `main`.
+## Release root-cause chain and current fix
+PRs #103-#108 repaired exact release binding, rerun handling, Runtime version alignment, release gate naming, Independent download resolution on every main SHA, and Flutter foundation on every main SHA.
 
-PR #107 exact-head checks were green and it merged as `18b9ff0e6d582f31894b7fbee6030e50de5f7738`. On that final main SHA, `Independent download resolution` run `34785135376` completed SUCCESS, proving the exact-SHA gate now exists after merge.
+After PR #108 merged, exact-main Flutter foundation run `34787600300` succeeded on `6c218ba2aa48da164d6b1864d351446faaddaef4` and correctly triggered Release run `34787888148`. The release bound to the same SHA/run and passed version validation, but protected-gate polling timed out because `Match runtime` had no run on that exact final-main SHA. The release log repeatedly reported `Missing: ['Match runtime']` with no pending or failed candidate.
 
-A second trigger-topology defect then became visible: `Flutter foundation` itself was also path-filtered on pushes to `main`. Since the release workflow is triggered by `workflow_run` completion of `Flutter foundation`, a workflow/docs-only merge such as #107 could never start the release chain on its final main SHA. PR #108 fixes this without bypassing any build or verification: pull requests remain path-filtered, but every push to `main` runs Flutter foundation, producing Mobile APK + TV APK + iOS UNSIGNED IPA and a trustworthy release trigger for the exact main SHA.
+Root cause: `.github/workflows/match-runtime.yml` still path-filtered pushes to `main` to `server/**`, `scripts/match_runtime_test.mjs`, or its own workflow file. Workflow/docs-only merges therefore produced no Match runtime check, while Release requires that check on the exact release SHA.
+
+PR #109 fixes the topology without bypassing validation: pull requests remain path-filtered, but every push to `main` runs Match runtime. Its first functional head `28eed2367271c6baa01321ffe897fa6ea133914e` already produced a successful PR Match runtime run `34790569437`; the remaining exact-head PR checks are still completing.
 
 ## Physical-device P0 evidence
 The user verified on iPhone v1.0.25 that `Spider Man Brand New Day` appeared as a completed 838.4 MB download with ✓ in Library, but Files did not show it and tapping the completed card did nothing. This remains the authoritative historical `FAILED / PHYSICAL-DEVICE VERIFIED BUG` for v1.0.25.
@@ -72,7 +74,7 @@ Still pending:
 9. 27-provider health/circuit/opaque refs: MERGED; probing/player integration pending.
 10. Favorites/Continue Watching/Downloads/History: baseline present; full physical persistence lifecycle pending.
 11. TV LEANBACK/D-Pad/focus: CI verified in prior build gates; v1.0.29 release pending.
-12. Web/PWA: Pages workflow was green on prior exact-main release candidates; final v1.0.29 release-SHA verification pending.
+12. Web/PWA: Pages and Web gates remain protected; final v1.0.29 release-SHA verification pending.
 
 ## UX decisions
 - Al-Qahtani/Basri stays primary; TMDB is explicit fallback.
@@ -111,28 +113,28 @@ Current completion: #11 has registry/health/opaque-ref foundation but is not use
 Protect completed-file verification before ✓, local-only export/playback, `.part` rules, resume identity, Range/206/Content-Range/Accept-Ranges, MP4/HLS/MPEG-TS, independent Watch/Download resolution, trusted filenames, score precedence, match failover/logos/Saudi time, episode_id vs episode_number, search dedupe, 30+30 pagination, CORS/SSRF/allowlists, media-ref expiry, Arabic RTL, TV LEANBACK/D-Pad/focus, and iOS UNSIGNED/no-codesign labeling.
 
 ## CI / delivery evidence
-- main Flutter foundation run `34781535343`: SUCCESS on prior candidate `d6bff2d3af0e74ce1fbe310e4f841875736121bb`.
-- main Pages run `34781535366`: SUCCESS on `d6bff2d3...`.
-- Release run `34781837418`: FAILURE at protected-gate polling because `Independent download resolution` had no exact-SHA run under the old push path filter.
-- PR #107 final exact-head checks: no failures/in-progress before merge.
-- PR #107 merged as `18b9ff0e6d582f31894b7fbee6030e50de5f7738`.
-- main `Independent download resolution` run `34785135376`: SUCCESS on `18b9ff0e6d582f31894b7fbee6030e50de5f7738`.
-- No `Flutter foundation` run was created on `18b9ff0e...` because its main-push trigger remained path-filtered; this is the blocker fixed by PR #108.
-- Latest Release API still returned v1.0.28 before PR #108.
+- PR #108 merged as `6c218ba2aa48da164d6b1864d351446faaddaef4`.
+- Exact-main Flutter foundation run `34787600300`: SUCCESS on `6c218ba2...` and produced the release trigger.
+- Release run `34787888148`: FAILURE only at protected-gate polling; exact Flutter-run binding and version validation succeeded.
+- Release failure evidence: `Match runtime` was the sole missing protected gate on `6c218ba2...`.
+- PR #109 functional head `28eed2367271c6baa01321ffe897fa6ea133914e`.
+- PR #109 Match runtime run `34790569437`: SUCCESS.
+- On that functional head, Web smoke, Original Basri download/player, Media reference expiry, Remote CORS, Content runtime, CORS boundary and Trusted download filename completed SUCCESS; Remote movie playback, Live provider and Mobile WebKit were still running when this state update was prepared.
+- Latest Release API still returns v1.0.28; v1.0.29 remains absent.
 
 ## Release state
 - v1.0.28: RELEASE VERIFIED with Mobile APK + TV APK + iOS UNSIGNED IPA + SHA256SUMS + PROVENANCE.
-- v1.0.29: RELEASE NOT PUBLISHED. Current blocker is addressed in PR #108; exact-head Flutter CI, merge, post-merge exact-SHA Flutter/download gates, release publication and Release API verification remain pending.
+- v1.0.29: RELEASE NOT PUBLISHED. Current root cause is fixed in PR #109, but final exact-head CI, merge, post-merge Match/Flutter/download gates and Release API verification remain pending.
 
 ## أهداف التشغيل التالي
-1. Finish PR #108 exact-head CI.
-   - Require Flutter analyze/tests + Mobile APK + TV APK + iOS UNSIGNED build verification.
-   - Inspect any failure from logs and fix only on the same branch.
-   - Merge only on final exact-head green.
+1. Finish PR #109 exact-head CI.
+   - Require every triggered check to complete green on final head.
+   - Inspect failures from logs and fix only on the same branch.
+   - Merge only when mergeable and final-head checks are green.
 2. Verify final-main trigger topology.
-   - Confirm Flutter foundation runs on the merge SHA.
-   - Confirm Independent download resolution runs on the same SHA.
-   - Confirm release workflow is triggered from that Flutter run.
+   - Confirm Flutter foundation runs on merge SHA.
+   - Confirm Independent download resolution runs on same SHA.
+   - Confirm Match runtime runs on same SHA.
 3. Publish and verify v1.0.29.
    - Require one-SHA Mobile APK, TV APK and iOS UNSIGNED IPA.
    - Verify SHA256SUMS + PROVENANCE.
