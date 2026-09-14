@@ -2,8 +2,9 @@ import 'dart:async';
 
 /// Native boundary for background download execution.
 ///
-/// The Dart layer owns intent/state semantics. Platform implementations are
-/// responsible for mapping these calls to iOS/Android background facilities.
+/// Native completion is never equivalent to a user-visible completed download.
+/// A completion verifier must confirm the final local file before this contract
+/// exposes [BackgroundDownloadState.completed].
 abstract interface class BackgroundDownloadBridge {
   Future<void> enqueue(BackgroundDownloadRequest request);
   Future<void> cancel(String taskId);
@@ -24,7 +25,7 @@ class BackgroundDownloadRequest {
   final String fallbackName;
 }
 
-enum BackgroundDownloadState { queued, running, paused, completed, failed, cancelled }
+enum BackgroundDownloadState { queued, running, paused, verifying, completed, failed, cancelled }
 
 class BackgroundDownloadEvent {
   const BackgroundDownloadEvent({
@@ -40,14 +41,37 @@ class BackgroundDownloadEvent {
   final int receivedBytes;
   final int? totalBytes;
   final String? errorCode;
+
+  BackgroundDownloadEvent copyWith({
+    BackgroundDownloadState? state,
+    int? receivedBytes,
+    int? totalBytes,
+    String? errorCode,
+  }) {
+    return BackgroundDownloadEvent(
+      taskId: taskId,
+      state: state ?? this.state,
+      receivedBytes: receivedBytes ?? this.receivedBytes,
+      totalBytes: totalBytes ?? this.totalBytes,
+      errorCode: errorCode ?? this.errorCode,
+    );
+  }
 }
 
+typedef BackgroundCompletionVerifier = Future<bool> Function(BackgroundDownloadEvent event);
+
 class BackgroundDownloadCoordinator {
-  BackgroundDownloadCoordinator(this.bridge) {
-    _subscription = bridge.events.listen(_onEvent);
+  BackgroundDownloadCoordinator(
+    this.bridge, {
+    BackgroundCompletionVerifier? completionVerifier,
+  }) : _completionVerifier = completionVerifier ?? _rejectUnverifiedCompletion {
+    _subscription = bridge.events.listen((event) {
+      unawaited(_onEvent(event));
+    });
   }
 
   final BackgroundDownloadBridge bridge;
+  final BackgroundCompletionVerifier _completionVerifier;
   final Map<String, BackgroundDownloadEvent> _latest = <String, BackgroundDownloadEvent>{};
   final StreamController<BackgroundDownloadEvent> _controller = StreamController<BackgroundDownloadEvent>.broadcast();
   late final StreamSubscription<BackgroundDownloadEvent> _subscription;
@@ -63,8 +87,7 @@ class BackgroundDownloadCoordinator {
     if (request.uri.path != '/api/cinema/media' || request.uri.queryParameters['download'] != '1') {
       throw const BackgroundDownloadException('INVALID_DOWNLOAD_REFERENCE');
     }
-    final queued = BackgroundDownloadEvent(taskId: request.taskId, state: BackgroundDownloadState.queued);
-    _onEvent(queued);
+    _publish(BackgroundDownloadEvent(taskId: request.taskId, state: BackgroundDownloadState.queued));
     await bridge.enqueue(request);
   }
 
@@ -73,15 +96,49 @@ class BackgroundDownloadCoordinator {
     await bridge.cancel(taskId);
   }
 
-  void _onEvent(BackgroundDownloadEvent event) {
+  Future<void> _onEvent(BackgroundDownloadEvent event) async {
     final previous = _latest[event.taskId];
     if (previous != null && _isTerminal(previous.state)) return;
+    _validateProgress(event);
+
+    if (event.state != BackgroundDownloadState.completed) {
+      _publish(event);
+      return;
+    }
+
+    // A native/background task saying "completed" only means transfer ended.
+    // User-visible completion is gated on final local-file verification.
+    _publish(event.copyWith(state: BackgroundDownloadState.verifying));
+    var verified = false;
+    try {
+      verified = await _completionVerifier(event);
+    } catch (_) {
+      verified = false;
+    }
+    final current = _latest[event.taskId];
+    if (current != null && _isTerminal(current.state)) return;
+    if (verified) {
+      _publish(event);
+    } else {
+      _publish(event.copyWith(
+        state: BackgroundDownloadState.failed,
+        errorCode: 'FINAL_FILE_VERIFICATION_FAILED',
+      ));
+    }
+  }
+
+  void _validateProgress(BackgroundDownloadEvent event) {
     if (event.receivedBytes < 0 || (event.totalBytes != null && event.totalBytes! < event.receivedBytes)) {
       throw const BackgroundDownloadException('INVALID_BACKGROUND_PROGRESS');
     }
+  }
+
+  void _publish(BackgroundDownloadEvent event) {
     _latest[event.taskId] = event;
     _controller.add(event);
   }
+
+  static Future<bool> _rejectUnverifiedCompletion(BackgroundDownloadEvent _) async => false;
 
   static bool _isTerminal(BackgroundDownloadState state) =>
       state == BackgroundDownloadState.completed ||
