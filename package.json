@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node server/index-runtime.mjs",
-    "check": "node --check server/app.mjs && node --check server/index.mjs && node --check server/index-runtime.mjs && node --check server/tmdb-runtime.mjs && node --check server/fallback-providers.mjs && node --check server/fallback-runtime.mjs && node --check server/news-runtime.mjs && NODE_ENV=test node scripts/hls_manifest_proxy_test.mjs && node scripts/tmdb_runtime_test.mjs && node scripts/fallback_provider_registry_test.mjs && node scripts/fallback_runtime_test.mjs"
+    "check": "node --check server/app.mjs && node --check server/index.mjs && node --check server/index-runtime.mjs && node --check server/tmdb-runtime.mjs && node --check server/fallback-providers.mjs && node --check server/fallback-runtime.mjs && node --check server/fallback-probe.mjs && node --check server/news-runtime.mjs && NODE_ENV=test node scripts/hls_manifest_proxy_test.mjs && node scripts/tmdb_runtime_test.mjs && node scripts/fallback_provider_registry_test.mjs && node scripts/fallback_runtime_test.mjs && node scripts/fallback_probe_test.mjs"
   },
   "engines": {
     "node": ">=22"
