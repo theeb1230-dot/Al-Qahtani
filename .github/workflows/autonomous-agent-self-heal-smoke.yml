@@ -1,0 +1,133 @@
+name: Autonomous Agent Self-Healing Smoke
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: autonomous-agent-self-heal-smoke-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  validate-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Validate Self-Healing workflow guardrails statically
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=.github/workflows/autonomous-agent-self-heal.yml
+          test -s "$file"
+
+          grep -q '^  contents: read$' "$file"
+          grep -q '^  actions: write$' "$file"
+          grep -q '^  issues: write$' "$file"
+          grep -q '^  pull-requests: read$' "$file"
+          ! grep -q 'contents: write' "$file"
+
+          grep -q 'UPSTREAM_TRANSIENT|INFRA_FAILURE' "$file"
+          grep -q "attempt == 1" "$file"
+          grep -q 'ALREADY_RERUN' "$file"
+          grep -q 'BLOCKED_SECURITY_BOUNDARY\|SECURITY_BOUNDARY' "$file"
+          grep -q 'CODE_DEFECT' "$file"
+          grep -q 'TEST_DEFECT' "$file"
+          grep -q 'UNKNOWN' "$file"
+          grep -q 'rerun-failed-jobs' "$file"
+          grep -q 'Request Re-Triage on same exact SHA' "$file"
+
+          if grep -Eq 'git (push|commit)|gh pr create|gh pr merge' "$file"; then
+            echo 'Forbidden repository mutation command detected.' >&2
+            exit 1
+          fi
+
+      - name: Locate successful Triage run for this exact PR head
+        id: triage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p smoke-evidence triage-artifact
+
+          gh api "repos/$REPO/actions/runs?event=pull_request&per_page=100" > smoke-evidence/runs.json
+          TRIAGE_RUN_ID="$(jq -r --arg sha "$TARGET_SHA" '
+            [.workflow_runs[]
+             | select(.name == "Autonomous Agent Triage")
+             | select(.head_sha == $sha)
+             | select(.status == "completed" and .conclusion == "success")]
+            | sort_by(.created_at)
+            | last
+            | .id // empty
+          ' smoke-evidence/runs.json)"
+
+          if [ -z "$TRIAGE_RUN_ID" ]; then
+            echo 'No completed successful Triage run exists yet for this exact SHA.' >&2
+            exit 1
+          fi
+
+          echo "triage_run_id=$TRIAGE_RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Download exact-SHA Triage artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIAGE_RUN_ID: ${{ steps.triage.outputs.triage_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$TRIAGE_RUN_ID" \
+            --name autonomous-agent-triage-report \
+            --dir triage-artifact
+
+          test -s triage-artifact/classification.json
+          test -s triage-artifact/context.json
+          test -s triage-artifact/failed-runs.json
+
+      - name: Prove safe no-op on clean CI path
+        env:
+          TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          classification = json.loads(Path('triage-artifact/classification.json').read_text())
+          failed = json.loads(Path('triage-artifact/failed-runs.json').read_text())
+
+          assert classification['target_sha'] == '${{ github.event.pull_request.head.sha }}'
+          assert classification.get('evidence_settled') is True
+          assert classification.get('classification') == 'NO_CI_FAILURE'
+          assert classification.get('failed_run_count') == 0
+          assert failed == []
+          assert classification.get('device_verification_pending') is True
+
+          result = {
+              'target_sha': classification['target_sha'],
+              'classification': classification['classification'],
+              'failed_run_count': classification['failed_run_count'],
+              'eligible_reruns': 0,
+              'device_verification_pending': classification['device_verification_pending'],
+              'result': 'SAFE_NO_OP_CONFIRMED',
+          }
+          Path('smoke-evidence/result.json').write_text(json.dumps(result, indent=2))
+
+      - name: Upload Self-Healing smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomous-agent-self-heal-smoke-report
+          path: smoke-evidence/
+          if-no-files-found: error
+          retention-days: 14
