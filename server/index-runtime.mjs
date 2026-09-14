@@ -19,6 +19,7 @@ const TMDB_ROUTES = new Set([
 const FALLBACK_ROUTES = new Set([
   "/api/v1/fallback/status",
   "/api/v1/fallback/resolve",
+  "/api/v1/fallback/probe",
   "/api/v1/fallback/next",
 ]);
 
@@ -111,6 +112,7 @@ export function createAlQahtaniRuntimeServer({
         if (url.pathname === "/api/v1/fallback/status") return sendJson(req, res, 200, fallbackRuntime.status());
         if (url.pathname === "/api/v1/fallback/resolve") return sendJson(req, res, 200, fallbackRuntime.resolve(fallbackIdentity(url)));
         const ref = String(url.searchParams.get("ref") || "").trim();
+        if (url.pathname === "/api/v1/fallback/probe") return sendJson(req, res, 200, await fallbackRuntime.probe(ref));
         return sendJson(req, res, 200, fallbackRuntime.recordFailure(ref));
       } catch (error) {
         const message = String(error?.message || "FALLBACK_FAILED");

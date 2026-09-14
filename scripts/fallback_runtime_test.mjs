@@ -16,6 +16,38 @@ assert.equal(internal.identity.season, 1);
 assert.equal(internal.identity.episode, 1);
 assert.match(internal.target, /^https:\/\//);
 
+let probedTarget = "";
+const probe = await runtime.probe(first.data.ref, {
+  fetchImpl: async (target, init) => {
+    probedTarget = String(target);
+    assert.equal(init.redirect, "manual");
+    assert.equal(init.headers.Range, "bytes=0-1023");
+    return {
+      status: 206,
+      headers: {
+        get(name) {
+          const key = String(name).toLowerCase();
+          if (key === "content-type") return "video/mp4";
+          if (key === "content-range") return "bytes 0-1023/4096";
+          if (key === "accept-ranges") return "bytes";
+          return null;
+        },
+      },
+      body: { cancel: async () => {} },
+    };
+  },
+});
+assert.match(probedTarget, /^https:\/\//, "server probe must receive the internal provider target");
+assert.equal(probe.status, "success");
+assert.equal(probe.data.ref, first.data.ref);
+assert.equal(probe.data.playable_candidate, true);
+assert.equal(probe.data.container, "mp4");
+assert.equal(probe.data.range206, true);
+assert.equal(probe.data.accept_ranges, true);
+assert.equal(probe.data.status_code, 206);
+assert.equal(JSON.stringify(probe).includes("https://"), false, "probe response must not leak provider URL");
+assert.equal(JSON.stringify(probe).includes(internal.providerId), false, "probe response must not leak provider identity");
+
 assert.throws(() => runtime.recordSuccess(first.data.ref, {}), /PLAYBACK_SIGNAL_REQUIRED/);
 assert.deepEqual(runtime.recordSuccess(first.data.ref, { playbackSignal: true, latencyMs: 120, container: "embed" }), { status: "success" });
 
@@ -27,6 +59,7 @@ assert.notEqual(runtime.inspect(second.data.ref).providerId, internal.providerId
 assert.throws(() => runtime.resolve({ tmdbId: "1;evil", type: "movie" }), /INVALID_TMDB_ID/);
 assert.throws(() => runtime.resolve({ tmdbId: 10, type: "tv", season: 0, episode: 1 }), /INVALID_SEASON/);
 assert.throws(() => runtime.inspect("fallback:not-valid"), /BAD_FALLBACK_REFERENCE/);
+await assert.rejects(() => runtime.probe("fallback:not-valid", { fetchImpl: async () => { throw new Error("should not run"); } }), /BAD_FALLBACK_REFERENCE/);
 
 now += 5_001;
 assert.throws(() => runtime.inspect(second.data.ref), /FALLBACK_REFERENCE_EXPIRED/);

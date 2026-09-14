@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { FallbackProviderPool, buildFallbackProviderUrl } from "./fallback-providers.mjs";
+import { probeFallbackTarget } from "./fallback-probe.mjs";
 
 const DEFAULT_TTL_MS = 10 * 60_000;
 const MAX_REFS = 256;
@@ -62,6 +63,32 @@ export class FallbackPlaybackRuntime {
       throw new Error("FALLBACK_REFERENCE_EXPIRED");
     }
     return { ...entry };
+  }
+
+  async probe(ref, { fetchImpl = globalThis.fetch, timeoutMs = 2_500 } = {}) {
+    const entry = this.inspect(ref);
+    const result = await probeFallbackTarget(entry.target, {
+      fetchImpl,
+      timeoutMs,
+      now: this.now,
+    });
+    return {
+      status: "success",
+      source: "fallback",
+      data: {
+        ref: String(ref),
+        expires_at: entry.expiresAt,
+        reachable: result.reachable === true,
+        kind: result.kind,
+        playable_candidate: result.playable === true,
+        container: result.container,
+        range206: result.range206 === true,
+        accept_ranges: result.acceptRanges === true,
+        redirect: result.redirect === true,
+        latency_ms: result.latencyMs,
+        status_code: result.statusCode,
+      },
+    };
   }
 
   recordFailure(ref) {
