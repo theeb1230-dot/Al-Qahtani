@@ -1,0 +1,315 @@
+name: Autonomous Agent Triage
+
+on:
+  workflow_run:
+    workflows: ["Autonomous Agent Observer"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: "Optional exact SHA to analyze"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: autonomous-agent-triage
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve authoritative context
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_TARGET_SHA: ${{ inputs.target_sha }}
+          OBSERVER_RUN_ID: ${{ github.event.workflow_run.id }}
+          OBSERVER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p triage-report observer-report
+
+          MAIN_SHA="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+          gh api "repos/$REPO/pulls?state=open&per_page=20" > triage-report/open-prs.json
+
+          PR_COUNT="$(jq 'length' triage-report/open-prs.json)"
+          ACTIVE_PR=""
+          PR_HEAD_SHA=""
+          PR_HEAD_REF=""
+          if [ "$PR_COUNT" -eq 1 ]; then
+            ACTIVE_PR="$(jq -r '.[0].number' triage-report/open-prs.json)"
+            PR_HEAD_SHA="$(jq -r '.[0].head.sha' triage-report/open-prs.json)"
+            PR_HEAD_REF="$(jq -r '.[0].head.ref' triage-report/open-prs.json)"
+          fi
+
+          TARGET_SHA="${MANUAL_TARGET_SHA:-}"
+          if [ -n "$TARGET_SHA" ]; then
+            gh api "repos/$REPO/commits/$TARGET_SHA" >/dev/null
+          elif [ -n "$PR_HEAD_SHA" ]; then
+            TARGET_SHA="$PR_HEAD_SHA"
+          elif [ -n "${OBSERVER_HEAD_SHA:-}" ]; then
+            TARGET_SHA="$OBSERVER_HEAD_SHA"
+          else
+            TARGET_SHA="$MAIN_SHA"
+          fi
+
+          {
+            echo "main_sha=$MAIN_SHA"
+            echo "target_sha=$TARGET_SHA"
+            echo "active_pr=$ACTIVE_PR"
+            echo "pr_head_sha=$PR_HEAD_SHA"
+            echo "pr_head_ref=$PR_HEAD_REF"
+            echo "pr_count=$PR_COUNT"
+          } >> "$GITHUB_OUTPUT"
+
+          cat > triage-report/context.json <<EOF
+          {
+            "main_sha": "$MAIN_SHA",
+            "target_sha": "$TARGET_SHA",
+            "open_pr_count": $PR_COUNT,
+            "active_pr": "${ACTIVE_PR}",
+            "pr_head_sha": "${PR_HEAD_SHA}",
+            "pr_head_ref": "${PR_HEAD_REF}",
+            "observer_run_id": "${OBSERVER_RUN_ID:-}",
+            "event_name": "$EVENT_NAME"
+          }
+          EOF
+
+      - name: Download matching Observer report when available
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OBSERVER_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$OBSERVER_RUN_ID" \
+            --name autonomous-agent-observer-report \
+            --dir observer-report
+
+      - name: Collect exact-SHA workflow evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ steps.context.outputs.target_sha }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/actions/runs?per_page=100" > triage-report/recent-runs.json
+
+          jq --arg sha "$TARGET_SHA" --arg current "$CURRENT_RUN_ID" '
+            [.workflow_runs[]
+              | select(.head_sha == $sha)
+              | select((.id|tostring) != $current)]
+          ' triage-report/recent-runs.json > triage-report/target-runs.json
+
+          jq '[.[] | select(.status == "completed" and .conclusion == "failure")]' \
+            triage-report/target-runs.json > triage-report/failed-runs.json
+
+          : > triage-report/failed-logs.txt
+          jq -r '.[].id' triage-report/failed-runs.json | while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            printf '\n===== RUN %s =====\n' "$run_id" >> triage-report/failed-logs.txt
+            gh run view "$run_id" --log-failed >> triage-report/failed-logs.txt 2>&1 || \
+              printf 'LOG_UNAVAILABLE_FOR_RUN=%s\n' "$run_id" >> triage-report/failed-logs.txt
+          done
+
+      - name: Classify evidence deterministically
+        id: classify
+        env:
+          TARGET_SHA: ${{ steps.context.outputs.target_sha }}
+        shell: python
+        run: |
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          failed = json.loads(Path('triage-report/failed-runs.json').read_text(encoding='utf-8'))
+          logs = Path('triage-report/failed-logs.txt').read_text(encoding='utf-8', errors='replace')
+          state_path = Path('docs/AUTONOMOUS_DEVELOPMENT_STATE.md')
+          state = state_path.read_text(encoding='utf-8', errors='replace') if state_path.exists() else ''
+
+          # Device verification is tracked independently from CI failure classification.
+          device_pending = bool(re.search(
+              r'PHYSICAL-DEVICE (?:RECHECK )?PENDING|PHYSICAL-DEVICE NOT VERIFIED|DEVICE_REQUIRED',
+              state,
+              re.I,
+          ))
+
+          def hit(patterns):
+              return any(re.search(p, logs, re.I | re.M) for p in patterns)
+
+          security_patterns = [
+              r'permission denied', r'resource not accessible by integration',
+              r'HTTP 403', r'bad credentials', r'secret scanning', r'oidc',
+              r'provisioning profile', r'code.?sign(?:ing)?', r'not authorized',
+          ]
+          infra_patterns = [
+              r'no space left on device', r'runner (?:was )?lost',
+              r'the operation was canceled', r'hosted runner', r'failed to start runner',
+              r'actions service is unavailable',
+          ]
+          transient_patterns = [
+              r'ETIMEDOUT', r'ECONNRESET', r'ECONNREFUSED', r'socket hang up',
+              r'timed? out', r'HTTP (?:429|502|503|504)', r'bad gateway',
+              r'service unavailable', r'gateway timeout', r'TLS handshake timeout',
+              r'temporary failure in name resolution', r'network is unreachable',
+          ]
+          test_patterns = [
+              r'fixture (?:not found|missing)', r'test harness', r'golden file .* missing',
+              r'mock .* (?:missing|invalid)', r'test setup failed',
+          ]
+          code_patterns = [
+              r'flutter analyze.*(?:error|failed)', r'error: .*\.dart:',
+              r'compilation failed', r'build failed', r'uncaught exception',
+              r'assertion(?:error| failed)', r'expected:.*actual:', r'Test failed',
+              r'SyntaxError', r'TypeError', r'ReferenceError',
+          ]
+
+          if not failed:
+              classification = 'UNKNOWN'
+              reason = 'No completed failed workflow run was found for the exact target SHA; there is no CI defect to classify.'
+              evidence = 'failed_runs=0 for target_sha=' + os.environ['TARGET_SHA']
+              proposed = 'Take no code action. Preserve any physical-device pending items as separate verification gates.'
+          elif hit(security_patterns):
+              classification = 'SECURITY_BOUNDARY'
+              reason = 'Failure evidence indicates an authorization, secret, OIDC, provisioning, or signing boundary.'
+              evidence = 'Matched security-boundary markers in failed logs.'
+              proposed = 'Do not mutate code or broaden permissions automatically. Require explicit human authorization/review.'
+          elif hit(infra_patterns):
+              classification = 'INFRA_FAILURE'
+              reason = 'Failure evidence points to the GitHub runner or hosted execution environment rather than product behavior.'
+              evidence = 'Matched runner/infrastructure markers in failed logs.'
+              proposed = 'Do not edit product code. A later self-healing stage may rerun once on the same SHA.'
+          elif hit(transient_patterns):
+              classification = 'UPSTREAM_TRANSIENT'
+              reason = 'Failure evidence matches bounded network/upstream transient signatures.'
+              evidence = 'Matched timeout/network/5xx/429 markers in failed logs.'
+              proposed = 'Do not edit code. A later self-healing stage may rerun once on the exact same SHA before escalation.'
+          elif hit(test_patterns):
+              classification = 'TEST_DEFECT'
+              reason = 'Evidence points to test harness, fixture, mock, or test setup rather than confirmed product behavior.'
+              evidence = 'Matched test-infrastructure markers in failed logs.'
+              proposed = 'Inspect the failing test and production contract together; do not weaken or disable the test.'
+          elif hit(code_patterns):
+              classification = 'CODE_DEFECT'
+              reason = 'Exact-SHA failure evidence contains compile/analyzer/runtime/assertion markers consistent with a product or implementation defect.'
+              evidence = 'Matched code/build/test-failure markers in failed logs.'
+              proposed = 'Plan a minimal root-cause fix on the existing PR only, then verify against the exact new head SHA.'
+          else:
+              classification = 'UNKNOWN'
+              reason = 'A failure exists, but deterministic evidence is insufficient for a safe category.'
+              evidence = f'failed_runs={len(failed)}; no trusted classifier pattern matched.'
+              proposed = 'Collect more evidence. Do not guess and do not modify code automatically.'
+
+          result = {
+              'target_sha': os.environ['TARGET_SHA'],
+              'classification': classification,
+              'reason': reason,
+              'evidence': evidence,
+              'proposed_action': proposed,
+              'failed_run_count': len(failed),
+              'device_verification_pending': device_pending,
+              'guardrails': {
+                  'code_mutation': False,
+                  'pr_creation': False,
+                  'merge': False,
+                  'automatic_rerun': False,
+                  'ci_cannot_verify_physical_device': True,
+              },
+          }
+          Path('triage-report/classification.json').write_text(
+              json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8'
+          )
+
+          output = os.environ['GITHUB_OUTPUT']
+          with open(output, 'a', encoding='utf-8') as f:
+              for key in ('classification', 'reason', 'evidence', 'proposed_action'):
+                  value = result[key].replace('\n', ' ')
+                  f.write(f'{key}={value}\n')
+              f.write(f"failed_run_count={result['failed_run_count']}\n")
+              f.write(f"device_pending={'true' if device_pending else 'false'}\n")
+
+      - name: Build auditable triage report
+        env:
+          MAIN_SHA: ${{ steps.context.outputs.main_sha }}
+          TARGET_SHA: ${{ steps.context.outputs.target_sha }}
+          ACTIVE_PR: ${{ steps.context.outputs.active_pr }}
+          PR_COUNT: ${{ steps.context.outputs.pr_count }}
+          CLASSIFICATION: ${{ steps.classify.outputs.classification }}
+          REASON: ${{ steps.classify.outputs.reason }}
+          EVIDENCE: ${{ steps.classify.outputs.evidence }}
+          PROPOSED_ACTION: ${{ steps.classify.outputs.proposed_action }}
+          FAILED_COUNT: ${{ steps.classify.outputs.failed_run_count }}
+          DEVICE_PENDING: ${{ steps.classify.outputs.device_pending }}
+        shell: python
+        run: |
+          import datetime
+          import os
+          from pathlib import Path
+
+          now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+          active_pr = f"#{os.environ['ACTIVE_PR']}" if os.environ.get('ACTIVE_PR') else 'none/ambiguous'
+          lines = [
+              '# Autonomous Agent Triage Report',
+              '',
+              f'- Timestamp: `{now}`',
+              f"- Main SHA: `{os.environ['MAIN_SHA']}`",
+              f"- Target exact SHA: `{os.environ['TARGET_SHA']}`",
+              f'- Open PR count: `{os.environ["PR_COUNT"]}`',
+              f'- Active PR: `{active_pr}`',
+              f'- Failed exact-SHA runs: `{os.environ["FAILED_COUNT"]}`',
+              '',
+              '## Classification',
+              f"- Classification: `{os.environ['CLASSIFICATION']}`",
+              f"- Reason: {os.environ['REASON']}",
+              f"- Evidence: {os.environ['EVIDENCE']}",
+              f"- Proposed action: {os.environ['PROPOSED_ACTION']}",
+              '',
+              '## Physical-device gate',
+              f"- Pending according to project state: `{os.environ['DEVICE_PENDING']}`",
+              '- CI/build/HTTP success never upgrades a physical-device item to verified.',
+              '',
+              '## Guardrails',
+              '- No code changes.',
+              '- No PR creation.',
+              '- No merge.',
+              '- No automatic rerun in this phase.',
+              '- UNKNOWN is preferred over unsupported guessing.',
+          ]
+          Path('triage-report/report.md').write_text('\n'.join(lines), encoding='utf-8')
+
+      - name: Update Control Plane issue 116
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s triage-report/report.md
+          gh issue comment 116 --repo "$REPO" --body-file triage-report/report.md
+
+      - name: Upload triage evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomous-agent-triage-report
+          path: triage-report/
+          if-no-files-found: error
+          retention-days: 14
