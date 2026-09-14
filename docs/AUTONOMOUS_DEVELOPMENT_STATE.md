@@ -4,122 +4,120 @@
 GitHub is authoritative. Live Runtime behavior and the user's physical-device evidence are behavioral references. CI never upgrades a device-only item to PHYSICAL-DEVICE VERIFIED.
 
 ## Current GitHub state
-- Product/release main SHA: `7c434cc23a08229f6bdc937612e0c3ea19e54909` (merged PR #110).
-- No product PR was open when this state-recording branch was created.
-- State branch: `docs/post-v1.0.30-release-state` (docs-only, based on exact release SHA above).
-- Product version/build: `1.0.30+30`.
-- Runtime `PRODUCT_VERSION`: `1.0.30`.
-- PR #110 `Add bounded fallback media probing`: MERGED.
-- Latest verified GitHub Release: `v1.0.30` from exact SHA `7c434cc23a08229f6bdc937612e0c3ea19e54909`.
+- Current `main`: `5cce9a850f5298f71d286da9faf0ed1e8b47f9e5` (docs-only merge of PR #111).
+- Latest product/release commit remains `7c434cc23a08229f6bdc937612e0c3ea19e54909`.
+- Open PR: #112 `Wire opaque fallback probes into Runtime`.
+- Active branch: `feat/runtime-fallback-probe-112`.
+- Functional head before this state-doc commit: `3bb724c3a1688cebafa0fcd8b0a341002e07b244`; branch head is authoritative after this docs update.
+- Product version/build on PR #112: `1.0.31+31`.
+- Runtime `PRODUCT_VERSION`: `1.0.31`.
+- Latest verified GitHub Release remains `v1.0.30` from exact product SHA `7c434cc23a08229f6bdc937612e0c3ea19e54909`.
 
 ## v1.0.30 release verification
 - Flutter foundation run `34884275006`: SUCCESS on exact release SHA.
-- Initial Release Flutter triplet run `34884937498` failed at protected-gate polling only because `Remote news smoke` had failed.
-- `Remote news smoke` run `34884275138` initial failure: list returned 15 items, but article dereference returned HTTP 410 `NEWS_REFERENCE_EXPIRED`.
-- The failure was treated as a live/deployment-sensitive external gate and rerun before any code change.
-- Rerun of `34884275138`: SUCCESS, proving the failure was transient rather than a reproducible product regression.
-- Failed jobs of Release run `34884937498` were rerun after the news gate became green: SUCCESS.
-- Release tag: `v1.0.30`.
-- Release URL: `https://github.com/theeb1230-dot/Al-Qahtani/releases/tag/v1.0.30`.
+- `Remote news smoke` run `34884275138` initially failed because an opaque article reference expired with HTTP 410 `NEWS_REFERENCE_EXPIRED`; unchanged-SHA rerun succeeded, proving transient live-state behavior rather than a reproducible regression.
+- Release Flutter triplet run `34884937498`: failed protected-gate polling initially, then failed jobs rerun SUCCESS after the news gate recovered.
+- Release tag/URL: `v1.0.30` — `https://github.com/theeb1230-dot/Al-Qahtani/releases/tag/v1.0.30`.
 - Release target: `7c434cc23a08229f6bdc937612e0c3ea19e54909`.
 - Assets:
   - `Al-Qahtani-Mobile-v1.0.30.apk` — 55,887,348 bytes — SHA-256 `a470ce32eebe22e8e158858970a55eaec4964d44d71bf10c6d16e2f20776f6a9`.
   - `Al-Qahtani-TV-v1.0.30.apk` — 55,887,456 bytes — SHA-256 `ef2e6342bfd44ebb24d9883aefd50b9a3608fde9f0122c41e555c8637e70b147`.
   - `Al-Qahtani-iOS-v1.0.30-UNSIGNED.ipa` — 7,896,074 bytes — SHA-256 `b5108d1039cf1eef073eddc08d4dd4ef6bde260fd320f213da9852397be320e8`.
-  - `SHA256SUMS.txt` — published.
-  - `PROVENANCE.json` — published.
-- Release workflow verified exact successful Flutter run binding, exact release commit, version/build, protected gates, exact-run triplet artifacts, publication, and published release completeness.
-- Android Mobile identity/brand/signature verification passed in Flutter foundation.
-- Android TV LEANBACK/source requirements, packaged features, identity/signature checks passed in Flutter foundation.
-- iOS bundle was built without codesign and the UNSIGNED IPA packaging verification passed.
+  - `SHA256SUMS.txt` and `PROVENANCE.json` published and release workflow verified completeness.
+- Android Mobile identity/brand/signature checks passed.
+- Android TV LEANBACK/D-Pad/source/package/signature checks passed.
+- iOS IPA was explicitly built UNSIGNED/no-codesign.
 
 ## Pages / Web state
-- `Deploy GitHub Pages` run `34884275140`: SUCCESS on exact release SHA `7c434cc23a08229f6bdc937612e0c3ea19e54909`.
-- `Mobile WebKit smoke`: SUCCESS on the same product SHA.
-- Remote runtime, movie playback, CORS, HLS, Basri player/download, media-reference expiry, trusted filename and other protected gates are green on the same release SHA after the successful news rerun.
-- Web/PWA remains the existing GitHub Pages product and was not replaced by Flutter Web.
+- `Deploy GitHub Pages` run `34884275140`: SUCCESS on v1.0.30 product SHA.
+- Mobile WebKit, Web smoke, Runtime, movie playback, CORS, HLS, Basri player/download, media-ref expiry and trusted filename gates were green on the product SHA after the successful news rerun.
+- PR #111 was docs-only and merged as `5cce9a850f5298f71d286da9faf0ed1e8b47f9e5`; it did not create a new product version or Release.
+- Web/PWA remains GitHub Pages and is not replaced by Flutter Web.
 
 ## Physical-device P0 evidence
-The user verified on a real iPhone running v1.0.25 that `Spider Man Brand New Day` appeared as a completed 838.4 MB download with ✓ in Library, but Files did not show it and tapping the completed card did nothing. This remains the authoritative historical `FAILED / PHYSICAL-DEVICE VERIFIED BUG` for v1.0.25.
+The user verified on a real iPhone running v1.0.25 that `Spider Man Brand New Day` appeared as a completed 838.4 MB download with ✓ in Library, while Files did not show it and tapping the completed card did nothing. This remains `v1.0.25 — FAILED / PHYSICAL-DEVICE VERIFIED BUG`.
 
-v1.0.26+ contains completed-file verification, local-path enumeration, internal offline playback, missing-file recovery, and local share/export. v1.0.30 is RELEASE VERIFIED in CI, but the P0 remains `FIXED IN CODE / CI VERIFIED; PHYSICAL-DEVICE RECHECK PENDING` until v1.0.30 or later is tested on a real iPhone with offline local playback.
+Newer code contains completed-file existence/readability checks, local path persistence/enumeration, internal offline playback, missing-file recovery and local share/export. Status remains `FIXED IN CODE / CI VERIFIED; PHYSICAL-DEVICE RECHECK PENDING` until v1.0.30 or later is tested on a real iPhone with the full offline path.
 
-Required physical retest remains: download -> restart app -> Library -> tap completed item -> internal local playback with network unavailable -> start/seek/pause/resume/duration -> missing-file recovery -> Save to Files/share from local file only.
+Required physical retest: download -> restart app -> Library -> tap completed item -> disable network -> internal local playback -> start/seek/pause/resume/duration -> missing-file recovery -> Save to Files/share from local file only.
 
 ## TMDB fallback state
 Merged foundation:
-- server-side-only TMDB adapter and search/status/details/season APIs;
-- timeout/cache/error normalization;
-- Arabic locale and adult filtering;
-- stable TMDB movie/TV and episode identities;
+- TMDB adapter and search/status/details/season APIs remain server-side only;
+- timeout/cache/error normalization, Arabic locale and adult filtering;
+- stable movie/TV/episode identities;
 - Flutter does not contain `TMDB_API_KEY`.
 
-Pending user-complete UX:
+Pending UX:
 - explicit `القحطاني` / `TMDB الاحتياطي` source control;
-- empty-result CTA `ابحث في المصدر الاحتياطي`;
+- `ابحث في المصدر الاحتياطي` CTA for empty/error primary search;
 - TMDB details/season UI;
-- no TMDB playback CTA until safe fallback playback hand-off is complete.
+- no fallback playback CTA until opaque-ref player hand-off/failover is safe.
 
 ## 27-provider fallback pool
-Merged and protected:
-- exactly 27 server-side provider adapters;
+Merged and protected before PR #112:
+- exactly 27 server-side adapters;
 - positive TMDB/season/episode validation;
 - HTTPS-only generated URLs and hostname allowlists;
-- provider templates/upstream URLs remain server-side;
-- `ProviderHealthRegistry` scoring, latency, failure tracking and circuit breaker;
-- deterministic ranking;
-- TTL-bound opaque refs `fallback:<opaque-id>`;
-- bounded ref storage/expiry cleanup;
-- fallback resolve/next routes;
-- success requires explicit playback evidence and never HTTP 200 alone.
+- provider templates/upstream URLs stay server-side;
+- `ProviderHealthRegistry` scoring/latency/failure/circuit breaker and deterministic ranking;
+- TTL-bound opaque `fallback:<id>` references;
+- resolve/next routes;
+- playback success requires explicit playback evidence, never HTTP 200 alone;
+- v1.0.30 bounded probe uses `Range: bytes=0-1023`, 250–5000 ms timeout, manual redirects, MP4/HLS/MPEG-TS/embed classification, body cancellation and no URL leakage.
 
-v1.0.30 added the first bounded probe/classification layer:
-- byte-bounded GET probe with `Range: bytes=0-1023`;
-- timeout clamped to 250–5000 ms;
-- redirects handled manually and not followed blindly;
-- MP4/HLS/MPEG-TS classification by response metadata;
-- HTML/embed remains non-playable until real player evidence exists;
-- HTTP 200 unsupported content remains non-playable;
-- response bodies are cancelled after classification;
-- probe output never exposes upstream URLs;
-- deterministic regression coverage in `scripts/fallback_probe_test.mjs`.
+PR #112 advances improvement #11 `Automatic bounded server recovery` with the next safe slice:
+- adds `FallbackPlaybackRuntime.probe(ref)` that accepts only a valid live opaque fallback ref;
+- internal target is inspected server-side and passed to the existing bounded probe;
+- public response returns only ref expiry/reachability/kind/container/range/latency/status metadata;
+- public response does not serialize provider id/name or upstream URL;
+- `playable_candidate` means probe classification only and does not record provider playback success;
+- provider success remains locked behind `recordSuccess(..., { playbackSignal: true })`;
+- adds GET `/api/v1/fallback/probe?ref=<opaque>` to Runtime;
+- malformed/expired refs remain rejected before probing;
+- deterministic runtime test verifies Range/manual redirect policy and URL/provider secrecy;
+- HTTP route regression verifies CORS and the public opaque response contract.
 
-Still pending:
-- safe Runtime integration from opaque fallback ref to probe result;
-- redirect allowlist policy where necessary;
-- internal-player proxy/hand-off for classified direct media;
-- real playing evidence and bounded automatic in-session next-provider failover.
+Still pending after PR #112:
+- allowlisted redirect-hop policy if evidence proves a provider requires it;
+- direct-media internal proxy/hand-off preserving Range/206;
+- bounded automatic next-provider attempts based on actual playback failure;
+- real `playing` evidence before health success;
+- Flutter player integration remains intentionally excluded from this PR.
 
 ## P0/P1 status
 1. Completed iPhone download tap bug: FIXED IN CODE / CI VERIFIED; PHYSICAL-DEVICE RECHECK PENDING.
 2. Save to Files/share local file: FIXED IN CODE / CI VERIFIED; PHYSICAL-DEVICE RECHECK PENDING.
-3. Fall 2 native→internal WebView playback: code path exists; physical-device playback NOT VERIFIED.
+3. Fall 2 native -> internal WebView playback: code path exists; PHYSICAL-DEVICE NOT VERIFIED.
 4. Long download/resume: regression coverage exists; interrupted physical transfer NOT VERIFIED.
 5. Match safe runtime playback/failover: baseline exists; live-device playback NOT VERIFIED.
 6. Match scores without fake 0-0: FIXED IN CODE / CI VERIFIED.
 7. Search posters/type/year/dedupe: baseline present.
-8. TMDB search/details/seasons: MERGED; user-facing source selector pending.
-9. 27-provider health/circuit/opaque refs: MERGED; bounded probe classifier RELEASE VERIFIED in v1.0.30; player integration pending.
-10. Favorites/Continue Watching/Downloads/History: baseline present; full physical persistence lifecycle pending.
+8. TMDB search/details/seasons: MERGED; user-facing selector pending.
+9. 27-provider health/circuit/opaque refs and bounded probe classifier: RELEASE VERIFIED in v1.0.30; opaque Runtime probe integration IN PR #112.
+10. Favorites/Continue Watching/Downloads/History: baseline present; physical persistence lifecycle pending.
 11. TV LEANBACK/D-Pad/focus: CI VERIFIED in v1.0.30.
-12. Web/PWA: Pages and protected Web gates VERIFIED on v1.0.30 product SHA.
+12. Web/PWA: latest product Pages and protected Web gates VERIFIED on v1.0.30 product SHA.
 
-## PR #110 and release root cause history
-- Initial PR head `d5b90f242cf367a60166c95733b43ef2677fbea2` failed only Content runtime because Flutter was bumped to `1.0.30+30` while Runtime remained `PRODUCT_VERSION = "1.0.29"`.
-- Root cause was fixed on the same PR by aligning Runtime to `1.0.30`.
-- Final PR head `4b5bc6c3ccbc9d64682a18f0ea4729fa43cbf770` passed all 15 PR workflows and merged as `7c434cc23a08229f6bdc937612e0c3ea19e54909`.
-- Post-merge release first failed solely because the deployed news article opaque ref expired between list and dereference. The same workflow rerun passed without code modification, proving a transient live-state issue rather than a reproducible regression.
-- Release was rerun only after that required gate became green and then published v1.0.30 successfully.
+## PR #112 changed files
+- `server/fallback-runtime.mjs` — opaque ref -> bounded probe integration, no public target/provider serialization.
+- `server/index-runtime.mjs` — `/api/v1/fallback/probe` route.
+- `scripts/fallback_runtime_test.mjs` — probe privacy/classification/ref validation regression.
+- `scripts/fallback_runtime_http_test.mjs` — HTTP/CORS/opaque response route regression.
+- `package.json` — includes new HTTP regression in `npm run check`.
+- `server/content-runtime.mjs` — product Runtime version `1.0.31`.
+- `flutter_app/pubspec.yaml` — version/build `1.0.31+31`.
+- `docs/AUTONOMOUS_DEVELOPMENT_STATE.md` — this handoff state.
 
-## UX decisions
-- Al-Qahtani/Basri stays primary; TMDB is explicit fallback.
-- Do not mix primary and fallback result lists by default.
-- No provider names, upstream URLs, sessions or technical health details in normal UI.
-- No clickable fallback playback until opaque ref -> internal player + bounded failover are ready.
-- Primary action first, recovery action second; avoid technical button clutter.
-- Preserve Arabic RTL, navy/black + metallic gold identity, readable contrast, thumb reach, and TV visible focus.
-- No large page rewrites before navigation/widget/smoke evidence.
-- Any future UI rearrangement must reduce cognitive load or task steps and must preserve TV focus/accessibility.
+## UX / safety decisions
+- Basri/القحطاني remains primary; TMDB is explicit fallback.
+- Do not mix primary and fallback results by default.
+- No provider names, URLs, sessions or health internals in normal UI.
+- A successful network probe is not shown to the user as playback success.
+- No fallback playback CTA until opaque ref -> internal player + bounded failover is complete.
+- Primary action first, recovery second; no technical-button clutter.
+- Preserve Arabic RTL, navy/black + metallic gold identity, readable contrast, thumb reach and visible TV focus.
+- No large UI rewrite before navigation/widget/smoke evidence.
 
 ## 20 تحسينًا إضافيًا
 1. Persistent search-source selector.
@@ -144,65 +142,58 @@ Still pending:
 20. Image/cache/memory/cancellation performance budget.
 
 Current completion:
-- #11 foundation advanced in v1.0.30: registry/health/opaque refs plus bounded probe/classifier are merged and RELEASE VERIFIED.
-- Local offline playback/share foundations exist but remain physical-device pending.
-- The remaining items are intentionally staged after playback safety/P0 gates rather than shipped as a large UI rewrite.
+- #11 foundation was RELEASE VERIFIED in v1.0.30; PR #112 adds safe opaque Runtime probing and remains unmerged until exact-final-head CI is green.
+- Offline playback/share foundations remain physical-device pending.
+- UI improvements remain deliberately staged behind P0/playback safety rather than shipped as a risky broad rewrite.
 
 ## Protected regressions
-Protect completed-file verification before ✓, local-only export/playback, `.part` rules, resume identity, Range/206/Content-Range/Accept-Ranges, MP4/HLS/MPEG-TS, independent Watch/Download resolution, trusted filenames, score precedence, match failover/logos/Saudi time, episode_id vs episode_number, search dedupe, 30+30 pagination, CORS/SSRF/allowlists, media-ref expiry, Arabic RTL, TV LEANBACK/D-Pad/focus, and iOS UNSIGNED/no-codesign labeling.
-
-## Changed files delivered in v1.0.30
-- `server/fallback-probe.mjs` — bounded probe and media/embed classifier.
-- `scripts/fallback_probe_test.mjs` — deterministic probe/classification regression coverage.
-- `package.json` — includes probe syntax/test coverage in `npm run check`.
-- `flutter_app/pubspec.yaml` — version/build `1.0.30+30`.
-- `server/content-runtime.mjs` — Runtime product version aligned to `1.0.30`.
-- `docs/AUTONOMOUS_DEVELOPMENT_STATE.md` — prior handoff state.
+Protect completed-file verification before ✓, local-only export/playback, `.part` rules, resume identity, Range/206/Content-Range/Accept-Ranges, MP4/HLS/MPEG-TS, independent Watch/Download resolution, trusted filenames, score precedence, match failover/logos/Saudi time, episode_id vs episode_number, search dedupe, 30+30 pagination, CORS/SSRF/allowlists, opaque-ref expiry, Arabic RTL, TV LEANBACK/D-Pad/focus, and iOS UNSIGNED/no-codesign labeling.
 
 ## Blockers / decisions
-- No code blocker remains for v1.0.30; the release is published and verified.
-- Physical-device confirmation for the v1.0.25 download bug is still outstanding by design; CI cannot promote it to PHYSICAL-DEVICE VERIFIED.
-- The transient deployed-news expiry is recorded as live-state flakiness because the unchanged exact-SHA rerun succeeded. If it recurs, harden the smoke/runtime opaque-ref lifecycle instead of silently ignoring it.
-- Do not expose provider URLs or move TMDB/provider secrets into Flutter to simplify fallback integration.
+- No permission blocker is currently known.
+- PR #112 must not merge until all triggered checks on its final head are green.
+- v1.0.31 must not be published before PR #112 merges and post-merge protected gates are green on one exact product SHA.
+- The v1.0.25 iPhone bug remains historical physical evidence until a newer real-device retest passes.
+- Do not expose provider URLs or place TMDB/provider secrets in Flutter for convenience.
 
 ## أهداف التشغيل التالي
-1. Merge this docs-only state PR only after exact-head CI is green.
-   - Confirm no product files changed.
-   - Preserve v1.0.30 release binding to `7c434cc23a08229f6bdc937612e0c3ea19e54909`.
-   - Ensure docs-only merge does not spuriously publish another product release.
-2. Wire bounded probing into Runtime behind opaque refs.
-   - Accept only validated opaque fallback refs.
-   - Never serialize provider/target URLs to clients or logs.
-   - Add deterministic malformed/expired/ref-leak tests.
-3. Add direct-media internal hand-off.
-   - Preserve Range/206 and content-range headers.
-   - Support MP4/HLS/MPEG-TS classification paths.
-   - Reject unsupported or ambiguous bodies before native player launch.
-4. Add bounded in-session provider failover.
-   - Record actual playback failure, not just reachability.
-   - Move to next healthy provider within a fixed attempt budget.
-   - Respect circuit-breaker state and stop cleanly.
-5. Add real playback success evidence.
-   - Require media/playing signal before health success.
-   - Record latency/container/range capability after actual playback.
-   - Keep technical provider identity server-side.
-6. Complete explicit TMDB fallback UX after playback safety.
-   - Keep `القحطاني` selected by default.
-   - Add `ابحث في المصدر الاحتياطي` for empty/error primary results.
-   - Label TMDB result source without mixing result lists by default.
-7. Continue P0 physical-device validation readiness.
-   - Preserve completed-file existence/readability/EOF checks.
-   - Keep missing-file recovery and local-only export/share covered.
-   - Do not mark the user bug PHYSICAL-DEVICE VERIFIED until a real iPhone retest passes.
-8. Strengthen long-download and resume safety.
-   - Preserve stable content/episode identity across restart.
-   - Verify `.part` cleanup on cancel/failure.
-   - Keep stalled transfers from becoming completed.
-9. Continue match/Fall 2 P1 verification.
-   - Keep native-first then internal WebView fallback for Fall 2.
-   - Preserve safe MatchItem runtime refs, Saudi time and no fake 0-0.
-   - Add live-device evidence when available.
-10. Continue incremental UX improvements after playback gates.
-   - Prioritize fewer taps, clear recovery states and library sorting.
-   - Preserve Arabic RTL, accessibility and TV D-Pad focus.
-   - Avoid decorative changes without measurable user value.
+1. Finish PR #112 exact-final-head CI.
+   - Inspect every triggered run/check on the final docs-updated head.
+   - Fix failures on the same branch only.
+   - Merge only when mergeable and required gates are green.
+2. Verify v1.0.31 same-SHA delivery after merge.
+   - Flutter Mobile APK + TV APK + iOS UNSIGNED IPA from one main SHA.
+   - Verify Android identity/signature and TV LEANBACK/D-Pad/focus.
+   - Verify iOS Payload/version/no-codesign and publish SHA256/PROVENANCE.
+3. Verify Pages/Web after v1.0.31 merge.
+   - Pages + Web smoke + Mobile WebKit on product SHA.
+   - CORS/Range/download/HLS regressions on the same SHA.
+   - Do not confuse a later docs-only SHA with the product release SHA.
+4. Add safe direct-media internal hand-off.
+   - Consume opaque ref/probe classification server-side.
+   - Preserve Range/206/Content-Range/Accept-Ranges.
+   - Reject unsupported/ambiguous targets before native player launch.
+5. Add bounded in-session provider failover.
+   - Trigger next provider from actual playback failure.
+   - Use a fixed attempt/time budget and circuit state.
+   - Return a clean terminal error after budget exhaustion.
+6. Add real playback success evidence.
+   - Require player/media `playing` signal.
+   - Record latency/container/range capability only after actual playback.
+   - Keep provider identity server-side.
+7. Complete TMDB fallback UX after playback safety.
+   - Keep `القحطاني` default.
+   - Add explicit source selector and empty-result fallback CTA.
+   - Label fallback results without mixed result lists.
+8. Preserve P0 download retest readiness.
+   - Completed file must exist/read/EOF before ✓.
+   - Missing file must recover clearly; local export only.
+   - Keep PHYSICAL-DEVICE status pending until real iPhone evidence.
+9. Continue Fall 2 / match / long-download P1 work.
+   - Native-first then internal WebView for Fall 2.
+   - Safe MatchItem refs, Saudi time and no fake 0-0.
+   - Stable restart/resume identity and `.part` cleanup.
+10. Continue incremental UX improvements only after safety gates.
+   - Reduce taps and improve recovery states/library sorting.
+   - Preserve RTL/accessibility/TV focus.
+   - Avoid cosmetic-only changes without measurable user value.
