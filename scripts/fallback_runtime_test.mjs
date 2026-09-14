@@ -48,6 +48,64 @@ assert.equal(probe.data.status_code, 206);
 assert.equal(JSON.stringify(probe).includes("https://"), false, "probe response must not leak provider URL");
 assert.equal(JSON.stringify(probe).includes(internal.providerId), false, "probe response must not leak provider identity");
 
+let directCalls = 0;
+const direct = await runtime.openDirectMedia(first.data.ref, {
+  range: "bytes=1024-2047",
+  fetchImpl: async (target, init) => {
+    assert.equal(String(target), internal.target);
+    assert.equal(init.redirect, "manual");
+    directCalls += 1;
+    if (directCalls === 1) {
+      assert.equal(init.headers.Range, "bytes=0-1023");
+      return new Response(new Uint8Array([0, 0, 0, 16, 102, 116, 121, 112, 105, 115, 111, 109]), {
+        status: 206,
+        headers: {
+          "content-type": "video/mp4",
+          "content-range": "bytes 0-1023/4096",
+          "accept-ranges": "bytes",
+        },
+      });
+    }
+    assert.equal(init.headers.Range, "bytes=1024-2047");
+    return new Response(new Uint8Array([1, 2, 3, 4]), {
+      status: 206,
+      headers: {
+        "content-type": "video/mp4",
+        "content-length": "4",
+        "content-range": "bytes 1024-1027/4096",
+        "accept-ranges": "bytes",
+      },
+    });
+  },
+});
+assert.equal(directCalls, 2);
+assert.equal(direct.meta.container, "mp4");
+assert.equal(direct.meta.status, 206);
+assert.equal(direct.meta.contentRange, "bytes 1024-1027/4096");
+assert.equal(direct.meta.acceptRanges, "bytes");
+assert.equal(JSON.stringify(direct.meta).includes("https://"), false, "direct-media metadata must not leak provider target");
+assert.deepEqual([...new Uint8Array(await direct.response.arrayBuffer())], [1, 2, 3, 4]);
+
+await assert.rejects(() => runtime.openDirectMedia(first.data.ref, {
+  range: "bytes=0-1,4-5",
+  fetchImpl: async (_target, init) => {
+    if (init.headers.Range === "bytes=0-1023") {
+      return new Response(new Uint8Array([0, 0, 0, 16, 102, 116, 121, 112, 105, 115, 111, 109]), {
+        status: 206,
+        headers: { "content-type": "video/mp4", "content-range": "bytes 0-1023/4096" },
+      });
+    }
+    throw new Error("should reject range before second request");
+  },
+}), /BAD_FALLBACK_RANGE/);
+
+await assert.rejects(() => runtime.openDirectMedia(first.data.ref, {
+  fetchImpl: async () => new Response("#EXTM3U\n#EXT-X-VERSION:3\n", {
+    status: 200,
+    headers: { "content-type": "application/vnd.apple.mpegurl" },
+  }),
+}), /FALLBACK_HLS_PROXY_PENDING/);
+
 assert.throws(() => runtime.recordSuccess(first.data.ref, {}), /PLAYBACK_SIGNAL_REQUIRED/);
 assert.deepEqual(runtime.recordSuccess(first.data.ref, { playbackSignal: true, latencyMs: 120, container: "embed" }), { status: "success" });
 
