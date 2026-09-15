@@ -17,7 +17,9 @@ class DownloadProgress {
   final int receivedBytes;
   final int? totalBytes;
 
-  double? get fraction => totalBytes == null || totalBytes! <= 0 ? null : (receivedBytes / totalBytes!).clamp(0.0, 1.0).toDouble();
+  double? get fraction => totalBytes == null || totalBytes! <= 0
+      ? null
+      : (receivedBytes / totalBytes!).clamp(0.0, 1.0).toDouble();
 }
 
 class DownloadedFileInfo {
@@ -47,7 +49,10 @@ class DownloadCancellationToken {
 
 typedef DownloadDirectoryProvider = Future<Directory> Function();
 typedef DownloadProgressCallback = void Function(DownloadProgress progress);
-typedef DownloadReconnectDelay = Future<void> Function(int attempt, DownloadCancellationToken? token);
+typedef DownloadReconnectDelay = Future<void> Function(
+  int attempt,
+  DownloadCancellationToken? token,
+);
 
 class DownloadService {
   DownloadService({
@@ -63,10 +68,13 @@ class DownloadService {
   final DownloadReconnectDelay? _reconnectDelayOverride;
 
   static const int _maxReconnectAttempts = 4;
+  static const int _signatureProbeBytes = 512;
 
   static Future<Directory> _defaultDirectory() async {
     final root = await getApplicationDocumentsDirectory();
-    return Directory('${root.path}${Platform.pathSeparator}AlQahtani${Platform.pathSeparator}Downloads');
+    return Directory(
+      '${root.path}${Platform.pathSeparator}AlQahtani${Platform.pathSeparator}Downloads',
+    );
   }
 
   Future<DownloadResult> download(
@@ -76,18 +84,22 @@ class DownloadService {
     DownloadProgressCallback? onProgress,
     DownloadCancellationToken? cancellationToken,
   }) async {
-    if (uri.path != '/api/cinema/media' || uri.queryParameters['download'] != '1') {
+    if (uri.path != '/api/cinema/media' ||
+        uri.queryParameters['download'] != '1') {
       throw const DownloadException('INVALID_DOWNLOAD_REFERENCE');
     }
     _throwIfCancelled(cancellationToken);
 
     final directory = await _downloadDirectory(create: true);
     final partialName = _resumeFileName(resumeKey ?? fallbackName);
-    final tempFile = File('${directory.path}${Platform.pathSeparator}$partialName');
+    final tempFile = File(
+      '${directory.path}${Platform.pathSeparator}$partialName',
+    );
     var bytes = await tempFile.exists() ? await tempFile.length() : 0;
     int? total;
     var reconnectAttempt = 0;
     File? finalFile;
+    String? responseContentType;
 
     Future<void> cleanupPartial() async {
       if (await tempFile.exists()) await tempFile.delete();
@@ -98,7 +110,11 @@ class DownloadService {
         _throwIfCancelled(cancellationToken);
         http.StreamedResponse response;
         try {
-          response = await _send(uri, offset: bytes, cancellationToken: cancellationToken);
+          response = await _send(
+            uri,
+            offset: bytes,
+            cancellationToken: cancellationToken,
+          );
         } catch (error) {
           if (_canReconnect(error, reconnectAttempt, bytes)) {
             reconnectAttempt += 1;
@@ -118,10 +134,19 @@ class DownloadService {
           throw error;
         }
 
+        responseContentType = _normalizedContentType(
+          response.headers['content-type'],
+        );
+        _assertMediaResponseType(responseContentType);
+
         var append = bytes > 0;
         if (append && response.statusCode == 206) {
-          final rangeStart = _contentRangeStart(response.headers['content-range']);
-          if (rangeStart != bytes) throw const DownloadException('INVALID_RESUME_RANGE');
+          final rangeStart = _contentRangeStart(
+            response.headers['content-range'],
+          );
+          if (rangeStart != bytes) {
+            throw const DownloadException('INVALID_RESUME_RANGE');
+          }
         } else if (append && response.statusCode == 200) {
           append = false;
           bytes = 0;
@@ -131,33 +156,49 @@ class DownloadService {
         }
 
         total = _mergeTotal(total, _responseLength(response.headers));
-        final fileName = _trustedFileName(response.headers['content-disposition']) ?? _sanitizeFileName(fallbackName);
-        finalFile ??= File('${directory.path}${Platform.pathSeparator}$fileName');
+        final fileName =
+            _trustedFileName(response.headers['content-disposition']) ??
+                _sanitizeFileName(fallbackName);
+        finalFile ??= File(
+          '${directory.path}${Platform.pathSeparator}$fileName',
+        );
 
         IOSink? sink;
         StreamIterator<List<int>>? iterator;
         Object? streamError;
         try {
-          sink = tempFile.openWrite(mode: append ? FileMode.append : FileMode.writeOnly);
-          onProgress?.call(DownloadProgress(receivedBytes: bytes, totalBytes: total));
+          sink = tempFile.openWrite(
+            mode: append ? FileMode.append : FileMode.writeOnly,
+          );
+          onProgress?.call(
+            DownloadProgress(receivedBytes: bytes, totalBytes: total),
+          );
           final stream = response.stream.timeout(
             const Duration(seconds: 30),
-            onTimeout: (eventSink) => eventSink.addError(const DownloadException('DOWNLOAD_STALLED')),
+            onTimeout: (eventSink) => eventSink.addError(
+              const DownloadException('DOWNLOAD_STALLED'),
+            ),
           );
           iterator = StreamIterator<List<int>>(stream);
           while (await _moveNextOrCancel(iterator, cancellationToken)) {
             final chunk = iterator.current;
             bytes += chunk.length;
             sink.add(chunk);
-            onProgress?.call(DownloadProgress(receivedBytes: bytes, totalBytes: total));
+            onProgress?.call(
+              DownloadProgress(receivedBytes: bytes, totalBytes: total),
+            );
           }
           await sink.flush();
           await sink.close();
           sink = null;
         } catch (error) {
           streamError = error;
-          try { await iterator?.cancel(); } catch (_) {}
-          try { await sink?.close(); } catch (_) {}
+          try {
+            await iterator?.cancel();
+          } catch (_) {}
+          try {
+            await sink?.close();
+          } catch (_) {}
         }
 
         if (streamError != null) {
@@ -178,17 +219,43 @@ class DownloadService {
           }
           throw const DownloadException('INCOMPLETE_DOWNLOAD');
         }
-        if (total != null && bytes > total) throw const DownloadException('INVALID_DOWNLOAD_LENGTH');
+        if (total != null && bytes > total) {
+          throw const DownloadException('INVALID_DOWNLOAD_LENGTH');
+        }
 
         final completedFile = finalFile;
         if (await completedFile.exists()) await completedFile.delete();
+
+        // The partial and final file live in the same directory, so rename is the
+        // finalization boundary. Nothing is reported as completed before this
+        // operation succeeds and the renamed file is re-opened and validated.
         await tempFile.rename(completedFile.path);
+
         final verifiedBytes = await completedFile.length();
-        if (verifiedBytes <= 0 || verifiedBytes != bytes || (total != null && verifiedBytes != total)) {
-          try { await completedFile.delete(); } catch (_) {}
-          throw const DownloadException('FINAL_FILE_VERIFICATION_FAILED');
+        final lengthValid = verifiedBytes > 0 &&
+            verifiedBytes == bytes &&
+            (total == null || verifiedBytes == total);
+        final mediaValid = lengthValid &&
+            await _isValidMediaFile(
+              completedFile,
+              trustedContentType: responseContentType,
+            );
+
+        if (!lengthValid || !mediaValid) {
+          try {
+            await completedFile.delete();
+          } catch (_) {}
+          throw DownloadException(
+            lengthValid
+                ? 'INVALID_MEDIA_FILE'
+                : 'FINAL_FILE_VERIFICATION_FAILED',
+          );
         }
-        return DownloadResult(path: completedFile.path, bytes: verifiedBytes);
+
+        return DownloadResult(
+          path: completedFile.path,
+          bytes: verifiedBytes,
+        );
       }
     } catch (error) {
       if (!_preservePartial(error, bytes)) await cleanupPartial();
@@ -196,69 +263,122 @@ class DownloadService {
     }
   }
 
-  Future<http.StreamedResponse> _send(Uri uri, {required int offset, DownloadCancellationToken? cancellationToken}) {
+  Future<http.StreamedResponse> _send(
+    Uri uri, {
+    required int offset,
+    DownloadCancellationToken? cancellationToken,
+  }) {
     final request = http.Request('GET', uri)..headers['accept'] = '*/*';
     if (offset > 0) request.headers['range'] = 'bytes=$offset-';
-    return _awaitOrCancel(_client.send(request).timeout(const Duration(seconds: 30)), cancellationToken);
+    return _awaitOrCancel(
+      _client.send(request).timeout(const Duration(seconds: 30)),
+      cancellationToken,
+    );
   }
 
   static bool _canReconnect(Object error, int attempts, int bytes) {
     if (attempts >= _maxReconnectAttempts || bytes <= 0) return false;
     if (error is DownloadException) {
-      if (error.code == 'DOWNLOAD_CANCELLED' || error.code == 'RESUME_NOT_SUPPORTED') return false;
-      if (error.code == 'DOWNLOAD_STALLED' || error.code == 'INCOMPLETE_DOWNLOAD') return true;
-      if (error.code.startsWith('HTTP_5') || error.code == 'HTTP_408' || error.code == 'HTTP_429') return true;
+      if (error.code == 'DOWNLOAD_CANCELLED' ||
+          error.code == 'RESUME_NOT_SUPPORTED' ||
+          error.code == 'INVALID_MEDIA_RESPONSE' ||
+          error.code == 'INVALID_MEDIA_FILE' ||
+          error.code == 'HLS_DOWNLOAD_UNSUPPORTED') {
+        return false;
+      }
+      if (error.code == 'DOWNLOAD_STALLED' ||
+          error.code == 'INCOMPLETE_DOWNLOAD') {
+        return true;
+      }
+      if (error.code.startsWith('HTTP_5') ||
+          error.code == 'HTTP_408' ||
+          error.code == 'HTTP_429') {
+        return true;
+      }
       return false;
     }
-    return error is SocketException || error is TimeoutException || error is http.ClientException;
+    return error is SocketException ||
+        error is TimeoutException ||
+        error is http.ClientException;
   }
 
   static bool _preservePartial(Object error, int bytes) {
     if (bytes <= 0) return false;
     if (error is DownloadException) {
-      if (error.code == 'DOWNLOAD_STALLED' || error.code == 'INCOMPLETE_DOWNLOAD') return true;
-      if (error.code.startsWith('HTTP_5') || error.code == 'HTTP_408' || error.code == 'HTTP_429') return true;
+      if (error.code == 'DOWNLOAD_STALLED' ||
+          error.code == 'INCOMPLETE_DOWNLOAD') {
+        return true;
+      }
+      if (error.code.startsWith('HTTP_5') ||
+          error.code == 'HTTP_408' ||
+          error.code == 'HTTP_429') {
+        return true;
+      }
       return false;
     }
-    return error is SocketException || error is TimeoutException || error is http.ClientException;
+    return error is SocketException ||
+        error is TimeoutException ||
+        error is http.ClientException;
   }
 
-  Future<void> _reconnectDelay(int attempt, DownloadCancellationToken? token) {
+  Future<void> _reconnectDelay(
+    int attempt,
+    DownloadCancellationToken? token,
+  ) {
     final override = _reconnectDelayOverride;
     if (override != null) return override(attempt, token);
-    final milliseconds = (500 * attempt.clamp(1, _maxReconnectAttempts)).toInt();
-    return _awaitOrCancel(Future<void>.delayed(Duration(milliseconds: milliseconds)), token);
+    final milliseconds =
+        (500 * attempt.clamp(1, _maxReconnectAttempts)).toInt();
+    return _awaitOrCancel(
+      Future<void>.delayed(Duration(milliseconds: milliseconds)),
+      token,
+    );
   }
 
   static int? _mergeTotal(int? current, int? next) {
     if (next == null || next <= 0) return current;
     if (current == null) return next;
-    if (current != next) throw const DownloadException('DOWNLOAD_LENGTH_CHANGED');
+    if (current != next) {
+      throw const DownloadException('DOWNLOAD_LENGTH_CHANGED');
+    }
     return current;
   }
 
   static int? _contentRangeStart(String? header) {
     if (header == null) return null;
-    final match = RegExp(r'^bytes\s+([0-9]+)-[0-9]+/[0-9*]+$', caseSensitive: false).firstMatch(header.trim());
+    final match = RegExp(
+      r'^bytes\s+([0-9]+)-[0-9]+/[0-9*]+$',
+      caseSensitive: false,
+    ).firstMatch(header.trim());
     return match == null ? null : int.tryParse(match.group(1)!);
   }
 
   static void _throwIfCancelled(DownloadCancellationToken? token) {
-    if (token?.isCancelled ?? false) throw const DownloadException('DOWNLOAD_CANCELLED');
+    if (token?.isCancelled ?? false) {
+      throw const DownloadException('DOWNLOAD_CANCELLED');
+    }
   }
 
-  static Future<T> _awaitOrCancel<T>(Future<T> operation, DownloadCancellationToken? token) async {
+  static Future<T> _awaitOrCancel<T>(
+    Future<T> operation,
+    DownloadCancellationToken? token,
+  ) async {
     if (token == null) return operation;
     _throwIfCancelled(token);
     final result = await Future.any<Object>([
       operation.then<Object>((value) => _DownloadValue<T>(value)),
       token.whenCancelled.then<Object>((_) => const _DownloadCancelled()),
     ]);
-    if (result is _DownloadCancelled) throw const DownloadException('DOWNLOAD_CANCELLED');
+    if (result is _DownloadCancelled) {
+      throw const DownloadException('DOWNLOAD_CANCELLED');
+    }
     return (result as _DownloadValue<T>).value;
   }
 
-  static Future<bool> _moveNextOrCancel(StreamIterator<List<int>> iterator, DownloadCancellationToken? token) async {
+  static Future<bool> _moveNextOrCancel(
+    StreamIterator<List<int>> iterator,
+    DownloadCancellationToken? token,
+  ) async {
     if (token == null) return iterator.moveNext();
     _throwIfCancelled(token);
     final result = await Future.any<Object>([
@@ -292,17 +412,40 @@ class DownloadService {
       if (entity is! File || entity.path.endsWith('.part')) continue;
       final stat = await entity.stat();
       if (stat.type != FileSystemEntityType.file || stat.size <= 0) continue;
-      items.add(DownloadedFileInfo(name: _baseName(entity.path), path: entity.path, bytes: stat.size, modifiedAt: stat.modified));
+      if (!await _isValidMediaFile(entity)) continue;
+      items.add(
+        DownloadedFileInfo(
+          name: _baseName(entity.path),
+          path: entity.path,
+          bytes: stat.size,
+          modifiedAt: stat.modified,
+        ),
+      );
     }
     items.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
     return List.unmodifiable(items);
   }
 
   Future<File?> verifiedDownload(String name) async {
-    if (!_isSafeStoredName(name)) throw const DownloadException('INVALID_STORED_FILENAME');
+    if (!_isSafeStoredName(name)) {
+      throw const DownloadException('INVALID_STORED_FILENAME');
+    }
     final directory = await _downloadDirectory(create: false);
     if (!await directory.exists()) return null;
     final file = File('${directory.path}${Platform.pathSeparator}$name');
+    return _verifyStoredFile(file);
+  }
+
+  /// Resolves a persisted file reference against the app's *current* Documents
+  /// container. This deliberately ignores stale absolute iOS sandbox prefixes
+  /// and trusts only the safe basename.
+  Future<File?> resolveStoredReference(String storedPathOrName) async {
+    final name = _baseName(storedPathOrName);
+    if (!_isSafeStoredName(name)) return null;
+    return verifiedDownload(name);
+  }
+
+  Future<File?> _verifyStoredFile(File file) async {
     if (!await file.exists()) return null;
     final stat = await file.stat();
     if (stat.type != FileSystemEntityType.file || stat.size <= 0) return null;
@@ -312,11 +455,14 @@ class DownloadService {
     } catch (_) {
       return null;
     }
+    if (!await _isValidMediaFile(file)) return null;
     return file;
   }
 
   Future<bool> deleteDownload(String name) async {
-    if (!_isSafeStoredName(name)) throw const DownloadException('INVALID_STORED_FILENAME');
+    if (!_isSafeStoredName(name)) {
+      throw const DownloadException('INVALID_STORED_FILENAME');
+    }
     final directory = await _downloadDirectory(create: false);
     if (!await directory.exists()) return false;
     final file = File('${directory.path}${Platform.pathSeparator}$name');
@@ -329,6 +475,118 @@ class DownloadService {
     final directory = await _directoryProvider();
     if (create) await directory.create(recursive: true);
     return directory;
+  }
+
+  static String? _normalizedContentType(String? value) {
+    if (value == null) return null;
+    final normalized = value.split(';').first.trim().toLowerCase();
+    return normalized.isEmpty ? null : normalized;
+  }
+
+  static void _assertMediaResponseType(String? contentType) {
+    if (contentType == null || contentType == 'application/octet-stream') {
+      return;
+    }
+    if (contentType == 'application/vnd.apple.mpegurl' ||
+        contentType == 'application/x-mpegurl' ||
+        contentType == 'audio/mpegurl' ||
+        contentType == 'audio/x-mpegurl') {
+      throw const DownloadException('HLS_DOWNLOAD_UNSUPPORTED');
+    }
+    if (contentType.startsWith('video/')) return;
+    if (contentType.startsWith('text/') ||
+        contentType.contains('html') ||
+        contentType.contains('json') ||
+        contentType.contains('xml')) {
+      throw const DownloadException('INVALID_MEDIA_RESPONSE');
+    }
+  }
+
+  static Future<bool> _isValidMediaFile(
+    File file, {
+    String? trustedContentType,
+  }) async {
+    final length = await file.length();
+    if (length < 4) return false;
+
+    final handle = await file.open(mode: FileMode.read);
+    late List<int> prefix;
+    try {
+      prefix = await handle.read(
+        length < _signatureProbeBytes ? length : _signatureProbeBytes,
+      );
+    } finally {
+      await handle.close();
+    }
+    if (prefix.length < 4) return false;
+    if (_looksLikeTextError(prefix)) return false;
+    if (_hasKnownMediaSignature(prefix)) return true;
+
+    final type = _normalizedContentType(trustedContentType);
+    return type != null && type.startsWith('video/');
+  }
+
+  static bool _looksLikeTextError(List<int> prefix) {
+    final ascii = String.fromCharCodes(
+      prefix.where((byte) => byte == 9 || byte == 10 || byte == 13 ||
+          (byte >= 32 && byte <= 126)),
+    ).trimLeft().toLowerCase();
+    if (ascii.isEmpty) return false;
+    return ascii.startsWith('<!doctype') ||
+        ascii.startsWith('<html') ||
+        ascii.startsWith('<head') ||
+        ascii.startsWith('<body') ||
+        ascii.startsWith('{') ||
+        ascii.startsWith('[') ||
+        ascii.contains('<html') ||
+        ascii.contains('access denied') ||
+        ascii.contains('forbidden');
+  }
+
+  static bool _hasKnownMediaSignature(List<int> bytes) {
+    // ISO BMFF / MP4 / MOV: size(4) + `ftyp`.
+    if (bytes.length >= 8 &&
+        bytes[4] == 0x66 &&
+        bytes[5] == 0x74 &&
+        bytes[6] == 0x79 &&
+        bytes[7] == 0x70) {
+      return true;
+    }
+    // MPEG-TS sync byte. A second sync at 188 bytes increases confidence.
+    if (bytes[0] == 0x47 && (bytes.length <= 188 || bytes[188] == 0x47)) {
+      return true;
+    }
+    // Matroska / WebM EBML.
+    if (bytes[0] == 0x1A &&
+        bytes[1] == 0x45 &&
+        bytes[2] == 0xDF &&
+        bytes[3] == 0xA3) {
+      return true;
+    }
+    // FLV.
+    if (bytes[0] == 0x46 && bytes[1] == 0x4C && bytes[2] == 0x56) {
+      return true;
+    }
+    // Ogg.
+    if (bytes[0] == 0x4F &&
+        bytes[1] == 0x67 &&
+        bytes[2] == 0x67 &&
+        bytes[3] == 0x53) {
+      return true;
+    }
+    // AVI: RIFF....AVI .
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x41 &&
+        bytes[9] == 0x56 &&
+        bytes[10] == 0x49 &&
+        bytes[11] == 0x20) {
+      return true;
+    }
+    return false;
   }
 
   static bool _isSafeStoredName(String value) {
@@ -350,13 +608,19 @@ class DownloadService {
 
   static String? _trustedFileName(String? disposition) {
     if (disposition == null || disposition.isEmpty) return null;
-    final utf8Match = RegExp("filename\\*=UTF-8''([^;]+)", caseSensitive: false).firstMatch(disposition);
+    final utf8Match = RegExp(
+      "filename\\*=UTF-8''([^;]+)",
+      caseSensitive: false,
+    ).firstMatch(disposition);
     if (utf8Match != null) {
       final decoded = Uri.decodeComponent(utf8Match.group(1)!);
       final safe = _sanitizeFileName(decoded);
       if (safe.isNotEmpty) return safe;
     }
-    final plainMatch = RegExp('filename="?([^";]+)"?', caseSensitive: false).firstMatch(disposition);
+    final plainMatch = RegExp(
+      'filename="?([^";]+)"?',
+      caseSensitive: false,
+    ).firstMatch(disposition);
     if (plainMatch != null) {
       final safe = _sanitizeFileName(plainMatch.group(1)!);
       if (safe.isNotEmpty) return safe;
@@ -365,7 +629,9 @@ class DownloadService {
   }
 
   static String _sanitizeFileName(String value) {
-    final normalized = value.trim().replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), '_');
+    final normalized = value
+        .trim()
+        .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), '_');
     final compact = normalized.replaceAll(RegExp(r'\s+'), ' ');
     return compact.isEmpty ? 'al-qahtani-media' : compact;
   }
@@ -377,10 +643,15 @@ class _DownloadValue<T> {
   const _DownloadValue(this.value);
   final T value;
 }
-class _DownloadCancelled { const _DownloadCancelled(); }
+
+class _DownloadCancelled {
+  const _DownloadCancelled();
+}
+
 class DownloadException implements Exception {
   const DownloadException(this.code);
   final String code;
+
   @override
   String toString() => 'DownloadException($code)';
 }

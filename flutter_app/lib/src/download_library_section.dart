@@ -60,11 +60,11 @@ class _DownloadLibrarySectionState extends State<DownloadLibrarySection> {
   }
 
   Future<File?> _verifiedFile(DownloadedFileInfo item) async {
-    final file = await _service.verifiedDownload(item.name);
+    final file = await _service.resolveStoredReference(item.path);
     if (file != null) return file;
     if (!mounted) return null;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('الملف المحمّل غير موجود على الجهاز. حدّث القائمة أو أعد التنزيل.')),
+      const SnackBar(content: Text('الملف المحمّل غير موجود أو غير صالح. حدّث القائمة أو أعد التنزيل.')),
     );
     await _reload();
     return null;
@@ -126,12 +126,12 @@ class _DownloadLibrarySectionState extends State<DownloadLibrarySection> {
         if (_loading) const LinearProgressIndicator(),
         if (_error != null) ListTile(leading: const Icon(Icons.error_outline), title: Text(_error!)),
         if (!_loading && _error == null && _items.isEmpty)
-          const ListTile(title: Text('لا توجد ملفات محمّلة بعد')),
+          const ListTile(title: Text('لا توجد ملفات محمّلة صالحة بعد')),
         ..._items.map((item) => Card(
               child: ListTile(
                 leading: const Icon(Icons.download_done),
                 title: Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-                subtitle: Text('${_formatBytes(item.bytes)} • اضغط للتشغيل بدون إنترنت'),
+                subtitle: Text('${_formatBytes(item.bytes)} • تم التحقق • اضغط للتشغيل بدون إنترنت'),
                 onTap: () => _open(item),
                 trailing: Wrap(
                   spacing: isTvTarget ? 8 : 0,

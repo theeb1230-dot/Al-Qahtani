@@ -21,13 +21,17 @@ void main() {
 
   test('listDownloads returns stable verified local path', () async {
     final file = File('${temp.path}${Platform.pathSeparator}movie.mp4');
-    await file.writeAsBytes(List<int>.filled(16, 7));
+    const media = <int>[
+      0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70,
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    await file.writeAsBytes(media);
 
     final items = await service.listDownloads();
     expect(items, hasLength(1));
     expect(items.single.name, 'movie.mp4');
     expect(items.single.path, file.path);
-    expect(items.single.bytes, 16);
+    expect(items.single.bytes, media.length);
     expect((await service.verifiedDownload('movie.mp4'))?.path, file.path);
   });
 
