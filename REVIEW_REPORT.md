@@ -5,17 +5,18 @@
 ## Final Gate
 **[CHANGES_REQUIRED]**
 
-- Generated: `2026-09-15T14:37:54.334749+00:00`
+- Generated: `2026-09-15T14:58:28.010425+00:00`
 - Event: `push`
-- SHA: `0e78e4d93979741b91d47705fe55bcf9fff94c9e`
-- Diff range: `9f7c9eb250a33850159e33e134787dc46431fe21..0e78e4d93979741b91d47705fe55bcf9fff94c9e`
+- SHA: `0fc9bd2c77f0136b387b4ef291cdaf12970914f5`
+- Diff range: `2c0e74ebaa499d99e07ff011f488fbc81d269043..0fc9bd2c77f0136b387b4ef291cdaf12970914f5`
 - Changed files: `1`
 - AI provider: `OpenRouter/openrouter/free`
 
 ## Changed Files
-- `FEATURE_QUEUE.md`
+- `server/fallback-runtime.mjs`
 
 ## Deterministic Findings
+- **MEDIUM / NO_SERVER_TEST_DELTA**: Server code changed without a script test/smoke delta. Existing tests may cover it, but verify explicitly.
 - **INFO / SAMSUNG_TIZEN_NOT_CONFIGURED**: No Samsung/Tizen project is present. Do not claim Samsung TV build verification; current TV target is Android TV.
 
 ## Reviewer Fallback Log
@@ -23,31 +24,32 @@
 
 ## Independent AI Review
 ## AI Verdict
-[APPROVED]
+[CHANGES_REQUIRED]
 
 ## Blocking Findings
-None.
+- **MEDIUM - NO_SERVER_TEST_DELTA**: Server code in `server/fallback-runtime.mjs` was modified without a corresponding test/smoke delta. The change introduces `normalizeRange(range)` validation before upstream I/O, but there is no evidence of updated tests verifying this new behavior. This violates the requirement that server code changes must be explicitly verified through tests.
 
 ## Non-blocking Findings
-- **Tizen Configuration**: The system detected `SAMSUNG_TIZEN_NOT_CONFIGURED` (INFO severity). This confirms the absence of a Samsung/Tizen project and prevents any claim of unsupported Samsung TV build verification. The feature queue correctly reflects this limitation.
+- **INFO - SAMSUNG_TIZEN_NOT_CONFIGURED**: No Samsung/Tizen project exists in the repository. This is expected per project memory and does not block the current change.
 
 ## Platform Matrix
-| Target | Status | Verification |
+| Target | Status | Gate |
 |---|---|---|
-| Web / PWA | ACTIVE | Independent deployment preserved |
-| Android mobile | ACTIVE | Flutter build pipeline active |
-| Android TV | ACTIVE | Leanback/D-pad/focus regression gates active |
-| iOS | ACTIVE | Unsigned/no-codesign release gate active |
-| Samsung TV / Tizen | NOT CONFIGURED | Excluded from validation; queue reflects this state |
+| Web / PWA | ACTIVE | web build + runtime smoke gates |
+| Android mobile | ACTIVE | Flutter analyze/test + APK build |
+| Android TV | ACTIVE | Android TV APK + LEANBACK/D-pad/focus regression gates |
+| iOS | ACTIVE | no-codesign iOS build / unsigned IPA release gate |
+| Samsung TV / Tizen | NOT CONFIGURED | No claim support until Tizen project exists |
 
 ## Required Next Actions
-1. **Update Feedback Status**: The `FEATURE_QUEUE.md` file is currently `BLOCKED_FEEDBACK` awaiting updates to `FEEDBACK.md`. Please change `FEEDBACK.md` status to `CHANGES_REQUIRED` to unblock further progression.
-2. **Maintain Queue Accuracy**: Ensure the `FEATURE_QUEUE.md` continues to align with the actual development state (e.g., confirming Android TV and iOS gates remain active) to avoid future misalignment.
+1. **Add test coverage for `normalizeRange` function**: Create or update tests in `server/` to verify the new range normalization logic handles edge cases (malformed ranges, multi-range requests, out-of-bounds values).
+2. **Verify existing tests still pass**: Run the full server test suite to ensure the change doesn't break existing fallback behavior.
+3. **Document the security rationale**: Add inline comments explaining why range validation at the proxy boundary prevents SSRF/malformed input attacks.
 
 ## Approval Contract
 `[APPROVED]` means deterministic gates are green and the independent reviewer found no CI-verifiable blocker. It never means physical-device verification. Samsung TV/Tizen cannot be claimed until an actual Tizen target and build gate exist.
 
 ## GitHub Hard Gate Results
 - Deterministic quality gates: **failure**
-- iOS no-codesign build: **failure**
+- iOS no-codesign build: **success**
 - Samsung/Tizen truth gate: **success**
