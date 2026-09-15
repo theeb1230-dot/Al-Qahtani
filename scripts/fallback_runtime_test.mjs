@@ -57,7 +57,23 @@ assert.equal(direct.meta.status, 206);
 assert.equal(direct.meta.attempt, 1);
 assert.deepEqual([...new Uint8Array(await direct.response.arrayBuffer())], [1, 2, 3, 4]);
 
-await assert.rejects(() => runtime.openDirectMedia(first.data.ref, { range: "bytes=0-1,4-5", fetchImpl: async (_target, init) => { if (init.headers.Range === "bytes=0-1023") return new Response(new Uint8Array([0, 0, 0, 16, 102, 116, 121, 112, 105, 115, 111, 109]), { status: 206, headers: { "content-type": "video/mp4", "content-range": "bytes 0-1023/4096" } }); throw new Error("should reject range before second request"); } }), /BAD_FALLBACK_RANGE/);
+// Security regression: malformed client Range metadata must be rejected before
+// probeFallbackTarget or any other upstream request can observe the provider URL.
+for (const badRange of ["bytes=0-1,4-5", "bytes=-", "items=0-1", "bytes=abc-def"]) {
+  let upstreamCalls = 0;
+  await assert.rejects(
+    () => runtime.openDirectMedia(first.data.ref, {
+      range: badRange,
+      fetchImpl: async () => {
+        upstreamCalls += 1;
+        throw new Error("malformed range must never reach upstream I/O");
+      },
+    }),
+    /BAD_FALLBACK_RANGE/,
+  );
+  assert.equal(upstreamCalls, 0, `${badRange} must fail before upstream I/O`);
+}
+
 await assert.rejects(() => runtime.openDirectMedia(first.data.ref, { fetchImpl: async () => new Response("#EXTM3U\n#EXT-X-VERSION:3\n", { status: 200, headers: { "content-type": "application/vnd.apple.mpegurl" } }) }), /FALLBACK_HLS_PROXY_PENDING/);
 
 assert.throws(() => runtime.recordSuccess(first.data.ref, {}), /PLAYING_EVIDENCE_REQUIRED/);
