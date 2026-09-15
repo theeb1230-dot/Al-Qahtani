@@ -5,54 +5,29 @@
 ## Final Gate
 **[CHANGES_REQUIRED]**
 
-- Generated: `2026-09-15T13:32:30.425477+00:00`
+- Generated: `2026-09-15T13:34:02.062029+00:00`
 - Event: `push`
-- SHA: `a76faabe07b5aebb3d7b39add8421ca080d70700`
-- Diff range: `d3f8a6e69bb1557f09c6c43efa2d3a42723c563a..a76faabe07b5aebb3d7b39add8421ca080d70700`
+- SHA: `bfcdf303371b4985b1613854712630e369df509e`
+- Diff range: `a76faabe07b5aebb3d7b39add8421ca080d70700..bfcdf303371b4985b1613854712630e369df509e`
 - Changed files: `1`
 - AI provider: `OpenRouter/openrouter/free`
 
 ## Changed Files
-- `server/fallback-runtime.mjs`
+- `scripts/fallback_runtime_test.mjs`
 
 ## Deterministic Findings
-- **MEDIUM / NO_SERVER_TEST_DELTA**: Server code changed without a script test/smoke delta. Existing tests may cover it, but verify explicitly.
 - **INFO / SAMSUNG_TIZEN_NOT_CONFIGURED**: No Samsung/Tizen project is present. Do not claim Samsung TV build verification; current TV target is Android TV.
 
 ## Reviewer Fallback Log
 - gemini_review: HTTPError: HTTP Error 404: Not Found
 
 ## Independent AI Review
-## AI Verdict
-[CHANGES_REQUIRED]
-
-## Blocking Findings
-- **NO_SERVER_TEST_DELTA** (MEDIUM) — `server/fallback-runtime.mjs` changed without a test/smoke delta. New attempt-limiting logic (`maxAttempts` 1–5, `FALLBACK_ATTEMPT_LIMIT_REACHED`), `recordFailure` requiring `playerFailure` evidence, and `recordSuccess` requiring `playing` evidence are unverified by supplied tests. Cannot approve without CI-verifiable delta.
-- **Caller evidence gap** — `recordFailure(ref, {playerFailure:true})` and `recordSuccess(ref, {playbackSignal:true, playing:true})` now throw if evidence missing. No caller sites supplied; existing callers will break if not updated. Cite: `server/fallback-runtime.mjs` `recordFailure`, `recordSuccess`.
-
-## Non-blocking Findings
-- `SAMSUNG_TIZEN_NOT_CONFIGURED` (INFO) — no Tizen project; TV target remains Android TV.
-- Pure reformatting of `normalizeIdentity`, `openDirectMedia`, `createFallbackPlaybackRuntime` — no logic change.
-- `status()` now exposes `max_attempts` — harmless, but should be covered by smoke test.
-
-## Platform Matrix
-| Target | Impact |
-|---|---|
-| Web/PWA | Indirect (server ref) — verify web smoke after caller update |
-| Android mobile | No direct change |
-| Android TV | No direct change |
-| iOS | No direct change |
-| Samsung/Tizen | Not configured — no claim |
-
-## Required Next Actions
-1. Supply server test/smoke delta covering: attempt counting, `FALLBACK_ATTEMPT_LIMIT_REACHED`, `PLAYER_FAILURE_EVIDENCE_REQUIRED`, `PLAYING_EVIDENCE_REQUIRED`.
-2. Audit callers of `recordFailure`/`recordSuccess` and update evidence payloads.
-3. Re-run CI on exact head SHA; only then reconsider verdict.
+User Safety: safe
 
 ## Approval Contract
 `[APPROVED]` means deterministic gates are green and the independent reviewer found no CI-verifiable blocker. It never means physical-device verification. Samsung TV/Tizen cannot be claimed until an actual Tizen target and build gate exist.
 
 ## GitHub Hard Gate Results
 - Deterministic quality gates: **failure**
-- iOS no-codesign build: **cancelled**
+- iOS no-codesign build: **failure**
 - Samsung/Tizen truth gate: **success**
