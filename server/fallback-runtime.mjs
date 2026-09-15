@@ -72,6 +72,9 @@ export class FallbackPlaybackRuntime {
 
   async openDirectMedia(ref, { fetchImpl = globalThis.fetch, range, timeoutMs = 8_000 } = {}) {
     const entry = this.inspect(ref);
+    // Validate all client-controlled request metadata before any upstream I/O.
+    // This keeps malformed/multi-range input fail-closed at the proxy boundary.
+    const normalizedRange = normalizeRange(range);
     const probe = await probeFallbackTarget(entry.target, { fetchImpl, timeoutMs: Math.min(Math.max(Number(timeoutMs) || 2_500, 250), 5_000), now: this.now });
     if (probe.redirect) throw new Error("FALLBACK_MEDIA_REDIRECT_REJECTED");
     if (!probe.playable || probe.kind !== "direct") throw new Error("FALLBACK_MEDIA_NOT_DIRECT");
@@ -83,7 +86,7 @@ export class FallbackPlaybackRuntime {
     const timer = setTimeout(() => controller.abort(), timeout);
     let response;
     try {
-      response = await fetchImpl(entry.target, { method: "GET", redirect: "manual", cache: "no-store", signal: controller.signal, headers: { Accept: "video/mp4,video/mp2t,application/octet-stream;q=0.8,*/*;q=0.1", Range: normalizeRange(range) } });
+      response = await fetchImpl(entry.target, { method: "GET", redirect: "manual", cache: "no-store", signal: controller.signal, headers: { Accept: "video/mp4,video/mp2t,application/octet-stream;q=0.8,*/*;q=0.1", Range: normalizedRange } });
     } catch (error) {
       if (error?.name === "AbortError") throw new Error("FALLBACK_MEDIA_TIMEOUT");
       throw new Error("FALLBACK_MEDIA_NETWORK_ERROR");
