@@ -5,18 +5,17 @@
 ## Final Gate
 **[CHANGES_REQUIRED]**
 
-- Generated: `2026-09-15T14:58:28.010425+00:00`
+- Generated: `2026-09-15T15:53:54.500983+00:00`
 - Event: `push`
-- SHA: `0fc9bd2c77f0136b387b4ef291cdaf12970914f5`
-- Diff range: `2c0e74ebaa499d99e07ff011f488fbc81d269043..0fc9bd2c77f0136b387b4ef291cdaf12970914f5`
+- SHA: `ffc6b8b8463bde6d6f903a02497c9b0a6a0ac433`
+- Diff range: `77718be22c17497ab9a0fd682cf7aa81e0724c2d..ffc6b8b8463bde6d6f903a02497c9b0a6a0ac433`
 - Changed files: `1`
 - AI provider: `OpenRouter/openrouter/free`
 
 ## Changed Files
-- `server/fallback-runtime.mjs`
+- `scripts/fallback_runtime_test.mjs`
 
 ## Deterministic Findings
-- **MEDIUM / NO_SERVER_TEST_DELTA**: Server code changed without a script test/smoke delta. Existing tests may cover it, but verify explicitly.
 - **INFO / SAMSUNG_TIZEN_NOT_CONFIGURED**: No Samsung/Tizen project is present. Do not claim Samsung TV build verification; current TV target is Android TV.
 
 ## Reviewer Fallback Log
@@ -24,27 +23,28 @@
 
 ## Independent AI Review
 ## AI Verdict
-[CHANGES_REQUIRED]
+[APPROVED]
 
 ## Blocking Findings
-- **MEDIUM - NO_SERVER_TEST_DELTA**: Server code in `server/fallback-runtime.mjs` was modified without a corresponding test/smoke delta. The change introduces `normalizeRange(range)` validation before upstream I/O, but there is no evidence of updated tests verifying this new behavior. This violates the requirement that server code changes must be explicitly verified through tests.
+None.
 
 ## Non-blocking Findings
-- **INFO - SAMSUNG_TIZEN_NOT_CONFIGURED**: No Samsung/Tizen project exists in the repository. This is expected per project memory and does not block the current change.
+- **Security Hardening in Fallback Script**: The modification to `scripts/fallback_runtime_test.mjs` successfully adds deterministic assertions to reject malformed Range metadata (e.g., `"bytes=0-1,4-5"`, `"bytes=-"`, `"items=0-1"`). These tests ensure that upstream I/O is never triggered by invalid client requests, satisfying the SSRF and boundary protection invariants.
+- **Platform Configuration Compliance**: The deterministic finding `SAMSUNG_TIZEN_NOT_CONFIGURED` confirms that Samsung/Tizen is not configured in the environment. Per the protected invariants, this finding is informational and does not block the approval of features targeting Android TV or other supported platforms.
 
 ## Platform Matrix
-| Target | Status | Gate |
+| Target | Status | Required Gate |
 |---|---|---|
-| Web / PWA | ACTIVE | web build + runtime smoke gates |
+| Web / PWA | ACTIVE | web build + existing web/runtime smoke gates |
 | Android mobile | ACTIVE | Flutter analyze/test + APK build |
 | Android TV | ACTIVE | Android TV APK + LEANBACK/D-pad/focus regression gates |
 | iOS | ACTIVE | no-codesign iOS build / unsigned IPA release gate |
-| Samsung TV / Tizen | NOT CONFIGURED | No claim support until Tizen project exists |
+| Samsung / Tizen | NOT CONFIGURED | Do not claim support until Tizen project/toolchain/build gate exists |
 
 ## Required Next Actions
-1. **Add test coverage for `normalizeRange` function**: Create or update tests in `server/` to verify the new range normalization logic handles edge cases (malformed ranges, multi-range requests, out-of-bounds values).
-2. **Verify existing tests still pass**: Run the full server test suite to ensure the change doesn't break existing fallback behavior.
-3. **Document the security rationale**: Add inline comments explaining why range validation at the proxy boundary prevents SSRF/malformed input attacks.
+- **Continue Self-Correction Loop**: Maintain the active `Self-Correction & Automated Review Agent Loop` as outlined in the project memory.
+- **Verify Test Coverage**: Ensure the added assertions in `scripts/fallback_runtime_test.mjs` cover all edge cases for malformed Range requests across the fallback mechanism.
+- **Device Lifecycle Verification**: Proceed with the "Physical-device recheck" tasks identified in the `In Progress` section (specifically iPhone download/local playback and library access) to validate the remaining unconfirmed device behaviors, although these are outside the immediate scope of the provided code change.
 
 ## Approval Contract
 `[APPROVED]` means deterministic gates are green and the independent reviewer found no CI-verifiable blocker. It never means physical-device verification. Samsung TV/Tizen cannot be claimed until an actual Tizen target and build gate exist.
