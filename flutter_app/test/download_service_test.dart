@@ -6,6 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+List<int> _mp4Bytes([int payloadBytes = 8]) => <int>[
+      0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70,
+      ...List<int>.filled(payloadBytes, 0),
+    ];
+
 void main() {
   test('download rejects any non Al-Qahtani opaque media path', () async {
     final service = DownloadService(
@@ -38,14 +43,18 @@ void main() {
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
     });
+    final media = _mp4Bytes();
     final service = DownloadService(
       client: MockClient((request) async {
         expect(request.url.path, '/api/cinema/media');
         expect(request.url.queryParameters['download'], '1');
         return http.Response.bytes(
-          <int>[1, 2, 3, 4, 5],
+          media,
           200,
-          headers: {'content-disposition': 'attachment; filename="episode:01?.mp4"'},
+          headers: {
+            'content-disposition': 'attachment; filename="episode:01?.mp4"',
+            'content-type': 'video/mp4',
+          },
         );
       }),
       directoryProvider: () async => root,
@@ -57,9 +66,9 @@ void main() {
       fallbackName: 'ignored-name',
     );
 
-    expect(result.bytes, 5);
+    expect(result.bytes, media.length);
     expect(result.path, endsWith('episode_01_.mp4'));
-    expect(await File(result.path).readAsBytes(), <int>[1, 2, 3, 4, 5]);
+    expect(await File(result.path).readAsBytes(), media);
     expect(await File('${result.path}.part').exists(), isFalse);
   });
 
@@ -77,8 +86,8 @@ void main() {
     );
 
     expect(client.requests, 2);
-    expect(result.bytes, 10);
-    expect(await File(result.path).readAsBytes(), <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(result.bytes, 16);
+    expect(await File(result.path).readAsBytes(), _mp4Bytes());
     expect(await File('${result.path}.part').exists(), isFalse);
   });
 
@@ -89,12 +98,13 @@ void main() {
     });
     final service = DownloadService(
       client: MockClient((_) async => http.Response.bytes(
-            <int>[1, 2, 3, 4, 5],
+            _mp4Bytes().sublist(0, 8),
             206,
             headers: {
-              'content-range': 'bytes 0-4/10',
-              'content-length': '5',
+              'content-range': 'bytes 0-7/16',
+              'content-length': '8',
               'content-disposition': 'attachment; filename="partial.mp4"',
+              'content-type': 'video/mp4',
             },
           )),
       directoryProvider: () async => root,
@@ -132,7 +142,7 @@ void main() {
         if (progress.receivedBytes > 0 && !firstChunkSeen.isCompleted) firstChunkSeen.complete();
       },
     );
-    controller.add(<int>[1, 2, 3, 4]);
+    controller.add(_mp4Bytes());
     await firstChunkSeen.future;
     token.cancel();
 
@@ -166,9 +176,9 @@ void main() {
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
     });
-    final oldFile = File('${root.path}${Platform.pathSeparator}old.mp4')..writeAsBytesSync([1]);
-    final newFile = File('${root.path}${Platform.pathSeparator}new.mp4')..writeAsBytesSync([1, 2]);
-    File('${root.path}${Platform.pathSeparator}ignored.part').writeAsBytesSync([9]);
+    final oldFile = File('${root.path}${Platform.pathSeparator}old.mp4')..writeAsBytesSync(_mp4Bytes(4));
+    final newFile = File('${root.path}${Platform.pathSeparator}new.mp4')..writeAsBytesSync(_mp4Bytes(12));
+    File('${root.path}${Platform.pathSeparator}ignored.part').writeAsBytesSync(_mp4Bytes());
     File('${root.path}${Platform.pathSeparator}empty.mp4').writeAsBytesSync(const []);
     final now = DateTime.now();
     await oldFile.setLastModified(now.subtract(const Duration(minutes: 2)));
@@ -179,7 +189,7 @@ void main() {
 
     final items = await service.listDownloads();
     expect(items.map((item) => item.name).toList(), ['new.mp4', 'old.mp4']);
-    expect(items.first.bytes, 2);
+    expect(items.first.bytes, _mp4Bytes(12).length);
   });
 
   test('deleteDownload deletes safe local file and rejects unsafe stored names', () async {
@@ -187,7 +197,7 @@ void main() {
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
     });
-    final file = File('${root.path}${Platform.pathSeparator}episode-1.mp4')..writeAsBytesSync([1, 2, 3]);
+    final file = File('${root.path}${Platform.pathSeparator}episode-1.mp4')..writeAsBytesSync(_mp4Bytes());
     final service = DownloadService(directoryProvider: () async => root);
     addTearDown(service.close);
 
@@ -202,6 +212,7 @@ void main() {
 
 class _ResumeClient extends http.BaseClient {
   int requests = 0;
+  final List<int> media = _mp4Bytes();
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -209,28 +220,30 @@ class _ResumeClient extends http.BaseClient {
     if (requests == 1) {
       expect(request.headers['range'], isNull);
       return http.StreamedResponse(
-        Stream.value(<int>[1, 2, 3, 4, 5]),
+        Stream.value(media.sublist(0, 8)),
         206,
         request: request,
-        contentLength: 5,
+        contentLength: 8,
         headers: const {
-          'content-range': 'bytes 0-4/10',
-          'content-length': '5',
+          'content-range': 'bytes 0-7/16',
+          'content-length': '8',
           'content-disposition': 'attachment; filename="resume.mp4"',
+          'content-type': 'video/mp4',
           'accept-ranges': 'bytes',
         },
       );
     }
-    expect(request.headers['range'], 'bytes=5-');
+    expect(request.headers['range'], 'bytes=8-');
     return http.StreamedResponse(
-      Stream.value(<int>[6, 7, 8, 9, 10]),
+      Stream.value(media.sublist(8)),
       206,
       request: request,
-      contentLength: 5,
+      contentLength: 8,
       headers: const {
-        'content-range': 'bytes 5-9/10',
-        'content-length': '5',
+        'content-range': 'bytes 8-15/16',
+        'content-length': '8',
         'content-disposition': 'attachment; filename="resume.mp4"',
+        'content-type': 'video/mp4',
         'accept-ranges': 'bytes',
       },
     );
@@ -248,7 +261,10 @@ class _StreamingClient extends http.BaseClient {
       200,
       request: request,
       contentLength: 1024,
-      headers: const {'content-disposition': 'attachment; filename="cancel.mp4"'},
+      headers: const {
+        'content-disposition': 'attachment; filename="cancel.mp4"',
+        'content-type': 'video/mp4',
+      },
     );
   }
 }
