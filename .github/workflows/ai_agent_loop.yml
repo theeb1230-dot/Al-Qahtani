@@ -13,8 +13,6 @@ concurrency:
   group: ai-agent-review-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Least privilege. The review job never writes. The report commit job writes only
-# on trusted push events in this repository, never on fork PRs.
 permissions:
   contents: read
 
@@ -28,48 +26,37 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-
-      - name: Install Node dependencies
-        run: npm ci
-
       - name: Run repository deterministic tests
-        run: npm test
-
+        run: npm run check
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-
+      - name: Create platform scaffolding without touching existing web
+        working-directory: flutter_app
+        run: flutter create --platforms=android,ios --org com.alqahtani --project-name al_qahtani .
+      - name: Apply approved native branding
+        run: python3 scripts/apply_native_branding.py flutter_app
       - name: Flutter dependencies
         working-directory: flutter_app
         run: flutter pub get
-
       - name: Flutter analyze
         working-directory: flutter_app
         run: flutter analyze
-
       - name: Flutter tests
         working-directory: flutter_app
         run: flutter test
-
       - name: Android mobile build check
         working-directory: flutter_app
-        run: flutter build apk --debug
-
+        run: flutter build apk --debug --dart-define=AL_QAHTANI_TARGET=mobile
       - name: Android TV contract check
         working-directory: flutter_app
-        run: |
-          # Current repository TV target is Android TV. Existing release/foundation
-          # workflows remain authoritative for release-grade TV packaging.
-          flutter test test/app_target_test.dart test/details_page_focus_test.dart test/route_focus_restorer_test.dart
-
+        run: flutter test --dart-define=AL_QAHTANI_TARGET=tv test/app_target_test.dart test/details_page_focus_test.dart test/route_focus_restorer_test.dart
       - name: Web build check
         working-directory: flutter_app
         run: flutter build web --release
@@ -84,11 +71,16 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Create iOS scaffold
+        working-directory: flutter_app
+        run: flutter create --platforms=ios --org com.alqahtani --project-name al_qahtani .
+      - name: Apply approved native branding
+        run: python3 scripts/apply_native_branding.py flutter_app
       - working-directory: flutter_app
         run: flutter pub get
       - name: Build iOS without signing
         working-directory: flutter_app
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --dart-define=AL_QAHTANI_TARGET=ios
 
   samsung-target-truth:
     name: Samsung/Tizen target truth gate
@@ -122,12 +114,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Run independent reviewer
         id: reviewer
         continue-on-error: true
         run: python3 .github/scripts/agent_reviewer.py
-
       - name: Attach hard-gate evidence to report
         shell: bash
         env:
@@ -151,7 +141,6 @@ jobs:
           p.write_text(s)
           PY
           fi
-
       - name: Upload review report
         uses: actions/upload-artifact@v4
         with:
@@ -159,7 +148,6 @@ jobs:
           path: REVIEW_REPORT.md
           if-no-files-found: error
           retention-days: 14
-
       - name: Enforce review result
         shell: bash
         env:
@@ -185,12 +173,10 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
-
       - name: Download report artifact
         uses: actions/download-artifact@v4
         with:
           name: ai-review-report-${{ github.sha }}
-
       - name: Commit REVIEW_REPORT.md without recursive CI
         shell: bash
         run: |
