@@ -1,0 +1,209 @@
+name: AI Agent Review Loop
+
+on:
+  push:
+    branches: [main, "agent/**", "feature/**", "fix/**"]
+    paths-ignore:
+      - REVIEW_REPORT.md
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ai-agent-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Least privilege. The review job never writes. The report commit job writes only
+# on trusted push events in this repository, never on fork PRs.
+permissions:
+  contents: read
+
+jobs:
+  deterministic:
+    name: Deterministic quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run repository deterministic tests
+        run: npm test
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter dependencies
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: Flutter analyze
+        working-directory: flutter_app
+        run: flutter analyze
+
+      - name: Flutter tests
+        working-directory: flutter_app
+        run: flutter test
+
+      - name: Android mobile build check
+        working-directory: flutter_app
+        run: flutter build apk --debug
+
+      - name: Android TV contract check
+        working-directory: flutter_app
+        run: |
+          # Current repository TV target is Android TV. Existing release/foundation
+          # workflows remain authoritative for release-grade TV packaging.
+          flutter test test/app_target_test.dart test/details_page_focus_test.dart test/route_focus_restorer_test.dart
+
+      - name: Web build check
+        working-directory: flutter_app
+        run: flutter build web --release
+
+  ios-build:
+    name: iOS no-codesign build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - working-directory: flutter_app
+        run: flutter pub get
+      - name: Build iOS without signing
+        working-directory: flutter_app
+        run: flutter build ios --release --no-codesign
+
+  samsung-target-truth:
+    name: Samsung/Tizen target truth gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Do not invent Samsung TV support
+        shell: bash
+        run: |
+          if [[ -d tizen || -d flutter_app/tizen ]]; then
+            echo "Tizen project detected. Add an actual Tizen build gate before claiming Samsung support."
+            exit 1
+          fi
+          echo "No Tizen project exists. Samsung TV remains NOT_CONFIGURED; Android TV is the current TV target."
+
+  ai-review:
+    name: Independent AI critic
+    needs: [deterministic, ios-build, samsung-target-truth]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      GEMINI_MODEL: gemini-2.5-flash
+      OPENROUTER_MODEL: openrouter/free
+    steps:
+      - name: Checkout exact revision with history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run independent reviewer
+        id: reviewer
+        continue-on-error: true
+        run: python3 .github/scripts/agent_reviewer.py
+
+      - name: Attach hard-gate evidence to report
+        shell: bash
+        env:
+          DET_RESULT: ${{ needs.deterministic.result }}
+          IOS_RESULT: ${{ needs.ios-build.result }}
+          SAMSUNG_RESULT: ${{ needs.samsung-target-truth.result }}
+        run: |
+          cat >> REVIEW_REPORT.md <<EOF
+
+          ## GitHub Hard Gate Results
+          - Deterministic quality gates: **${DET_RESULT}**
+          - iOS no-codesign build: **${IOS_RESULT}**
+          - Samsung/Tizen truth gate: **${SAMSUNG_RESULT}**
+          EOF
+          if [[ "$DET_RESULT" != "success" || "$IOS_RESULT" != "success" || "$SAMSUNG_RESULT" != "success" ]]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          p = Path('REVIEW_REPORT.md')
+          s = p.read_text()
+          s = s.replace('**[APPROVED]**', '**[CHANGES_REQUIRED]**', 1)
+          p.write_text(s)
+          PY
+          fi
+
+      - name: Upload review report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review-report-${{ github.sha }}
+          path: REVIEW_REPORT.md
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce review result
+        shell: bash
+        env:
+          DET_RESULT: ${{ needs.deterministic.result }}
+          IOS_RESULT: ${{ needs.ios-build.result }}
+          REVIEW_OUTCOME: ${{ steps.reviewer.outcome }}
+        run: |
+          test "$DET_RESULT" = success
+          test "$IOS_RESULT" = success
+          test "$REVIEW_OUTCOME" = success
+          grep -q '\*\*\[APPROVED\]\*\*' REVIEW_REPORT.md
+
+  persist-report:
+    name: Persist review memory
+    needs: [ai-review]
+    if: ${{ always() && github.event_name == 'push' && github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout reviewed branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Download report artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-review-report-${{ github.sha }}
+
+      - name: Commit REVIEW_REPORT.md without recursive CI
+        shell: bash
+        run: |
+          if [[ ! -f REVIEW_REPORT.md ]]; then
+            echo "No review report artifact; refusing to fabricate memory."
+            exit 1
+          fi
+          git config user.name "al-qahtani-review-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add REVIEW_REPORT.md
+          if git diff --cached --quiet; then
+            echo "Report unchanged."
+            exit 0
+          fi
+          git commit -m "chore(agent): persist review for ${{ github.sha }} [skip ci]"
+          git push
