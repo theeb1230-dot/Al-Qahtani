@@ -5,15 +5,15 @@
 ## Final Gate
 **[NEEDS_HUMAN_OR_DEVICE_EVIDENCE]**
 
-- Generated: `2026-09-15T13:00:46.064163+00:00`
+- Generated: `2026-09-15T13:02:25.546626+00:00`
 - Event: `push`
-- SHA: `dd1b552a238201efc26f26cd97ecce8aeb165199`
-- Diff range: `1e7c673c2805159e8126c9272e8df6493834aab7..dd1b552a238201efc26f26cd97ecce8aeb165199`
+- SHA: `6f91ada0e35818da683c01a1f0911d89ce68572b`
+- Diff range: `dd1b552a238201efc26f26cd97ecce8aeb165199..6f91ada0e35818da683c01a1f0911d89ce68572b`
 - Changed files: `1`
 - AI provider: `none`
 
 ## Changed Files
-- `.github/workflows/ai_agent_loop.yml`
+- `docs/AUTONOMOUS_REVIEW_RULES.md`
 
 ## Deterministic Findings
 - **INFO / SAMSUNG_TIZEN_NOT_CONFIGURED**: No Samsung/Tizen project is present. Do not claim Samsung TV build verification; current TV target is Android TV.
@@ -43,5 +43,5 @@ Restore a free-tier reviewer secret or review manually.
 
 ## GitHub Hard Gate Results
 - Deterministic quality gates: **failure**
-- iOS no-codesign build: **cancelled**
-- Samsung/Tizen truth gate: **cancelled**
+- iOS no-codesign build: **failure**
+- Samsung/Tizen truth gate: **success**
