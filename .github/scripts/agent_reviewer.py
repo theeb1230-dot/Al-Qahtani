@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Al-Qahtani zero-cost AI reviewer.
+
+Deterministic checks are authoritative. AI review is advisory and may only
+approve when deterministic gates are green. Gemini Free Tier is preferred;
+OpenRouter's free router is the only network fallback. No paid model fallback.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[2]
+REPORT = ROOT / "REVIEW_REPORT.md"
+STATE = ROOT / "PROJECT_STATE.md"
+MAX_DIFF_CHARS = int(os.getenv("AGENT_MAX_DIFF_CHARS", "90000"))
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")
+
+PROTECTED_PATTERNS = {
+    "secret_in_diff": re.compile(r"(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['\"][^'\"]{8,}"),
+    "provider_url_in_flutter": re.compile(r"(?i)^\+.*https?://", re.MULTILINE),
+}
+
+
+def run(*args: str, check: bool = True) -> str:
+    p = subprocess.run(args, cwd=ROOT, text=True, capture_output=True)
+    if check and p.returncode:
+        raise RuntimeError(f"{' '.join(args)} failed: {p.stderr.strip()}")
+    return p.stdout.strip()
+
+
+def event_name() -> str:
+    return os.getenv("GITHUB_EVENT_NAME", "local")
+
+
+def resolve_diff() -> tuple[str, str]:
+    """Return (range description, unified diff), correctly handling PR/push/local."""
+    event_path = os.getenv("GITHUB_EVENT_PATH")
+    payload: dict[str, Any] = {}
+    if event_path and Path(event_path).exists():
+        try:
+            payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+
+    if event_name() == "pull_request":
+        base = payload.get("pull_request", {}).get("base", {}).get("sha")
+        head = payload.get("pull_request", {}).get("head", {}).get("sha")
+        if base and head:
+            # Three-dot diff reviews the PR delta from merge-base.
+            return f"{base}...{head}", run("git", "diff", "--no-ext-diff", "--unified=3", f"{base}...{head}")
+
+    before = payload.get("before")
+    after = payload.get("after") or os.getenv("GITHUB_SHA")
+    zero = "0" * 40
+    if before and after and before != zero:
+        return f"{before}..{after}", run("git", "diff", "--no-ext-diff", "--unified=3", before, after)
+
+    # Local/first-push fallback.
+    if run("git", "rev-list", "--count", "HEAD") != "1":
+        return "HEAD^..HEAD", run("git", "diff", "--no-ext-diff", "--unified=3", "HEAD^", "HEAD")
+    return "initial commit", run("git", "show", "--format=", "--no-ext-diff", "--unified=3", "HEAD")
+
+
+def changed_files(diff_range: str) -> list[str]:
+    if "..." in diff_range or ".." in diff_range:
+        return [x for x in run("git", "diff", "--name-only", diff_range).splitlines() if x]
+    return [x for x in run("git", "show", "--format=", "--name-only", "HEAD").splitlines() if x]
+
+
+def deterministic_review(diff: str, files: list[str]) -> list[dict[str, str]]:
+    findings: list[dict[str, str]] = []
+    if not diff.strip():
+        findings.append({"severity": "INFO", "code": "EMPTY_DIFF", "message": "No reviewable source delta found."})
+
+    if PROTECTED_PATTERNS["secret_in_diff"].search(diff):
+        findings.append({"severity": "BLOCKER", "code": "POSSIBLE_SECRET", "message": "Possible credential literal added in diff. Secrets must remain in GitHub Secrets."})
+
+    flutter_added = "\n".join(
+        line for line in diff.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    )
+    if any(f.startswith("flutter_app/") for f in files) and re.search(r"https?://", flutter_added):
+        findings.append({"severity": "HIGH", "code": "FLUTTER_DIRECT_URL", "message": "A URL was added to Flutter code/config. Verify no provider/session URL or server secret leaks into clients."})
+
+    if any(f.startswith("flutter_app/lib/") for f in files) and not any(f.startswith("flutter_app/test/") for f in files):
+        findings.append({"severity": "MEDIUM", "code": "NO_FLUTTER_TEST_DELTA", "message": "Flutter production code changed without a Flutter test change. Justify or add regression coverage."})
+
+    if any(f.startswith("server/") for f in files) and not any(f.startswith("scripts/") and ("test" in f or "smoke" in f) for f in files):
+        findings.append({"severity": "MEDIUM", "code": "NO_SERVER_TEST_DELTA", "message": "Server code changed without a script test/smoke delta. Existing tests may cover it, but verify explicitly."})
+
+    if any(f.startswith("flutter_app/") for f in files):
+        findings.append({"severity": "INFO", "code": "PLATFORM_SCOPE", "message": "Flutter delta requires Android mobile, Android TV/remote, iOS and Web regression consideration."})
+
+    # This repository currently has Android-TV support, not a Samsung/Tizen target.
+    if not (ROOT / "tizen").exists() and not (ROOT / "flutter_app" / "tizen").exists():
+        findings.append({"severity": "INFO", "code": "SAMSUNG_TIZEN_NOT_CONFIGURED", "message": "No Samsung/Tizen project is present. Do not claim Samsung TV build verification; current TV target is Android TV."})
+    return findings
+
+
+def post_json(url: str, headers: dict[str, str], body: dict[str, Any], timeout: int = 90) -> dict[str, Any]:
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", **headers}, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def prompt_for(diff: str, files: list[str], deterministic: list[dict[str, str]]) -> str:
+    state = STATE.read_text(encoding="utf-8")[:24000] if STATE.exists() else "PROJECT_STATE.md missing"
+    safe_diff = diff[:MAX_DIFF_CHARS]
+    return f"""You are the independent Critic & Verifier for Al-Qahtani TV.
+Review ONLY evidence supplied below. Never invent tests or device verification.
+The repository targets Flutter Android mobile, Android TV, iOS, Web/PWA. Samsung/Tizen is NOT verified unless an actual Tizen project/build exists.
+Protected invariants: Arabic RTL; TV D-pad/focus/LEANBACK; iOS unsigned/no-codesign release; Web/PWA preservation; no provider secrets/URLs in Flutter; opaque media refs; SSRF/allowlists; Range/206 semantics; HLS/MP4/MPEG-TS; watch/download separation; completed download requires verified local file. Physical-device-only behavior can never be APPROVED from CI.
+
+Return concise Markdown with these exact headings:
+## AI Verdict
+One of: [APPROVED], [CHANGES_REQUIRED], [NEEDS_HUMAN_OR_DEVICE_EVIDENCE]
+## Blocking Findings
+## Non-blocking Findings
+## Platform Matrix
+## Required Next Actions
+For each finding cite changed file names and explain evidence. APPROVED is allowed only when no blocker/high finding exists and the change is CI-verifiable.
+
+CHANGED FILES:\n{json.dumps(files, ensure_ascii=False, indent=2)}
+DETERMINISTIC FINDINGS:\n{json.dumps(deterministic, ensure_ascii=False, indent=2)}
+PROJECT MEMORY:\n{state}
+DIFF ({len(diff)} chars total; supplied {len(safe_diff)}):\n```diff\n{safe_diff}\n```
+"""
+
+
+def gemini_review(prompt: str) -> tuple[str, str]:
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY unavailable")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={key}"
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 5000},
+    }
+    obj = post_json(url, {}, payload)
+    text = "\n".join(p.get("text", "") for c in obj.get("candidates", []) for p in c.get("content", {}).get("parts", []) if p.get("text"))
+    if not text.strip():
+        raise RuntimeError("Gemini returned no review text")
+    return f"Gemini/{GEMINI_MODEL}", text.strip()
+
+
+def openrouter_review(prompt: str) -> tuple[str, str]:
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("OPENROUTER_API_KEY unavailable")
+    obj = post_json(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {"Authorization": f"Bearer {key}", "HTTP-Referer": "https://github.com/theeb1230-dot/Al-Qahtani", "X-Title": "Al-Qahtani CI Reviewer"},
+        {"model": OPENROUTER_MODEL, "temperature": 0.1, "max_tokens": 5000, "messages": [{"role": "user", "content": prompt}]},
+    )
+    text = obj.get("choices", [{}])[0].get("message", {}).get("content", "")
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("OpenRouter returned no review text")
+    return f"OpenRouter/{OPENROUTER_MODEL}", text.strip()
+
+
+def get_ai_review(prompt: str) -> tuple[str, str, list[str]]:
+    errors: list[str] = []
+    for fn in (gemini_review, openrouter_review):
+        try:
+            provider, text = fn(prompt)
+            return provider, text, errors
+        except (RuntimeError, urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+            errors.append(f"{fn.__name__}: {type(exc).__name__}: {exc}")
+    return "none", "## AI Verdict\n[NEEDS_HUMAN_OR_DEVICE_EVIDENCE]\n\n## Blocking Findings\nAI review unavailable; deterministic CI remains authoritative.\n\n## Non-blocking Findings\nNone.\n\n## Platform Matrix\nUse CI build/test evidence.\n\n## Required Next Actions\nRestore a free-tier reviewer secret or review manually.", errors
+
+
+def severity_blocks(findings: list[dict[str, str]]) -> bool:
+    return any(x["severity"] in {"BLOCKER", "HIGH"} for x in findings)
+
+
+def main() -> int:
+    diff_range, diff = resolve_diff()
+    files = changed_files(diff_range)
+    deterministic = deterministic_review(diff, files)
+    provider, ai_text, provider_errors = get_ai_review(prompt_for(diff, files, deterministic))
+
+    ai_approved = "[APPROVED]" in ai_text
+    final = "[APPROVED]" if ai_approved and not severity_blocks(deterministic) else "[CHANGES_REQUIRED]"
+    if provider == "none":
+        final = "[NEEDS_HUMAN_OR_DEVICE_EVIDENCE]"
+
+    rows = "\n".join(f"- **{x['severity']} / {x['code']}**: {x['message']}" for x in deterministic) or "- None"
+    errors = "\n".join(f"- {e}" for e in provider_errors) or "- None"
+    now = datetime.now(timezone.utc).isoformat()
+    report = f"""# Automated Review Report
+
+> Generated by `.github/scripts/agent_reviewer.py`. Do not treat AI prose as stronger evidence than CI or physical-device evidence.
+
+## Final Gate
+**{final}**
+
+- Generated: `{now}`
+- Event: `{event_name()}`
+- SHA: `{os.getenv('GITHUB_SHA', run('git', 'rev-parse', 'HEAD'))}`
+- Diff range: `{diff_range}`
+- Changed files: `{len(files)}`
+- AI provider: `{provider}`
+
+## Changed Files
+{chr(10).join(f'- `{f}`' for f in files) or '- None'}
+
+## Deterministic Findings
+{rows}
+
+## Reviewer Fallback Log
+{errors}
+
+## Independent AI Review
+{ai_text}
+
+## Approval Contract
+`[APPROVED]` means deterministic gates are green and the independent reviewer found no CI-verifiable blocker. It never means physical-device verification. Samsung TV/Tizen cannot be claimed until an actual Tizen target and build gate exist.
+"""
+    REPORT.write_text(report, encoding="utf-8")
+    print(report)
+    # The script records review state. Build/test jobs remain the hard CI gate.
+    return 0 if final == "[APPROVED]" else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
