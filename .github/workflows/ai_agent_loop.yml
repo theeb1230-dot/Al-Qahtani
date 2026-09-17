@@ -107,7 +107,7 @@ jobs:
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      GEMINI_MODEL: gemini-3.8-flash
+      GEMINI_MODEL: gemini-2.5-flash
       OPENROUTER_MODEL: openrouter/free
     steps:
       - name: Checkout exact revision with history
