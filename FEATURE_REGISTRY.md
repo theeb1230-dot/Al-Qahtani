@@ -1,7 +1,7 @@
 ---
 schema_version: 1
 registry_version: 1
-last_audit_at: 2026-09-17T13:47:29Z
+last_audit_at: 2026-09-17T14:42:00Z
 last_feature_index: 20
 ---
 
@@ -60,6 +60,7 @@ last_feature_index: 20
 | FEAT-0018 | 2026-09-17T13:47:29Z | af9e884c403b1cd8f60535f1f078fe6fd3c35ed6 | CYCLE-0001 | independent-approved queue allocation | `control/feedback:FEEDBACK.md`; run `35228366598` | QUEUED |
 | FEAT-0019 | 2026-09-17T13:47:29Z | af9e884c403b1cd8f60535f1f078fe6fd3c35ed6 | CYCLE-0001 | independent-approved queue allocation | `control/feedback:FEEDBACK.md`; run `35228366598` | QUEUED |
 | FEAT-0020 | 2026-09-17T13:47:29Z | af9e884c403b1cd8f60535f1f078fe6fd3c35ed6 | CYCLE-0001 | independent-approved queue allocation | `control/feedback:FEEDBACK.md`; run `35228366598` | QUEUED |
+| FEAT-0001 | 2026-09-17T14:42:00Z | 76912425906859517a33e4518d936ecf04a31b12 | CYCLE-0001 | development-loop | `server/fallback-runtime.mjs`; `scripts/fallback_runtime_test.mjs`; Actions run `35230892339` deterministic + independent critic success | IMPLEMENTED_PENDING_REVIEW |
 
 ## Active-state derivation
 
