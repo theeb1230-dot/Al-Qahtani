@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-status: APPROVED
-reviewed_sha: 76912425906859517a33e4518d936ecf04a31b12
-reviewed_at: 2026-09-17T14:11:43Z
+status: CHANGES_REQUIRED
+reviewed_sha: fd350924815dfe4d390c61c88185c8c7b992511c
+reviewed_at: 2026-09-17T14:45:32Z
 scope: "Independent exact-SHA CI/reviewer control-plane verdict"
-verification_level: CI_VERIFIED
+verification_level: NOT_VERIFIED
 cycle_id: CYCLE-0001
 ---
 
@@ -12,7 +12,7 @@ cycle_id: CYCLE-0001
 
 | Severity | Finding ID | Finding | Evidence | Required action | State |
 |---|---|---|---|---|---|
-| INFO | CONTROL-PLANE-001 | Independent review verdict for exact product head. | Actions run `35230892339`; artifact `ai-review-report-76912425906859517a33e4518d936ecf04a31b12`; reviewed SHA `76912425906859517a33e4518d936ecf04a31b12`. | Proceed under the Closed Loop contract; physical-device items remain DEVICE_REQUIRED_PENDING. | CLOSED |
+| INFO | CONTROL-PLANE-001 | Independent review verdict for exact product head. | Actions run `35235474450`; artifact `ai-review-report-fd350924815dfe4d390c61c88185c8c7b992511c`; reviewed SHA `fd350924815dfe4d390c61c88185c8c7b992511c`. | Inspect the exact-SHA workflow jobs and REVIEW_REPORT artifact; fix the root cause on the same product PR. | FIX_ONLY |
 
 ## Approval contract
 
