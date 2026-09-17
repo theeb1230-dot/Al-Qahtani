@@ -1,4 +1,5 @@
 import 'package:al_qahtani/src/cycle_feature_policy.dart';
+import 'package:al_qahtani/src/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -15,6 +16,14 @@ void main() {
   test('TMDB never auto-offers another fallback', () {
     const state = SearchCycleState(query: 'Dune', source: 'tmdb');
     expect(state.canOfferFallback, isFalse);
+  });
+
+  test('type/year filtering is stable and dedupes opaque refs', () {
+    const movie = CatalogItem(id: '1', title: 'Dune', poster: '', type: 'movie', ref: 'opaque:1', year: 2024);
+    const oldMovie = CatalogItem(id: '2', title: 'Dune', poster: '', type: 'movie', ref: 'opaque:2', year: 2021);
+    const series = CatalogItem(id: '3', title: 'Dune', poster: '', type: 'series', ref: 'opaque:3', year: 2024);
+    final filtered = filterSearchResults(const [movie, movie, oldMovie, series], const SearchCycleState(type: 'movie', year: 2024));
+    expect(filtered, [movie]);
   });
 
   test('resume requires real nontrivial incomplete progress', () {
