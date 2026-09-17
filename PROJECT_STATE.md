@@ -26,7 +26,8 @@
 | Samsung TV / Tizen | NOT CONFIGURED | Do not claim support until Tizen project/toolchain/build gate exists |
 
 ## Current objective
-- Install a zero-cost Self-Correction & Automated Review Agent Loop.
+- Execute `CYCLE-0001` as one 20-feature queue on the active PR after independent exact-SHA approval.
+- Keep the zero-cost Self-Correction & Automated Review Agent Loop operational.
 - Preferred reviewer: Gemini Free Tier.
 - Free fallback: OpenRouter `openrouter/free` only.
 - Paid inference fallback: FORBIDDEN.
@@ -38,14 +39,12 @@
 - Existing product/release history remains documented in `docs/AUTONOMOUS_DEVELOPMENT_STATE.md`.
 
 ## In progress
-- [IN_PROGRESS] Self-Correction & Automated Review Agent Loop.
+- [IN_PROGRESS] CYCLE-0001 — exactly 20 software-testable features registered as `FEAT-0001` through `FEAT-0020` in `FEATURE_REGISTRY.md` and queued in `FEATURE_QUEUE.md`.
+- [IN_PROGRESS] Self-Correction & Automated Review Agent Loop remains the independent review/control-plane gate.
 
 ## Pending features
-- Safe opaque HLS playlist/segment rewriting.
-- Playback-driven bounded provider fallback.
-- Internal-player fallback consumption without provider URL leakage.
-- TMDB fallback user selector and empty-result CTA after safe playback integration.
-- Physical-device recheck of iPhone download/local playback/export lifecycle.
+- See `FEATURE_QUEUE.md` for the authoritative active 20-feature cycle.
+- Physical-device recheck of iPhone download/local playback/export lifecycle remains outside the 20-slot software queue as `DEVICE_REQUIRED_PENDING`.
 
 ## Known device-required items
 - iOS completed-download -> restart -> Library -> local playback -> offline seek/pause/resume -> missing-file recovery -> Save to Files/share.
@@ -78,7 +77,7 @@
 | SCORE-001 | Ended matches could show fake 0-0 | Never synthesize 0-0 when authoritative score is unavailable | CI verified |
 | PLAY-001 | Playback/provider success inferred too early | Require actual media/player evidence; bound fallback attempts | Partially implemented |
 | TV-001 | TV UX can regress through touch-first UI | D-pad/focus/LEANBACK are release gates | CI verified baseline |
-| LOOP-001 | Review evidence commit moved the product head after CI, making feedback stale forever | Evidence/FEEDBACK is published on `control/feedback`; never commit monitoring evidence onto product head | Fix in review on active PR |
+| LOOP-001 | Review evidence commit moved the product head after CI, making feedback stale forever | Evidence/FEEDBACK is published on `control/feedback`; never commit monitoring evidence onto product head | CI + independent control-plane verified on `af9e884c403b1cd8f60535f1f078fe6fd3c35ed6` |
 
 ## Agent loop state
 - Maximum automatic correction attempts per exact failing SHA: **1**.
@@ -90,12 +89,12 @@
 A feature may be marked `[APPROVED]` only when all applicable deterministic tests/builds pass on the exact head SHA, the independent review has no BLOCKER/HIGH finding, protected invariants remain satisfied, and every required device-only claim has either physical evidence or is explicitly marked `DEVICE_REQUIRED_PENDING`.
 
 ## Review history
-<!-- One compact entry per reviewed head SHA. Do not rewrite old evidence.
-### <UTC date> — <SHA>
-- Goal:
-- CI:
-- AI reviewer:
-- Findings fixed:
-- Remaining:
-- Final state: [APPROVED] / [CHANGES_REQUIRED] / [DEVICE_REQUIRED_PENDING]
--->
+<!-- One compact entry per reviewed head SHA. Do not rewrite old evidence. -->
+### 2026-09-17 — af9e884c403b1cd8f60535f1f078fe6fd3c35ed6
+- Goal: repair the independent reviewer/control-plane deadlock without mutating the product head.
+- CI: Actions run `35228366598` completed SUCCESS on the exact SHA; deterministic Node/runtime, Flutter analyze/tests, Android Mobile, Android TV contract, Flutter Web, iOS no-codesign and Samsung/Tizen truth gates were green.
+- AI reviewer: Independent AI critic SUCCESS; exact-SHA `REVIEW_REPORT` artifact uploaded.
+- Control plane: `control/feedback` published valid machine-parseable `APPROVED` for the same exact SHA without a product-branch evidence commit.
+- LIVE: not promoted by this CI run.
+- PHYSICAL: not promoted; iPhone lifecycle recheck remains `DEVICE_REQUIRED_PENDING`.
+- Final state: [APPROVED] for CI-verifiable cycle entry only; CYCLE-0001 subsequently opened and any new product head requires fresh independent review before approval/merge.
