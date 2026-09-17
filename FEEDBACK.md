@@ -1,24 +1,26 @@
-STATUS: CHANGES_REQUIRED
-REVIEWED_SHA: UNREVIEWED_AFTER_LOOP_BOOTSTRAP
-REVIEWED_AT: 2026-09-15T14:00:00Z
-SCOPE: Closed-loop bootstrap and current product state
-VERIFICATION_LEVEL: NOT_VERIFIED
+---
+schema_version: 1
+status: CHANGES_REQUIRED
+reviewed_sha: 029113262ac6d83a30c60f63f234119031d1dbfd
+reviewed_at: 2026-09-15T14:29:00Z
+scope: "Closed-loop schema migration; independent monitoring re-review required"
+verification_level: NOT_VERIFIED
+cycle_id: CYCLE-0000
+---
 
 # Monitoring Feedback
 
-## EVIDENCE
-- تم إنشاء بنية الحلقة الجديدة التي تفصل الذاكرة الدائمة للميزات عن قائمة الدورة الحالية.
-- يلزم أن يعيد Monitoring Agent فحص exact current SHA قبل منح أي APPROVED.
+| Severity | Finding ID | Finding | Evidence | Required action | State |
+|---|---|---|---|---|---|
+| P0 | LOOP-SCHEMA-001 | Closed-loop control files were not machine-parseable under the required YAML-frontmatter contract. | Main `029113262ac6d83a30c60f63f234119031d1dbfd` had legacy key/value headers or no YAML frontmatter. | Migrate FEEDBACK/QUEUE/REGISTRY without granting approval; monitoring must re-review the exact PR head. | FIX_ONLY |
+| P0 | REVIEW-001 | Existing automated review remains `CHANGES_REQUIRED`. | `REVIEW_REPORT.md` on PR #121 reports deterministic quality and iOS no-codesign failures for reviewed SHA `bfcdf303371b4985b1613854712630e369df509e`. | Resolve findings on the same PR, run regression gates on exact head, then wait for independent monitoring. | OPEN |
 
-## FINDINGS
-### P0
-- لا توجد موافقة مراقب صالحة بعد إنشاء FEATURE_REGISTRY.md وFEATURE_QUEUE.md وFEEDBACK.md على الحالة الجديدة.
+## Approval contract
 
-## ACCEPTANCE_CRITERIA
-- يراجع Monitoring Agent الحالة الفعلية على exact SHA.
-- يتحقق من عدم وجود regression مانع ومن سلامة بوابات المشروع ذات الصلة.
-- يحدّث هذا الملف وحده إلى STATUS: APPROVED عند تحقق الشروط، أو يبقي CHANGES_REQUIRED مع findings دقيقة.
-
-## RULE
-- Development Agent لا يغيّر STATUS إلى APPROVED.
-- عند CHANGES_REQUIRED يعمل Development Agent Fix-Only ثم يطلب ضمن الحلقة إعادة التحقق؛ لا يبدأ ميزات جديدة حتى اعتماد المراقب.
+| Rule | Value |
+|---|---|
+| Development agent may set APPROVED | NO |
+| Missing/invalid/stale feedback behavior | FAIL_CLOSED |
+| Work allowed while CHANGES_REQUIRED | FIX_ONLY |
+| Feature creation while CHANGES_REQUIRED | FORBIDDEN |
+| Required next authority | Independent monitoring agent on exact PR head |
