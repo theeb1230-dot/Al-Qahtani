@@ -65,7 +65,6 @@ bool shouldOfferResume({required Duration position, required Duration duration})
   return position.inMilliseconds / duration.inMilliseconds < .95;
 }
 
-@immutable
 class RequestGeneration {
   int _value = 0;
   int next() => ++_value;
