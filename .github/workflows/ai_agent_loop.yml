@@ -37,9 +37,9 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Create platform scaffolding without touching existing web
+      - name: Create platform scaffolding without touching existing root web
         working-directory: flutter_app
-        run: flutter create --platforms=android,ios --org com.alqahtani --project-name al_qahtani .
+        run: flutter create --platforms=android,ios,web --org com.alqahtani --project-name al_qahtani .
       - name: Apply approved native branding
         run: python3 scripts/apply_native_branding.py flutter_app
       - name: Flutter dependencies
@@ -159,37 +159,3 @@ jobs:
           test "$IOS_RESULT" = success
           test "$REVIEW_OUTCOME" = success
           grep -q '\*\*\[APPROVED\]\*\*' REVIEW_REPORT.md
-
-  persist-report:
-    name: Persist review memory
-    needs: [ai-review]
-    if: ${{ always() && github.event_name == 'push' && github.actor != 'github-actions[bot]' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout reviewed branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0
-      - name: Download report artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ai-review-report-${{ github.sha }}
-      - name: Commit REVIEW_REPORT.md without recursive CI
-        shell: bash
-        run: |
-          if [[ ! -f REVIEW_REPORT.md ]]; then
-            echo "No review report artifact; refusing to fabricate memory."
-            exit 1
-          fi
-          git config user.name "al-qahtani-review-bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add REVIEW_REPORT.md
-          if git diff --cached --quiet; then
-            echo "Report unchanged."
-            exit 0
-          fi
-          git commit -m "chore(agent): persist review for ${{ github.sha }} [skip ci]"
-          git push
