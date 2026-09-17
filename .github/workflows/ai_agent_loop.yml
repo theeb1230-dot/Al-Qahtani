@@ -238,6 +238,7 @@ jobs:
           git config user.name al-qahtani-monitor-bot
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           cp FEEDBACK.md /tmp/FEEDBACK.md
+          git restore --source=HEAD --staged --worktree FEEDBACK.md
           if git ls-remote --exit-code --heads origin control/feedback >/dev/null 2>&1; then
             git fetch origin control/feedback:refs/remotes/origin/control/feedback
             git switch --detach origin/control/feedback
