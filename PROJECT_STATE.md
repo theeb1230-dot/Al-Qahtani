@@ -7,6 +7,15 @@
 4. AI review is advisory evidence and may never overrule a failing deterministic gate.
 5. Never promote `DEVICE_REQUIRED_PENDING` to verified from CI.
 
+## Closed-loop control plane
+- Product code remains on the active PR branch; CI and independent review must evaluate its exact head SHA.
+- `FEEDBACK.md` on a product branch is bootstrap/history only once `control/feedback` exists.
+- The authoritative current monitoring feedback is `FEEDBACK.md` on the dedicated `control/feedback` ref.
+- The independent review workflow alone publishes that control ref after exact-SHA hard gates and reviewer evidence. Development code never writes `APPROVED`.
+- Publishing feedback must never create a commit on the product PR branch. The control ref is intentionally outside the `agent/**`, `feature/**`, `fix/**`, and `main` workflow trigger set, preventing review recursion.
+- A feedback verdict is valid only when its required YAML frontmatter parses and `reviewed_sha` exactly equals the current product PR head. Missing, invalid, or stale control feedback remains Fail-Closed.
+- This is a compatible authority migration: the FEEDBACK schema and field names are unchanged; only the Git ref carrying the independent verdict is separated from the product head to eliminate self-mutating-head deadlock.
+
 ## Product targets
 | Target | Status | Required gate |
 |---|---|---|
@@ -69,6 +78,7 @@
 | SCORE-001 | Ended matches could show fake 0-0 | Never synthesize 0-0 when authoritative score is unavailable | CI verified |
 | PLAY-001 | Playback/provider success inferred too early | Require actual media/player evidence; bound fallback attempts | Partially implemented |
 | TV-001 | TV UX can regress through touch-first UI | D-pad/focus/LEANBACK are release gates | CI verified baseline |
+| LOOP-001 | Review evidence commit moved the product head after CI, making feedback stale forever | Evidence/FEEDBACK is published on `control/feedback`; never commit monitoring evidence onto product head | Fix in review on active PR |
 
 ## Agent loop state
 - Maximum automatic correction attempts per exact failing SHA: **1**.
