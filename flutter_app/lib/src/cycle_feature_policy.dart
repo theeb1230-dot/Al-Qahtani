@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'models.dart';
+
 @immutable
 class SearchCycleState {
   const SearchCycleState({
@@ -18,7 +20,8 @@ class SearchCycleState {
 
   SearchCycleState copyWith({String? query, String? source, String? type, int? year, bool clearYear = false, double? scrollOffset}) {
     final safeSource = source == 'tmdb' ? 'tmdb' : 'basri';
-    final safeType = const {'all', 'movie', 'series'}.contains(type) ? type! : this.type;
+    final requestedType = type ?? this.type;
+    final safeType = const {'all', 'movie', 'series'}.contains(requestedType) ? requestedType : 'all';
     return SearchCycleState(
       query: query ?? this.query,
       source: source == null ? this.source : safeSource,
@@ -29,6 +32,21 @@ class SearchCycleState {
   }
 
   bool get canOfferFallback => source == 'basri' && query.trim().length >= 2;
+}
+
+List<CatalogItem> filterSearchResults(Iterable<CatalogItem> values, SearchCycleState state) {
+  final seen = <String>{};
+  final out = <CatalogItem>[];
+  for (final item in values) {
+    if (state.type != 'all' && item.type != state.type) continue;
+    if (state.year != null && item.year != state.year) continue;
+    final key = item.ref.trim().isNotEmpty
+        ? item.ref.trim()
+        : '${item.source}|${item.type}|${item.title.trim().toLowerCase()}|${item.year ?? ''}';
+    if (!seen.add(key)) continue;
+    out.add(item);
+  }
+  return List.unmodifiable(out);
 }
 
 enum PlayerConnectionState { connecting, recovering, playing, error }
