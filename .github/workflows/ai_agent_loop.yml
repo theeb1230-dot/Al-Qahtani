@@ -105,12 +105,13 @@ jobs:
         id: reviewer
         continue-on-error: true
         run: python3 .github/scripts/agent_reviewer.py
-      - name: Attach hard-gate evidence
+      - name: Normalize report to exact product SHA and attach hard-gate evidence
         env:
           DET_RESULT: ${{ needs.deterministic.result }}
           IOS_RESULT: ${{ needs.ios-build.result }}
           SAMSUNG_RESULT: ${{ needs.samsung-target-truth.result }}
         run: |
+          sed -i "s/^- SHA: .*/- SHA: \`${PRODUCT_SHA}\`/" REVIEW_REPORT.md
           cat >> REVIEW_REPORT.md <<EOF
 
           ## GitHub Hard Gate Results
@@ -157,6 +158,7 @@ jobs:
       - name: Generate machine-parseable FEEDBACK
         env:
           REVIEW_RESULT: ${{ needs.ai-review.result }}
+          REVIEW_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
           REPORT=control-evidence/REVIEW_REPORT.md
@@ -165,30 +167,19 @@ jobs:
           test -n "$CYCLE_ID"
           if [[ "$REVIEW_RESULT" == success ]] && grep -q '\*\*\[APPROVED\]\*\*' "$REPORT"; then STATUS=APPROVED; LEVEL=CI_VERIFIED; STATE=CLOSED; ACTION='Proceed under the Closed Loop contract; physical-device items remain DEVICE_REQUIRED_PENDING.'; else STATUS=CHANGES_REQUIRED; LEVEL=NOT_VERIFIED; STATE=FIX_ONLY; ACTION='Inspect exact-SHA jobs and REVIEW_REPORT; fix root cause on same product PR.'; fi
           REVIEWED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cat > FEEDBACK.md <<EOF
-          ---
-          schema_version: 1
-          status: ${STATUS}
-          reviewed_sha: ${PRODUCT_SHA}
-          reviewed_at: ${REVIEWED_AT}
-          scope: "Independent exact-SHA CI/reviewer control-plane verdict"
-          verification_level: ${LEVEL}
-          cycle_id: ${CYCLE_ID}
-          ---
-
-          # Monitoring Feedback
-
-          | Severity | Finding ID | Finding | Evidence | Required action | State |
-          |---|---|---|---|---|---|
-          | INFO | CONTROL-PLANE-001 | Independent review verdict for exact product head. | Actions run `${{ github.run_id }}`; artifact `ai-review-report-${PRODUCT_SHA}`; reviewed SHA `${PRODUCT_SHA}`. | ${ACTION} | ${STATE} |
-          EOF
+          printf '%s\n' '---' 'schema_version: 1' "status: ${STATUS}" "reviewed_sha: ${PRODUCT_SHA}" "reviewed_at: ${REVIEWED_AT}" 'scope: "Independent exact-SHA CI/reviewer control-plane verdict"' "verification_level: ${LEVEL}" "cycle_id: ${CYCLE_ID}" '---' '' '# Monitoring Feedback' '' '| Severity | Finding ID | Finding | Evidence | Required action | State |' '|---|---|---|---|---|---|' "| INFO | CONTROL-PLANE-001 | Independent review verdict for exact product head. | Actions run ${REVIEW_RUN_ID}; artifact ai-review-report-${PRODUCT_SHA}; reviewed SHA ${PRODUCT_SHA}. | ${ACTION} | ${STATE} |" > /tmp/FEEDBACK.md
       - name: Publish FEEDBACK without mutating product head
         run: |
           set -euo pipefail
           git config user.name al-qahtani-monitor-bot
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          cp FEEDBACK.md /tmp/FEEDBACK.md
-          if git ls-remote --exit-code --heads origin control/feedback >/dev/null 2>&1; then git fetch origin control/feedback:refs/remotes/origin/control/feedback; git switch -C control/feedback origin/control/feedback; else git switch -c control/feedback; fi
+          git reset --hard HEAD
+          if git ls-remote --exit-code --heads origin control/feedback >/dev/null 2>&1; then
+            git fetch origin control/feedback:refs/remotes/origin/control/feedback
+            git switch -C control/feedback origin/control/feedback
+          else
+            git switch -c control/feedback
+          fi
           cp /tmp/FEEDBACK.md FEEDBACK.md
           git add FEEDBACK.md
           git diff --cached --quiet && exit 0
