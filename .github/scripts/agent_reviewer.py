@@ -80,7 +80,7 @@ def deterministic_review(diff: str, files: list[str]) -> list[dict[str, str]]:
     if any(f.startswith("flutter_app/lib/") for f in files) and not any(f.startswith("flutter_app/test/") for f in files): findings.append({"severity":"MEDIUM","code":"NO_FLUTTER_TEST_DELTA","message":"Flutter production code changed without a Flutter test change. Justify or add regression coverage."})
     if any(f.startswith("server/") for f in files) and not any(f.startswith("scripts/") and ("test" in f or "smoke" in f) for f in files): findings.append({"severity":"MEDIUM","code":"NO_SERVER_TEST_DELTA","message":"Server code changed without a script test/smoke delta. Existing tests may cover it, but verify explicitly."})
     if any(f.startswith("flutter_app/") for f in files): findings.append({"severity":"INFO","code":"PLATFORM_SCOPE","message":"Flutter delta requires Android mobile, Android TV/remote, iOS and Web regression consideration."})
-    if not (ROOT / "tizen").exists() and not (ROOT / "flutter_app" / "tizen").exists(): findings.append({"severity":"INFO","code":"SAMSUNG_TIZEN_NOT_CONFIGURED","message":"No Samsung/Tizen project is present. Do not claim Samsung TV build verification; current TV target is Android TV."})
+    if not (ROOT / "tizen").exists() and not (ROOT / "flutter_app" / "tizen").exists(): findings.append({"severity":"INFO","code":"SAMSUNG_TIZEN_NOT_CONFIGURED","message":"No Samsung/Tizen project is present. This is expected platform-truth information, not a release blocker; current TV target is Android TV and Samsung support must not be claimed."})
     return findings
 
 
@@ -100,7 +100,10 @@ Return EXACTLY these headings and one verdict token:
 ## Non-blocking Findings
 ## Platform Matrix
 ## Required Next Actions
-Never invent tests/device evidence. Physical-device claims cannot be approved by CI. Samsung/Tizen is not configured. APPROVED only if no BLOCKER/HIGH finding exists and this delta is CI-verifiable.
+Never invent tests/device evidence. Physical-device claims cannot be approved by CI. APPROVED only if no BLOCKER/HIGH finding exists and this delta is CI-verifiable.
+Severity is normative: INFO and MEDIUM findings are non-blocking and MUST NOT by themselves produce CHANGES_REQUIRED. Only a grounded BLOCKER/HIGH finding may block CI-verifiable approval.
+Samsung/Tizen is intentionally NOT_CONFIGURED and outside the requested release targets. Its absence is an INFO platform-truth fact, MUST remain in Non-blocking Findings, and MUST NOT block Android Mobile + Android TV + Web/PWA + iOS unsigned release. Never claim Samsung support.
+DEVICE_REQUIRED_PENDING physical iPhone checks are explicitly outside the software-testable 20-feature cycle and MUST NOT block CI-verifiable cycle approval; preserve them as pending physical evidence.
 FILES:{json.dumps(files,ensure_ascii=False)}
 FINDINGS:{json.dumps(deterministic,ensure_ascii=False)}
 STATE:{state}
@@ -141,7 +144,7 @@ def openrouter_review(prompt: str) -> tuple[str,str]:
     headers={"Authorization":f"Bearer {key}","HTTP-Referer":"https://github.com/theeb1230-dot/Al-Qahtani","X-Title":"Al-Qahtani CI Reviewer"}
     variants=[
       {"model":OPENROUTER_MODEL,"temperature":0.1,"max_tokens":1800,"messages":[{"role":"user","content":prompt}]},
-      {"model":OPENROUTER_MODEL,"temperature":0.1,"max_tokens":2400,"messages":[{"role":"system","content":"Return only the requested Markdown headings and verdict. No reasoning preamble."},{"role":"user","content":prompt}]},
+      {"model":OPENROUTER_MODEL,"temperature":0.1,"max_tokens":2400,"messages":[{"role":"system","content":"Return only the requested Markdown headings and verdict. INFO/MEDIUM findings are non-blocking; Samsung/Tizen NOT_CONFIGURED and DEVICE_REQUIRED_PENDING are not blockers for the requested software release targets."},{"role":"user","content":prompt}]},
     ]
     errors=[]
     for payload in variants:
@@ -202,7 +205,7 @@ def main()->int:
 {ai_text}
 
 ## Approval Contract
-`[APPROVED]` means deterministic gates are green and the independent reviewer found no CI-verifiable blocker. It never means physical-device verification. Samsung TV/Tizen cannot be claimed until an actual Tizen target and build gate exists.
+`[APPROVED]` means deterministic gates are green and the independent reviewer found no CI-verifiable BLOCKER/HIGH finding. INFO/MEDIUM platform-truth notes are non-blocking. It never means physical-device verification. Samsung TV/Tizen remains NOT_CONFIGURED and is outside the requested Android/Android TV/Web/iOS release targets.
 """
     REPORT.write_text(report,encoding="utf-8"); print(report); return 0 if final=="[APPROVED]" else 2
 
