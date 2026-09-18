@@ -1,7 +1,7 @@
 ---
 schema_version: 1
 registry_version: 1
-last_audit_at: 2026-09-17T14:42:00Z
+last_audit_at: 2026-09-18T01:15:00Z
 last_feature_index: 20
 ---
 
@@ -61,6 +61,25 @@ last_feature_index: 20
 | FEAT-0019 | 2026-09-17T13:47:29Z | af9e884c403b1cd8f60535f1f078fe6fd3c35ed6 | CYCLE-0001 | independent-approved queue allocation | `control/feedback:FEEDBACK.md`; run `35228366598` | QUEUED |
 | FEAT-0020 | 2026-09-17T13:47:29Z | af9e884c403b1cd8f60535f1f078fe6fd3c35ed6 | CYCLE-0001 | independent-approved queue allocation | `control/feedback:FEEDBACK.md`; run `35228366598` | QUEUED |
 | FEAT-0001 | 2026-09-17T14:42:00Z | 76912425906859517a33e4518d936ecf04a31b12 | CYCLE-0001 | development-loop | `server/fallback-runtime.mjs`; `scripts/fallback_runtime_test.mjs`; Actions run `35230892339` deterministic + independent critic success | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0002 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `server/fallback-runtime.mjs`; opaque fallback/runtime tests; exact-head run `35290144640` | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0003 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `flutter_app/lib/src/cycle_feature_policy.dart`; `cycle_feature_policy_test.dart` | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0004 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `SearchCycleState.canOfferFallback`; explicit Basri fallback policy tests | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0005 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `filterSearchResults`; deterministic type/year/dedupe tests | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0006 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `SearchCycleState` query/source/type/year/scroll restoration tests | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0007 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | bounded local-history policy (`maxLocalSearchHistory`); Flutter tests | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0008 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `library_store.dart`; Continue Watching UI; resume progress tests | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0009 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `download_service.dart`; media validation/lifecycle tests | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0010 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | download storage/cleanup implementation; `batch1_storage_test.dart` | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0011 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `download_library_section.dart`; missing-file recovery tests | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0012 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | verified-download persistence/playback tests; no callback-only completion | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0013 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | Arabic `PlayerConnectionState`; provider-internal leakage regression test | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0014 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `shouldOfferResume`; real-progress boundary tests | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0015 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `library_store.dart`; persistent idempotent favorite UI/state | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0016 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | library persistence/order implementation and Flutter regression suite | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0017 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | search/details/library explicit loading/empty/error states; Flutter tests | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0018 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | 48px minimum target policy; semantics/focus regression tests | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0019 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `route_focus_restorer_test.dart`; `details_page_focus_test.dart`; TV gate success | IMPLEMENTED_PENDING_REVIEW |
+| FEAT-0020 | 2026-09-18T01:15:00Z | ed37f93b0e4826b68e412aeb126a3156ac865300 | CYCLE-0001 | development-loop | `RequestGeneration`; bounded timeout/history/cache policies; cancellation tests | IMPLEMENTED_PENDING_REVIEW |
 
 ## Active-state derivation
 
