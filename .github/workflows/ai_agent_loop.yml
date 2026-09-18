@@ -16,49 +16,42 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   deterministic:
     name: Deterministic quality gates
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout exact revision
+      - name: Checkout exact product revision
         uses: actions/checkout@v4
         with:
+          ref: ${{ env.PRODUCT_SHA }}
           fetch-depth: 0
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Run repository deterministic tests
-        run: npm run check
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
+      - name: Verify exact product revision
+        run: test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm run check
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
       - name: Create platform scaffolding without touching existing root web
         working-directory: flutter_app
         run: flutter create --platforms=android,ios,web --org com.alqahtani --project-name al_qahtani .
-      - name: Apply approved native branding
-        run: python3 scripts/apply_native_branding.py flutter_app
-      - name: Flutter dependencies
-        working-directory: flutter_app
+      - run: python3 scripts/apply_native_branding.py flutter_app
+      - working-directory: flutter_app
         run: flutter pub get
-      - name: Flutter analyze
-        working-directory: flutter_app
+      - working-directory: flutter_app
         run: flutter analyze
-      - name: Flutter tests
-        working-directory: flutter_app
+      - working-directory: flutter_app
         run: flutter test
-      - name: Android mobile build check
-        working-directory: flutter_app
+      - working-directory: flutter_app
         run: flutter build apk --debug --dart-define=AL_QAHTANI_TARGET=mobile
-      - name: Android TV contract check
-        working-directory: flutter_app
+      - working-directory: flutter_app
         run: flutter test --dart-define=AL_QAHTANI_TARGET=tv test/app_target_test.dart test/details_page_focus_test.dart test/route_focus_restorer_test.dart
-      - name: Web build check
-        working-directory: flutter_app
+      - working-directory: flutter_app
         run: flutter build web --release
 
   ios-build:
@@ -67,19 +60,17 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ env.PRODUCT_SHA }}" }
+      - name: Verify exact product revision
+        run: test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
       - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-      - name: Create iOS scaffold
-        working-directory: flutter_app
+        with: { channel: stable, cache: true }
+      - working-directory: flutter_app
         run: flutter create --platforms=ios --org com.alqahtani --project-name al_qahtani .
-      - name: Apply approved native branding
-        run: python3 scripts/apply_native_branding.py flutter_app
+      - run: python3 scripts/apply_native_branding.py flutter_app
       - working-directory: flutter_app
         run: flutter pub get
-      - name: Build iOS without signing
-        working-directory: flutter_app
+      - working-directory: flutter_app
         run: flutter build ios --release --no-codesign --dart-define=AL_QAHTANI_TARGET=ios
 
   samsung-target-truth:
@@ -87,14 +78,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Do not invent Samsung TV support
-        shell: bash
-        run: |
-          if [[ -d tizen || -d flutter_app/tizen ]]; then
-            echo "Tizen project detected. Add an actual Tizen build gate before claiming Samsung support."
-            exit 1
-          fi
-          echo "No Tizen project exists. Samsung TV remains NOT_CONFIGURED; Android TV is the current TV target."
+        with: { ref: "${{ env.PRODUCT_SHA }}" }
+      - run: |
+          test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
+          if [[ -d tizen || -d flutter_app/tizen ]]; then exit 1; fi
 
   ai-review:
     name: Independent AI critic
@@ -102,29 +89,29 @@ jobs:
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       GEMINI_MODEL: gemini-3.8-flash
       OPENROUTER_MODEL: openrouter/free
     steps:
-      - name: Checkout exact revision with history
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ env.PRODUCT_SHA }}
           fetch-depth: 0
+      - name: Verify exact product revision
+        run: test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
       - name: Run independent reviewer
         id: reviewer
         continue-on-error: true
         run: python3 .github/scripts/agent_reviewer.py
-      - name: Attach hard-gate evidence to report
-        shell: bash
+      - name: Normalize report to exact product SHA and attach hard-gate evidence
         env:
           DET_RESULT: ${{ needs.deterministic.result }}
           IOS_RESULT: ${{ needs.ios-build.result }}
           SAMSUNG_RESULT: ${{ needs.samsung-target-truth.result }}
         run: |
+          sed -i "s/^- SHA: .*/- SHA: \`${PRODUCT_SHA}\`/" REVIEW_REPORT.md
           cat >> REVIEW_REPORT.md <<EOF
 
           ## GitHub Hard Gate Results
@@ -132,24 +119,13 @@ jobs:
           - iOS no-codesign build: **${IOS_RESULT}**
           - Samsung/Tizen truth gate: **${SAMSUNG_RESULT}**
           EOF
-          if [[ "$DET_RESULT" != "success" || "$IOS_RESULT" != "success" || "$SAMSUNG_RESULT" != "success" ]]; then
-            python3 - <<'PY'
-          from pathlib import Path
-          p = Path('REVIEW_REPORT.md')
-          s = p.read_text()
-          s = s.replace('**[APPROVED]**', '**[CHANGES_REQUIRED]**', 1)
-          p.write_text(s)
-          PY
-          fi
-      - name: Upload review report
-        uses: actions/upload-artifact@v4
+          if [[ "$DET_RESULT" != success || "$IOS_RESULT" != success || "$SAMSUNG_RESULT" != success ]]; then sed -i '0,/\*\*\[APPROVED\]\*\*/s//**[CHANGES_REQUIRED]**/' REVIEW_REPORT.md; fi
+      - uses: actions/upload-artifact@v4
         with:
-          name: ai-review-report-${{ github.sha }}
+          name: ai-review-report-${{ env.PRODUCT_SHA }}
           path: REVIEW_REPORT.md
-          if-no-files-found: error
           retention-days: 14
       - name: Enforce review result
-        shell: bash
         env:
           DET_RESULT: ${{ needs.deterministic.result }}
           IOS_RESULT: ${{ needs.ios-build.result }}
@@ -163,95 +139,49 @@ jobs:
   publish-feedback:
     name: Publish independent feedback control plane
     needs: [ai-review]
-    if: ${{ always() && github.event_name == 'push' && github.ref != 'refs/heads/main' }}
+    if: ${{ always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main')) }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: write
     steps:
-      - name: Checkout exact product head
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ env.PRODUCT_SHA }}
           fetch-depth: 0
-      - name: Download exact-SHA review artifact
-        uses: actions/download-artifact@v4
+      - name: Verify exact product revision
+        run: test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
+      - uses: actions/download-artifact@v4
         with:
-          name: ai-review-report-${{ github.sha }}
+          name: ai-review-report-${{ env.PRODUCT_SHA }}
           path: control-evidence
       - name: Generate machine-parseable FEEDBACK
-        shell: bash
         env:
-          PRODUCT_SHA: ${{ github.sha }}
           REVIEW_RESULT: ${{ needs.ai-review.result }}
+          REVIEW_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
           REPORT=control-evidence/REVIEW_REPORT.md
           test -f "$REPORT"
           CYCLE_ID="$(sed -n 's/^cycle_id:[[:space:]]*//p' FEATURE_QUEUE.md | head -n1)"
           test -n "$CYCLE_ID"
-          if [[ "$REVIEW_RESULT" == "success" ]] && grep -q '\*\*\[APPROVED\]\*\*' "$REPORT"; then
-            STATUS=APPROVED
-            LEVEL=CI_VERIFIED
-            FINDING_STATE=CLOSED
-            ACTION='Proceed under the Closed Loop contract; physical-device items remain DEVICE_REQUIRED_PENDING.'
-          else
-            STATUS=CHANGES_REQUIRED
-            LEVEL=NOT_VERIFIED
-            FINDING_STATE=FIX_ONLY
-            ACTION='Inspect the exact-SHA workflow jobs and REVIEW_REPORT artifact; fix the root cause on the same product PR.'
-          fi
+          if [[ "$REVIEW_RESULT" == success ]] && grep -q '\*\*\[APPROVED\]\*\*' "$REPORT"; then STATUS=APPROVED; LEVEL=CI_VERIFIED; STATE=CLOSED; ACTION='Proceed under the Closed Loop contract; physical-device items remain DEVICE_REQUIRED_PENDING.'; else STATUS=CHANGES_REQUIRED; LEVEL=NOT_VERIFIED; STATE=FIX_ONLY; ACTION='Inspect exact-SHA jobs and REVIEW_REPORT; fix root cause on same product PR.'; fi
           REVIEWED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          cat > FEEDBACK.md <<EOF
-          ---
-          schema_version: 1
-          status: ${STATUS}
-          reviewed_sha: ${PRODUCT_SHA}
-          reviewed_at: ${REVIEWED_AT}
-          scope: "Independent exact-SHA CI/reviewer control-plane verdict"
-          verification_level: ${LEVEL}
-          cycle_id: ${CYCLE_ID}
-          ---
-
-          # Monitoring Feedback
-
-          | Severity | Finding ID | Finding | Evidence | Required action | State |
-          |---|---|---|---|---|---|
-          | INFO | CONTROL-PLANE-001 | Independent review verdict for exact product head. | Actions run \`${{ github.run_id }}\`; artifact \`ai-review-report-${PRODUCT_SHA}\`; reviewed SHA \`${PRODUCT_SHA}\`. | ${ACTION} | ${FINDING_STATE} |
-
-          ## Approval contract
-
-          | Rule | Value |
-          |---|---|
-          | Development agent may set APPROVED | NO |
-          | Missing/invalid/stale feedback behavior | FAIL_CLOSED |
-          | Work allowed while CHANGES_REQUIRED | FIX_ONLY |
-          | Feature creation while CHANGES_REQUIRED | FORBIDDEN |
-          | Required next authority | Independent exact-SHA reviewer via control/feedback |
-          EOF
+          printf '%s\n' '---' 'schema_version: 1' "status: ${STATUS}" "reviewed_sha: ${PRODUCT_SHA}" "reviewed_at: ${REVIEWED_AT}" 'scope: "Independent exact-SHA CI/reviewer control-plane verdict"' "verification_level: ${LEVEL}" "cycle_id: ${CYCLE_ID}" '---' '' '# Monitoring Feedback' '' '| Severity | Finding ID | Finding | Evidence | Required action | State |' '|---|---|---|---|---|---|' "| INFO | CONTROL-PLANE-001 | Independent review verdict for exact product head. | Actions run ${REVIEW_RUN_ID}; artifact ai-review-report-${PRODUCT_SHA}; reviewed SHA ${PRODUCT_SHA}. | ${ACTION} | ${STATE} |" > /tmp/FEEDBACK.md
       - name: Publish FEEDBACK without mutating product head
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PRODUCT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           git config user.name al-qahtani-monitor-bot
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          cp FEEDBACK.md /tmp/FEEDBACK.md
-          git restore --source=HEAD --staged --worktree FEEDBACK.md
+          git reset --hard HEAD
           if git ls-remote --exit-code --heads origin control/feedback >/dev/null 2>&1; then
             git fetch origin control/feedback:refs/remotes/origin/control/feedback
-            git switch --detach origin/control/feedback
-            git switch -C control/feedback
+            git switch -C control/feedback origin/control/feedback
           else
-            git switch --detach "$PRODUCT_SHA"
             git switch -c control/feedback
           fi
           cp /tmp/FEEDBACK.md FEEDBACK.md
           git add FEEDBACK.md
-          if git diff --cached --quiet; then
-            echo 'Feedback already current.'
-            exit 0
-          fi
+          git diff --cached --quiet && exit 0
           git commit -m "chore(control): review ${PRODUCT_SHA}"
           git push origin HEAD:refs/heads/control/feedback
